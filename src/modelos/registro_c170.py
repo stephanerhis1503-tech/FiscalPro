@@ -1,0 +1,41 @@
+"""
+=========================================
+FiscalPro
+Versão: 0.6.2
+
+Modelo do Registro C170
+=========================================
+"""
+
+from src.utils.conversores import texto_para_float
+
+
+class RegistroC170:
+
+    def __init__(self, linha):
+
+        self.linha_original = linha
+
+        campos = linha.strip().split("|")
+
+        self.numero_item = self._campo(campos, 2)
+        self.codigo = self._campo(campos, 3)
+        self.descricao_complementar = self._campo(campos, 4)
+
+        # Agora são números
+        self.quantidade = texto_para_float(self._campo(campos, 5))
+        self.valor_item = texto_para_float(self._campo(campos, 7))
+        self.desconto = texto_para_float(self._campo(campos, 8))
+
+        # Continuam sendo texto
+        self.unidade = self._campo(campos, 6)
+        self.movimentacao = self._campo(campos, 9)
+        self.cst_icms = self._campo(campos, 10)
+        self.cfop = self._campo(campos, 11)
+
+    def _campo(self, campos, indice):
+
+        if indice < len(campos):
+            return campos[indice].strip()
+
+        return ""
