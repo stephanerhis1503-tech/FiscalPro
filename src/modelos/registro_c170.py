@@ -1,7 +1,7 @@
 """
 =========================================
 FiscalPro
-Versão: 0.6.2
+Versão: 0.6.1
 
 Modelo do Registro C170
 =========================================
@@ -21,14 +21,10 @@ class RegistroC170:
         self.numero_item = self._campo(campos, 2)
         self.codigo = self._campo(campos, 3)
         self.descricao_complementar = self._campo(campos, 4)
-
-        # Agora são números
         self.quantidade = texto_para_float(self._campo(campos, 5))
-        self.valor_item = texto_para_float(self._campo(campos, 7))
-        self.desconto = texto_para_float(self._campo(campos, 8))
-
-        # Continuam sendo texto
         self.unidade = self._campo(campos, 6)
+        self.valor_item = texto_para_float(self._campo(campos, 7))
+        self.desconto = self._campo(campos, 8)
         self.movimentacao = self._campo(campos, 9)
         self.cst_icms = self._campo(campos, 10)
         self.cfop = self._campo(campos, 11)
