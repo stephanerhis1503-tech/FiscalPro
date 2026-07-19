@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+
+# Banco SQLite temporário
+*.db-journal
+
+# Logs
+*.log
+
+# Arquivos temporários
+*.tmp
+*.temp
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+
+# Arquivos grandes de exemplo
+samples/*.zip
+
+# Builds
+dist/
+build/
