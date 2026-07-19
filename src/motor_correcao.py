@@ -10,6 +10,8 @@ from pathlib import Path
 
 from src.xml_reader import XMLReader
 from src.corretor_cte import CorretorCTe
+from src.core.logger import logger
+from src.core.config import ENCODING
 
 
 class MotorCorrecao:
@@ -21,11 +23,16 @@ class MotorCorrecao:
     def executar(self,
                  linhas_sped,
                  pasta_xml):
+        
+        logger.info("Iniciando processo de correção do SPED.")
 
         # Carrega XMLs
         leitor = XMLReader(pasta_xml)
 
         xmls = leitor.carregar()
+
+        logger.info(f"XMLs carregados: {leitor.total()}")
+        logger.info(f"XMLs com erro: {leitor.total_erros()}")
 
         # Corrige CHV_CTE
         corretor = CorretorCTe(
@@ -34,6 +41,9 @@ class MotorCorrecao:
         )
 
         novo_sped = corretor.corrigir()
+
+        logger.info(f"CT-es corrigidos: {corretor.corrigidos}")
+        logger.info(f"CT-es não encontrados: {corretor.nao_encontrados}")
 
         self.relatorio = corretor.obter_relatorio()
 
@@ -58,7 +68,9 @@ class MotorCorrecao:
 
         with open(destino,
                   "w",
-                  encoding="utf-8") as f:
+                  encoding=ENCODING) as f:
+            
+            logger.info(f"SPED salvo em: {destino}")
 
             f.writelines(linhas)
 
@@ -66,6 +78,8 @@ class MotorCorrecao:
 
     def salvar_relatorio(self,
                          caminho):
+        
+        logger.info(f"Relatório salvo em: {caminho}")
 
         with open(caminho,
                   "w",

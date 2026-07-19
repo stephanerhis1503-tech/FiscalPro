@@ -1,0 +1,11 @@
+# Cores
+COR_FUNDO = "#F4F6F9"
+COR_PRIMARIA = "#0F4C81"
+COR_SECUNDARIA = "#1976D2"
+COR_TEXTO = "#222222"
+
+# Fontes
+FONTE_TITULO = ("Segoe UI", 16, "bold")
+FONTE_SUBTITULO = ("Segoe UI", 11, "bold")
+FONTE_NORMAL = ("Segoe UI", 10)
+FONTE_PEQUENA = ("Segoe UI", 9)

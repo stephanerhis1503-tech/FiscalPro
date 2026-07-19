@@ -1,0 +1,49 @@
+"""
+=========================================
+FiscalPro
+SPED Service
+Versão 0.8.0
+=========================================
+"""
+
+from src.leitor_sped import LeitorSPED
+from src.analisador import AnalisadorSPED
+from src.formatador import FormatadorAuditoria
+
+from src.core.logger import logger
+
+
+class SPEDService:
+
+    def abrir(self, arquivo):
+
+        logger.info(f"Abrindo arquivo SPED: {arquivo}")
+
+        leitor = LeitorSPED(arquivo)
+        leitor.carregar()
+
+        analisador = AnalisadorSPED(leitor.linhas)
+
+        resultado = analisador.analisar()
+
+        registro = leitor.obter_registro_0000()
+
+        resumo = ""
+
+        if registro:
+
+            resumo = FormatadorAuditoria.montar_resumo(
+                registro[6],
+                f"{registro[4]} até {registro[5]}",
+                leitor,
+                resultado
+            )
+
+        logger.info("SPED analisado com sucesso.")
+
+        return {
+            "leitor": leitor,
+            "resultado": resultado,
+            "registro": registro,
+            "resumo": resumo
+        }

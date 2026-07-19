@@ -28,6 +28,14 @@ class RegistroC170:
         self.movimentacao = self._campo(campos, 9)
         self.cst_icms = self._campo(campos, 10)
         self.cfop = self._campo(campos, 11)
+        self.ncm = ""
+        self.cst_pis = ""
+        self.cst_cofins = ""
+        self.base_icms = 0.0
+        self.valor_icms = 0.0
+        self.base_st = 0.0
+        self.valor_st = 0.0
+        self.aliquota_icms = 0.0
 
     def _campo(self, campos, indice):
 
