@@ -131,7 +131,26 @@ class ServicoManifestacaoNFe:
             lotes += 1
             if progresso:
                 progresso(f"Consultando NF-e destinadas a partir do NSU {atual:015d}…")
-            resposta = cliente.consultar_distribuicao(cnpj, uf_autor, atual)
+            try:
+                resposta = cliente.consultar_distribuicao(cnpj, uf_autor, atual)
+            except ErroNFe as exc:
+                instante_erro = datetime.now()
+                self.repo.salvar_config(
+                    cnpj, ambiente, uf_autor=uf_autor,
+                    bloqueado_ate="", ultima_consulta_em=_data_iso(instante_erro),
+                    ultimo_cstat="CONEXAO", ultimo_motivo=str(exc),
+                )
+                raise
+            except Exception as exc:
+                instante_erro = datetime.now()
+                self.repo.salvar_config(
+                    cnpj, ambiente, uf_autor=uf_autor,
+                    bloqueado_ate="", ultima_consulta_em=_data_iso(instante_erro),
+                    ultimo_cstat="ERRO_LOCAL",
+                    ultimo_motivo=f"{exc.__class__.__name__}: {exc}",
+                )
+                raise
+
             instante_resposta = datetime.now()
             ultimo_cstat, ultimo_motivo = resposta.cstat, resposta.motivo
             if resposta.max_nsu_informado:
@@ -209,6 +228,115 @@ class ServicoManifestacaoNFe:
             "motivo": ultimo_motivo,
             "bloqueado_ate": bloqueado_ate,
             "bloqueado_ate_formatado": _data_humana(_ler_data_iso(bloqueado_ate)),
+        }
+
+    def diagnostico(self, empresa_id: int) -> dict:
+        """Monta um diagnóstico local sem consumir uma nova consulta DF-e."""
+        empresa = self.obter_empresa(empresa_id)
+        if not empresa:
+            raise ValueError("Empresa não encontrada.")
+
+        ambiente = str(empresa.get("ambiente") or "PRODUCAO").upper()
+        cnpj = str(empresa.get("cnpj") or "")
+        config = self.status_sincronizacao(empresa_id)
+        cert = Path(empresa.get("certificado_path") or "")
+        cert_ok = cert.is_file()
+        ultima = _ler_data_iso(config.get("ultima_consulta_em", ""))
+        ultimo_nsu = int(config.get("ultimo_nsu") or 0)
+        max_nsu = int(config.get("max_nsu") or 0)
+        cstat = str(config.get("ultimo_cstat") or "").strip()
+        motivo = str(config.get("ultimo_motivo") or "").strip()
+        faltantes = max(0, max_nsu - ultimo_nsu) if max_nsu else 0
+        notas_locais = len(self.repo.listar_notas(cnpj, ambiente))
+
+        if not cert_ok:
+            situacao = "CERTIFICADO A1 NÃO ENCONTRADO"
+            orientacao = (
+                "Atualize o certificado A1 na aba NFS-e Nacional antes de tentar sincronizar."
+            )
+        elif config.get("bloqueado"):
+            situacao = "CONSULTA PROTEGIDA"
+            orientacao = (
+                "Aguarde o horário de liberação indicado abaixo. O FiscalPro está impedindo "
+                "uma nova consulta para evitar cStat 656 (Consumo Indevido)."
+            )
+        elif cstat == "CONEXAO":
+            situacao = "FALHA DE CONEXÃO / SERVIÇO"
+            orientacao = (
+                "A última tentativa não conseguiu completar a comunicação com o Ambiente Nacional. "
+                "Isso pode ocorrer por indisponibilidade, timeout, rede, TLS ou resposta HTTP do serviço."
+            )
+        elif cstat == "ERRO_LOCAL":
+            situacao = "ERRO LOCAL"
+            orientacao = (
+                "A comunicação foi interrompida por um erro local do FiscalPro/Windows. "
+                "Use o detalhe abaixo para identificar a causa."
+            )
+        elif cstat == "656":
+            situacao = "CONSUMO INDEVIDO"
+            orientacao = (
+                "Não faça novas tentativas até a liberação. Se outro sistema também consulta DF-e "
+                "desse CNPJ, ele precisa respeitar a mesma sequência de NSU."
+            )
+        elif cstat == "137":
+            situacao = "SEM NOVOS DOCUMENTOS NA ÚLTIMA CONSULTA"
+            orientacao = (
+                "A SEFAZ informou que não havia novos documentos naquele momento. "
+                "Se a proteção de 1 hora já terminou, uma nova sincronização pode ser feita."
+            )
+        elif cstat == "138":
+            situacao = "DOCUMENTOS LOCALIZADOS"
+            if max_nsu and ultimo_nsu < max_nsu:
+                orientacao = (
+                    f"Ainda existem aproximadamente {faltantes} NSU(s) entre o último NSU salvo "
+                    "e o máximo informado. Sincronize novamente quando o botão estiver liberado."
+                )
+            else:
+                orientacao = "A última consulta retornou documentos e alcançou o ponto informado pela SEFAZ."
+        elif cstat:
+            situacao = f"RETORNO cStat {cstat}"
+            orientacao = "Confira o motivo retornado pela SEFAZ antes de repetir a consulta."
+        else:
+            situacao = "SEM CONSULTA REGISTRADA"
+            orientacao = "Ainda não há retorno de sincronização gravado para este CNPJ/ambiente."
+
+        proxima = str(config.get("bloqueado_ate_formatado") or "").strip()
+        linhas = [
+            "FISCALPRO • DIAGNÓSTICO DA MANIFESTAÇÃO / DISTRIBUIÇÃO DF-e",
+            "",
+            f"Empresa: {empresa.get('nome') or '—'}",
+            f"CNPJ: {cnpj or '—'}",
+            f"Ambiente: {ambiente}",
+            f"UF autora: {config.get('uf_autor') or '—'}",
+            f"Certificado A1: {'OK' if cert_ok else 'NÃO ENCONTRADO'}",
+            f"Arquivo do certificado: {cert.name if cert.name else '—'}",
+            "",
+            f"Situação: {situacao}",
+            f"Última tentativa: {_data_humana(ultima) or '—'}",
+            f"Último cStat: {cstat or '—'}",
+            f"Motivo/erro: {motivo or '—'}",
+            f"Último NSU: {ultimo_nsu:015d}",
+            f"Máximo NSU: {max_nsu:015d}",
+            f"NF-e armazenadas localmente: {notas_locais}",
+            f"Consulta protegida agora: {'SIM' if config.get('bloqueado') else 'NÃO'}",
+            f"Próxima consulta permitida: {proxima or '—'}",
+            "",
+            "Orientação:",
+            orientacao,
+            "",
+            "Este diagnóstico é local e NÃO faz uma nova consulta à SEFAZ.",
+        ]
+        return {
+            "situacao": situacao,
+            "orientacao": orientacao,
+            "cstat": cstat,
+            "motivo": motivo,
+            "ultimo_nsu": ultimo_nsu,
+            "max_nsu": max_nsu,
+            "bloqueado": bool(config.get("bloqueado")),
+            "proxima_consulta": proxima,
+            "certificado_ok": cert_ok,
+            "texto": "\n".join(linhas),
         }
 
     def listar_notas(self, empresa_id: int, busca: str = "", manifestacao: str = "TODAS"):
