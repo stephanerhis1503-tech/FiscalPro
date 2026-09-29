@@ -1,0 +1,32 @@
+FISCALPRO — HOTFIX 17.8.71
+RESUMO VISÍVEL EM TELAS BAIXAS
+
+Objetivo
+Corrigir a compressão vertical da aba "Resumo da análise" que escondia os
+valores dos cartões em telas de notebook, especialmente em 1366x768.
+
+O que foi corrigido
+- cabeçalho e formulário superior compactados;
+- orientação do motor condicional reduzida a uma linha;
+- cartões do Resumo priorizados em telas com até 820 pixels de altura;
+- valores e alertas de PIS/COFINS, ICMS-ST, ICMS/CFOP, IPI e Segurança visíveis;
+- dica redundante abaixo dos cartões ocultada somente nas telas baixas.
+
+O que foi preservado
+- campo "Finalidade para ICMS-ST";
+- botão e janela "Ampliar detalhes";
+- decisão do ICMS-ST em SIM, NÃO fundamentado ou CONDICIONAL;
+- NCM 85444200 — cabo do motor de partida;
+- NCM 85452000 — escova do motor de partida;
+- NCM 90268000 — sensor híbrido;
+- NCM 85365090 — CEST específico 01.065.00;
+- bancos de dados e cadastros do usuário.
+
+INSTALAÇÃO
+1. Feche o FiscalPro.
+2. Descompacte o arquivo.
+3. Execute INSTALAR_HOTFIX.bat.
+4. Selecione a pasta principal do FiscalPro 17.8.70.
+5. Abra o sistema e confirme a versão 17.8.71.
+
+O pacote é cumulativo em relação à 17.8.70 e não altera bancos de dados.

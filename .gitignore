@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+
+# Banco SQLite temporário
+*.db-journal
+
+# Logs
+*.log
+
+# Arquivos temporários
+*.tmp
+*.temp
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+
+# Arquivos grandes de exemplo
+samples/*.zip
+
+# Builds
+dist/
+build/
+# Robô FiscalPro — credenciais privadas
+credentials*.json
+client_secret*.json
+dados/robo_email/config.json
+dados/robo_email/token_gmail.json
+dados/robo_email/*.db
+dados/robo_email/*.db-journal
+
+# Ambiente/build do instalador
+.venv_instalador/
+instalador/saida/
+build/pyinstaller/
+
+# Dados locais do usuário (templates e bases oficiais continuam versionáveis)
+/fiscalpro.db
+/dados/entregas/
+/dados/financeiro/
+/dados/robo_email/
+/dados/seguranca/
+/dados/tributacao.db
+/backups/
+/logs/
+/reports/
+/exports/
+
+# Pastas locais extras
+.build_venv/
+backups_codigo/
+
+# Certificados e segredos
+*.pfx
+*.p12
+*.pem
+*.key
+.env
+
+# Executáveis gerados
+*.exe
+*.msi
+
+# Bancos operacionais NF-e / NFS-e
+/dados/nfse/*.db
+/dados/nfe/*.db

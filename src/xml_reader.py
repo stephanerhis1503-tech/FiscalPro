@@ -1,7 +1,7 @@
 """
 =========================================
 FiscalPro
-Versão: 0.5.1
+Versão: 0.7.0
 
 Leitor de XML de CT-e
 =========================================
@@ -9,6 +9,8 @@ Leitor de XML de CT-e
 
 import os
 import xml.etree.ElementTree as ET
+from src.core.logger import logger
+from src.core.config import ENCODING
 
 
 class XMLReader:
@@ -16,20 +18,18 @@ class XMLReader:
     def __init__(self, pasta):
 
         self.pasta = pasta
-
         self.xmls = {}
-
         self.total_xml = 0
-
         self.erros = 0
 
     def carregar(self):
 
         self.xmls.clear()
-
         self.total_xml = 0
-
         self.erros = 0
+
+        if not os.path.isdir(self.pasta):
+            return self.xmls
 
         for arquivo in os.listdir(self.pasta):
 
@@ -41,38 +41,53 @@ class XMLReader:
             try:
 
                 tree = ET.parse(caminho)
-
                 root = tree.getroot()
 
-                chave = None
-                numero = None
+                chave = ""
+                numero = ""
+                serie = ""
+                cnpj = ""
 
                 for elemento in root.iter():
 
-                    if elemento.tag.endswith("infCte"):
+                    tag = elemento.tag.split("}")[-1]
+
+                    if tag == "infCte":
 
                         chave = elemento.attrib.get("Id", "")
 
                         if chave.startswith("CTe"):
-
                             chave = chave[3:]
 
-                    elif elemento.tag.endswith("nCT"):
+                    elif tag == "nCT":
 
-                        numero = elemento.text
+                        numero = (elemento.text or "").strip()
 
-                if numero and chave:
+                    elif tag == "serie":
+
+                        serie = (elemento.text or "").strip()
+
+                    elif tag == "CNPJ" and not cnpj:
+
+                        cnpj = (elemento.text or "").strip()
+
+                if numero:
 
                     self.xmls[numero] = {
+                        "numero": numero,
+                        "serie": serie,
                         "chave": chave,
-                        "arquivo": arquivo
+                        "cnpj": cnpj,
+                        "arquivo": arquivo,
+                        "caminho": caminho
                     }
 
                     self.total_xml += 1
 
-            except Exception:
+            except Exception as erro:
 
                 self.erros += 1
+                logger.error(f"Erro ao ler XML '{arquivo}': {erro}")
 
         return self.xmls
 

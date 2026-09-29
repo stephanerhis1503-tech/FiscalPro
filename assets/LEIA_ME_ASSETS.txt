@@ -1,0 +1,7 @@
+FiscalPro — identidade visual oficial
+
+fiscalpro.ico: ícone do Windows e do futuro instalador.
+fiscalpro_mark_*.png: monograma para telas e atalhos.
+fiscalpro_logo_about.png: logotipo ajustado para a janela Sobre.
+fiscalpro_logo_horizontal.png: logotipo para telas claras.
+fiscalpro_logo_horizontal_white.png: logotipo para fundos escuros.

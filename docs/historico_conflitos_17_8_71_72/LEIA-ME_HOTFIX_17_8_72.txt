@@ -1,0 +1,32 @@
+FISCALPRO — HOTFIX 17.8.72
+FINALIDADE AUTOMOTIVA NO XML DE ICMS-ST
+
+Objetivo
+Levar ao módulo XML → ICMS-ST a mesma decisão por finalidade automotiva já
+usada pela Ficha Inteligente, eliminando divergências e preenchimento manual
+repetitivo de MVA.
+
+Correções deste hotfix
+- CEST 10.075.00 não é aplicado a fechaduras/travas de uso automotivo;
+- travas de banco/lateral de BIZ, CG e TITAN usam o residual 01.999.00;
+- NCM 85444200 reconhece CAB.MOT.PART. e CAB.BAT.POS. como cabos de moto;
+- CEST residual 01.999.00 recebe MVA original de 71,78%;
+- MVA ajustada continua sendo calculada conforme a rota e alíquotas da tela;
+- ajuste individual passa a oferecer "Finalidade para ICMS-ST";
+- descrição genérica continua condicional, sem inventar enquadramento;
+- CEST 01.073.00 do NCM 85443000 e CEST 01.065.00 do NCM 85365090 preservados.
+
+Validação da imagem enviada
+- itens 9 e 10: de 10.075.00 para 01.999.00;
+- itens 11, 13 e 14: 01.999.00 + MVA original 71,78%;
+- item 12: preservado em 01.073.00;
+- item 15: preservado em 01.065.00.
+
+INSTALAÇÃO
+1. Feche o FiscalPro.
+2. Descompacte o arquivo.
+3. Execute INSTALAR_HOTFIX.bat.
+4. Selecione a pasta principal do FiscalPro 17.8.71.
+5. Abra novamente o XML e confirme a versão 17.8.72.
+
+O pacote é cumulativo e não altera bancos de dados ou cadastros.

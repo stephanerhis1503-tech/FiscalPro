@@ -1,0 +1,57 @@
+from dataclasses import dataclass
+
+
+@dataclass
+class RegraTributaria:
+
+    id: int | None = None
+
+    nome: str = ""
+
+    empresa: str = ""
+
+    segmento: str = ""
+
+    uf: str = ""
+
+    regime: str = ""
+
+    operacao: str = ""
+
+    cfop: str = ""
+
+    ncm: str = ""
+
+    cest: str = ""
+
+    prioridade: int = 0
+
+    cst_pis: str = ""
+
+    cst_cofins: str = ""
+
+    aliquota_pis: float = 0.0
+
+    aliquota_cofins: float = 0.0
+
+    icms: float = 0.0
+
+    icms_st: bool = False
+
+    fcp: float = 0.0
+
+    ipi: float = 0.0
+
+    beneficio: str = ""
+
+    fundamento: list[str] | None = None
+
+    observacao: str = ""
+
+    ativa: bool = True
+
+    def __post_init__(self):
+
+        if self.fundamento is None:
+
+            self.fundamento = []

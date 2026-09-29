@@ -1,7 +1,7 @@
 """
 =========================================
 FiscalPro
-Versão 0.5.0
+Versão 0.7.0
 
 Corretor Automático de CHV_CTE
 =========================================
@@ -17,6 +17,7 @@ class CorretorCTe:
 
         self.corrigidos = 0
         self.nao_encontrados = 0
+        self.relatorio = []
 
     def corrigir(self):
 
@@ -25,30 +26,37 @@ class CorretorCTe:
         for linha in self.linhas:
 
             if not linha.startswith("|D100|"):
-
                 novo_sped.append(linha)
                 continue
 
-            campos = linha.strip().split("|")
+            campos = linha.rstrip("\n").split("|")
+
+            if len(campos) <= 10:
+                novo_sped.append(linha)
+                continue
 
             numero_cte = campos[9]
-
             chave_sped = campos[10]
 
-            chave_xml = self.xmls.get(numero_cte)
+            xml = self.xmls.get(numero_cte)
 
-            if chave_xml is None:
-
+            if xml is None:
                 self.nao_encontrados += 1
-
                 novo_sped.append(linha)
-
                 continue
 
-            if chave_xml != chave_sped:
+            chave_xml = xml["chave"]
+
+            if chave_xml and chave_xml != chave_sped:
+
+                self.relatorio.append({
+                    "numero": numero_cte,
+                    "antes": chave_sped,
+                    "depois": chave_xml,
+                    "arquivo": xml["arquivo"]
+                })
 
                 campos[10] = chave_xml
-
                 linha = "|".join(campos) + "\n"
 
                 self.corrigidos += 1
@@ -56,3 +64,6 @@ class CorretorCTe:
             novo_sped.append(linha)
 
         return novo_sped
+
+    def obter_relatorio(self):
+        return self.relatorio

@@ -10,6 +10,7 @@ from collections import Counter
 
 from src.validadores.validador_0200 import Validador0200
 from src.validadores.validador_c170 import ValidadorC170
+from src.validadores.validador_escrituracao import ValidadorEscrituracao
 
 
 class AuditorFiscal:
@@ -40,8 +41,16 @@ class AuditorFiscal:
         auditor_c170 = ValidadorC170(self.linhas)
         resultado_c170 = auditor_c170.validar()
 
-        return {
+        # Auditoria da Escrituração
+        auditor_escrituracao = ValidadorEscrituracao(self.linhas)
+        resultado_escrituracao = auditor_escrituracao.validar()
+
+        retorno = {
             "registros": self.registros,
             "auditoria_0200": resultado_0200,
-            "auditoria_c170": resultado_c170
+            "auditoria_c170": resultado_c170,
         }
+
+        retorno.update(resultado_escrituracao)
+
+        return retorno
