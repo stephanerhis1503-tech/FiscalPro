@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, RIGHT, X, Y, Frame, Label, StringVar, Entry, Text
+from tkinter import BOTH, END, LEFT, RIGHT, X, Y, Frame, Label, StringVar, Entry, Text, Toplevel
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from src.nfe.assinatura import DESCRICOES_EVENTO
@@ -128,6 +128,11 @@ class PainelManifestacaoNFe(ttk.Frame):
               font=("Segoe UI", 8), justify=LEFT).pack(side=LEFT, fill=X, expand=True)
         ttk.Button(status, text="Atualizar empresas", command=self._carregar_empresas,
                    style="Secondary.TButton").pack(side=RIGHT)
+        self.btn_diagnostico = ttk.Button(
+            status, text="Diagnóstico", command=self._mostrar_diagnostico,
+            style="Secondary.TButton"
+        )
+        self.btn_diagnostico.pack(side=RIGHT, padx=(0, 6))
 
         filtros = self._card(self)
         filtros.pack(fill=X, padx=10, pady=(0, 6))
@@ -300,9 +305,12 @@ class PainelManifestacaoNFe(ttk.Frame):
         self.var_uf.set(config.get("uf_autor") or "MG")
         cert = Path(empresa.get("certificado_path") or "")
         cert_txt = cert.name if cert.name else "não informado"
+        cstat = str(config.get("ultimo_cstat") or "").strip()
+        retorno = f" • Último retorno: {cstat}" if cstat else ""
         self.var_status.set(
             f"Ambiente: {empresa.get('ambiente','PRODUCAO')} • Certificado: {cert_txt} • "
             f"NSU: {int(config.get('ultimo_nsu') or 0):015d} / {int(config.get('max_nsu') or 0):015d}"
+            f"{retorno}"
         )
         self._consultar_local()
         self._atualizar_bloqueio_ui()
@@ -462,8 +470,9 @@ class PainelManifestacaoNFe(ttk.Frame):
         self._ocupado = ocupado
         estado = "disabled" if ocupado else "normal"
         for botao in (
-            self.btn_sincronizar, self.btn_ciencia, self.btn_confirmar, self.btn_desconhecer,
-            self.btn_nao_realizada, self.btn_xml, self.btn_xml_todos, self.btn_pasta_xml,
+            self.btn_sincronizar, self.btn_diagnostico, self.btn_ciencia, self.btn_confirmar,
+            self.btn_desconhecer, self.btn_nao_realizada, self.btn_xml, self.btn_xml_todos,
+            self.btn_pasta_xml,
         ):
             try:
                 botao.configure(state=estado)
@@ -494,6 +503,66 @@ class PainelManifestacaoNFe(ttk.Frame):
         mensagem = str(exc) or exc.__class__.__name__
         self.var_status.set(mensagem)
         messagebox.showerror("NF-e / Manifestação", mensagem, parent=self)
+
+    def _mostrar_diagnostico(self):
+        empresa = self._empresa_selecionada()
+        if not empresa:
+            messagebox.showwarning(
+                "NF-e / Manifestação",
+                "Selecione uma empresa para gerar o diagnóstico.",
+                parent=self,
+            )
+            return
+        try:
+            dados = self.servico.diagnostico(int(empresa["id"]))
+        except Exception as exc:
+            messagebox.showerror(
+                "Diagnóstico da Manifestação",
+                str(exc) or exc.__class__.__name__,
+                parent=self,
+            )
+            return
+
+        texto = str(dados.get("texto") or "")
+        janela = Toplevel(self)
+        janela.title("Diagnóstico • NF-e / Manifestação")
+        janela.geometry("760x520")
+        janela.minsize(650, 420)
+        janela.transient(self.winfo_toplevel())
+
+        corpo = ttk.Frame(janela, padding=12)
+        corpo.pack(fill=BOTH, expand=True)
+        ttk.Label(
+            corpo,
+            text="Diagnóstico da Distribuição DF-e",
+            font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w")
+        ttk.Label(
+            corpo,
+            text="Leitura local do FiscalPro — esta tela não consome uma nova consulta à SEFAZ.",
+        ).pack(anchor="w", pady=(2, 8))
+
+        area = Frame(corpo)
+        area.pack(fill=BOTH, expand=True)
+        txt = Text(area, wrap="word", font=("Consolas", 9), relief="solid", bd=1)
+        barra = ttk.Scrollbar(area, orient="vertical", command=txt.yview)
+        txt.configure(yscrollcommand=barra.set)
+        txt.pack(side=LEFT, fill=BOTH, expand=True)
+        barra.pack(side=RIGHT, fill=Y)
+        txt.insert("1.0", texto)
+        txt.configure(state="disabled")
+
+        botoes = ttk.Frame(corpo)
+        botoes.pack(fill=X, pady=(10, 0))
+
+        def copiar():
+            janela.clipboard_clear()
+            janela.clipboard_append(texto)
+            janela.update()
+            self.var_status.set("Diagnóstico copiado para a área de transferência.")
+
+        ttk.Button(botoes, text="Copiar diagnóstico", command=copiar).pack(side=LEFT)
+        ttk.Button(botoes, text="Fechar", command=janela.destroy).pack(side=RIGHT)
 
     def _sincronizar(self):
         empresa = self._empresa_selecionada()
