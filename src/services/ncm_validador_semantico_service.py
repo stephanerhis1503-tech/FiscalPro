@@ -197,17 +197,21 @@ class NCMValidadorSemanticoService:
                 tokens.append(raiz)
 
         if produto:
-            # Detecta contexto de motocicleta sem depender do NCM atual.
+            # As pistas semânticas entram logo após os dois primeiros termos
+            # comerciais, para não serem soterradas por modelo/cor/acabamento.
+            extras: List[str] = []
             brutos = {cls._raiz_token(t) for t in normalizado.split()}
             if brutos.intersection(cls._MODELOS_MOTOCICLETA):
-                tokens.append("MOTOCICLETA")
-            # Expressões de balcão muito comuns ganham conceitos, não NCMs.
+                extras.append("MOTOCICLETA")
+            # Expressões de balcão ganham conceitos funcionais, nunca NCMs.
             if "CAPA BANCO" in normalizado:
-                tokens.extend(("ASSENTO", "MOTOCICLETA"))
+                extras.extend(("ASSENTO", "MOTOCICLETA"))
             if "BOIA TANQUE" in normalizado:
-                tokens.extend(("NIVEL", "COMBUSTIVEL"))
+                extras.extend(("NIVEL", "COMBUSTIVEL"))
             if "PASTILHA FREIO" in normalizado:
-                tokens.extend(("GUARNICAO", "FREIO"))
+                extras.extend(("GUARNICAO", "FREIO"))
+            if extras:
+                tokens = tokens[:2] + extras + tokens[2:]
 
         # Preserva ordem e evita que repetições dominem a pontuação.
         unicos: List[str] = []
