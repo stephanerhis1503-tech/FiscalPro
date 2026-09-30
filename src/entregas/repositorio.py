@@ -45,6 +45,7 @@ class EntregasRepositorio:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     nome TEXT NOT NULL COLLATE NOCASE UNIQUE,
                     cnpj TEXT NOT NULL DEFAULT '',
+                    tipo_pessoa TEXT NOT NULL DEFAULT 'PJ',
                     ativa INTEGER NOT NULL DEFAULT 1,
                     manual INTEGER NOT NULL DEFAULT 0,
                     criado_em TEXT NOT NULL DEFAULT ''
@@ -137,6 +138,16 @@ class EntregasRepositorio:
                 conexao.execute(
                     "ALTER TABLE empresas_entregas ADD COLUMN manual INTEGER NOT NULL DEFAULT 0"
                 )
+            if "tipo_pessoa" not in colunas_empresas:
+                conexao.execute(
+                    "ALTER TABLE empresas_entregas ADD COLUMN tipo_pessoa TEXT NOT NULL DEFAULT 'PJ'"
+                )
+                # Compatibilidade: se alguma instalação já tiver documento com
+                # 11 dígitos, ele passa a ser reconhecido como pessoa física.
+                conexao.execute(
+                    "UPDATE empresas_entregas SET tipo_pessoa = 'PF' "
+                    "WHERE LENGTH(TRIM(COALESCE(cnpj, ''))) = 11"
+                )
 
             colunas_entregas = {
                 str(linha["name"])
@@ -163,14 +174,18 @@ class EntregasRepositorio:
         nome: str,
         cnpj: str = "",
         regime: str = "",
+        tipo_pessoa: str = "PJ",
         *,
         manual: bool = False,
     ) -> int:
         nome = " ".join((nome or "").strip().split())
         if not nome:
-            raise ValueError("Informe o nome da empresa.")
+            raise ValueError("Informe o nome da empresa/pessoa.")
         cnpj = "".join(ch for ch in (cnpj or "") if ch.isdigit())
         regime = " ".join((regime or "").strip().upper().split())
+        tipo_pessoa = str(tipo_pessoa or "PJ").strip().upper()
+        if tipo_pessoa not in {"PJ", "PF"}:
+            tipo_pessoa = "PJ"
         agora = self._agora()
         with self._conectar() as conexao:
             existente = conexao.execute(
@@ -184,41 +199,74 @@ class EntregasRepositorio:
                        SET ativa = 1,
                            cnpj = CASE WHEN ? <> '' THEN ? ELSE cnpj END,
                            regime = CASE WHEN ? <> '' THEN ? ELSE regime END,
+                           tipo_pessoa = ?,
                            manual = CASE WHEN ? = 1 THEN 1 ELSE manual END
                      WHERE id = ?
                     """,
-                    (cnpj, cnpj, regime, regime, int(bool(manual)), int(existente["id"])),
+                    (
+                        cnpj, cnpj, regime, regime, tipo_pessoa,
+                        int(bool(manual)), int(existente["id"]),
+                    ),
                 )
                 return int(existente["id"])
             cursor = conexao.execute(
-                "INSERT INTO empresas_entregas(nome, cnpj, regime, ativa, manual, criado_em) "
-                "VALUES (?, ?, ?, 1, ?, ?)",
-                (nome, cnpj, regime, int(bool(manual)), agora),
+                "INSERT INTO empresas_entregas(nome, cnpj, regime, tipo_pessoa, ativa, manual, criado_em) "
+                "VALUES (?, ?, ?, ?, 1, ?, ?)",
+                (nome, cnpj, regime, tipo_pessoa, int(bool(manual)), agora),
             )
             return int(cursor.lastrowid)
 
-    def listar_empresas(self, incluir_inativas: bool = False) -> list[sqlite3.Row]:
-        where = "" if incluir_inativas else "WHERE ativa = 1"
+    def listar_empresas(
+        self,
+        incluir_inativas: bool = False,
+        incluir_pessoas_fisicas: bool = False,
+    ) -> list[sqlite3.Row]:
+        filtros: list[str] = []
+        if not incluir_inativas:
+            filtros.append("ativa = 1")
+        if not incluir_pessoas_fisicas:
+            filtros.append("COALESCE(tipo_pessoa, 'PJ') <> 'PF'")
+        where = f"WHERE {' AND '.join(filtros)}" if filtros else ""
         with self._conectar() as conexao:
             return list(
                 conexao.execute(
-                    f"SELECT id, nome, cnpj, regime, ativa, manual FROM empresas_entregas {where} ORDER BY nome"
+                    f"SELECT id, nome, cnpj, regime, tipo_pessoa, ativa, manual "
+                    f"FROM empresas_entregas {where} ORDER BY nome"
                 ).fetchall()
             )
 
     def obter_empresa_por_nome(self, nome: str) -> sqlite3.Row | None:
         with self._conectar() as conexao:
             return conexao.execute(
-                "SELECT id, nome, cnpj, regime, ativa, manual FROM empresas_entregas WHERE nome = ? COLLATE NOCASE",
+                "SELECT id, nome, cnpj, regime, tipo_pessoa, ativa, manual "
+                "FROM empresas_entregas WHERE nome = ? COLLATE NOCASE",
                 ((nome or "").strip(),),
             ).fetchone()
 
     def obter_empresa_por_id(self, empresa_id: int) -> sqlite3.Row | None:
         with self._conectar() as conexao:
             return conexao.execute(
-                "SELECT id, nome, cnpj, regime, ativa, manual "
+                "SELECT id, nome, cnpj, regime, tipo_pessoa, ativa, manual "
                 "FROM empresas_entregas WHERE id = ?",
                 (int(empresa_id),),
+            ).fetchone()
+
+    def obter_empresa_por_documento(
+        self, documento: str, *, excluir_id: int | None = None
+    ) -> sqlite3.Row | None:
+        documento = "".join(ch for ch in str(documento or "") if ch.isdigit())
+        if not documento:
+            return None
+        parametros: list[object] = [documento]
+        filtro = "cnpj = ?"
+        if excluir_id is not None:
+            filtro += " AND id <> ?"
+            parametros.append(int(excluir_id))
+        with self._conectar() as conexao:
+            return conexao.execute(
+                "SELECT id, nome, cnpj, regime, tipo_pessoa, ativa, manual "
+                f"FROM empresas_entregas WHERE {filtro} LIMIT 1",
+                parametros,
             ).fetchone()
 
     def atualizar_empresa(
@@ -228,12 +276,16 @@ class EntregasRepositorio:
         nome: str,
         cnpj: str = "",
         regime: str = "",
+        tipo_pessoa: str = "PJ",
     ) -> None:
         nome = " ".join((nome or "").strip().split())
         if not nome:
-            raise ValueError("Informe o nome da empresa.")
+            raise ValueError("Informe o nome da empresa/pessoa.")
         cnpj = "".join(ch for ch in (cnpj or "") if ch.isdigit())
         regime = " ".join((regime or "").strip().upper().split()) or "A DEFINIR"
+        tipo_pessoa = str(tipo_pessoa or "PJ").strip().upper()
+        if tipo_pessoa not in {"PJ", "PF"}:
+            tipo_pessoa = "PJ"
         with self._conectar() as conexao:
             conflito = conexao.execute(
                 "SELECT id FROM empresas_entregas "
@@ -241,15 +293,34 @@ class EntregasRepositorio:
                 (nome, int(empresa_id)),
             ).fetchone()
             if conflito:
-                raise ValueError("Já existe outra empresa cadastrada com esse nome.")
+                raise ValueError("Já existe outro cadastro com esse nome.")
             conexao.execute(
                 """
                 UPDATE empresas_entregas
-                   SET nome = ?, cnpj = ?, regime = ?, ativa = 1
+                   SET nome = ?, cnpj = ?, regime = ?, tipo_pessoa = ?, ativa = 1
                  WHERE id = ?
                 """,
-                (nome, cnpj, regime, int(empresa_id)),
+                (nome, cnpj, regime, tipo_pessoa, int(empresa_id)),
             )
+
+    def excluir_empresa(self, empresa_id: int) -> None:
+        """Exclui o cadastro central quando não há entregas históricas vinculadas."""
+        with self._conectar() as conexao:
+            empresa = conexao.execute(
+                "SELECT id FROM empresas_entregas WHERE id = ?", (int(empresa_id),)
+            ).fetchone()
+            if empresa is None:
+                raise ValueError("Cadastro não localizado.")
+            vinculadas = conexao.execute(
+                "SELECT COUNT(*) AS total FROM entregas_arquivos WHERE empresa_id = ?",
+                (int(empresa_id),),
+            ).fetchone()
+            if int(vinculadas["total"] or 0):
+                raise ValueError(
+                    "Este cadastro possui entregas históricas vinculadas e não pode ser excluído. "
+                    "Use Ativar / Desativar para preservar o histórico."
+                )
+            conexao.execute("DELETE FROM empresas_entregas WHERE id = ?", (int(empresa_id),))
 
     def atualizar_regime_empresa(self, empresa_id: int, regime: str) -> None:
         regime = " ".join((regime or "").strip().upper().split()) or "A DEFINIR"
