@@ -1,5 +1,12 @@
 """Auditoria tributária de cadastro de produtos importado de planilha Excel.
 
+Versão 18.2.22
+---------------
+- Adiciona validação semântica geral contra todo o catálogo NCM/TIPI oficial.
+- Um NCM de 8 dígitos deixa de ser aceito apenas pela forma quando existe evidência oficial melhor.
+- Candidatos fortes recalculam a tributação provisoriamente; candidatos ambíguos permanecem REVISAR.
+- Divergências tributárias não viram CORRIGIR enquanto o próprio NCM estiver semanticamente em revisão.
+
 Versão 18.2.21
 ---------------
 - Corrige o progresso da auditoria quando o Excel informa max_row incorreto em leitura rápida.
