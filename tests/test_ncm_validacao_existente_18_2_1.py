@@ -30,6 +30,9 @@ def test_ncm_valido_mas_outlier_da_familia_sanfona_circuit(tmp_path):
         ["S4", "SANFONA BENG. 21D VERM (CIRCUIT)", "87141000", ""],
         ["S5", "SANFONA BENG. 24D PTO (CIRCUIT)", "87141000", ""],
         ["S6", "SANFONA BENG. 32D VERM (CIRCUIT)", "87141000", ""],
+        ["S7", "SANFONA BENG. 35D PTO (CIRCUIT)", "87141000", ""],
+        ["S8", "SANFONA BENG. 41D VERM (CIRCUIT)", "87141000", ""],
+        ["S9", "SANFONA BENG. 45D PTO (CIRCUIT)", "87141000", ""],
         ["ERRO", "SANFONA BENG. 24D VERM (CIRCUIT)", "33030010", ""],
     ]
     wb, indice = _indice(tmp_path, linhas)
