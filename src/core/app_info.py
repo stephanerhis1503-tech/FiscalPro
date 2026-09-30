@@ -1,5 +1,12 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.22 — Motor Semântico Nacional de NCM:
+- confronta todo NCM preenchido com o catálogo NCM/TIPI oficial instalado;
+- procura candidatos em toda a nomenclatura, sem tabela fixa peça→NCM;
+- usa equivalências de linguagem comercial apenas para aproximar descrições, nunca para definir NCM diretamente;
+- NCM duvidoso bloqueia correções tributárias derivadas até revisão;
+- candidatos fortes recalculam a tributação somente de forma provisória e permanecem REVISAR.
+
 Versão 18.2.21 — Progresso confiável na Auditoria Excel:
 - corrige o contador quando o XLSX informa dimensão/max_row incorreta;
 - a porcentagem usa a quantidade real de itens encontrados na planilha;
@@ -783,9 +790,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.21"
+VERSAO_APP = "18.2.22"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.21.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.22.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
