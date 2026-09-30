@@ -1,5 +1,11 @@
 """Auditoria tributária de cadastro de produtos importado de planilha Excel.
 
+Versão 18.2.21
+---------------
+- Corrige o progresso da auditoria quando o Excel informa max_row incorreto em leitura rápida.
+- O total passa a vir das linhas reais encontradas durante a construção do índice.
+- A detecção de colunas percentuais deixa de depender de max_row e amostra diretamente as primeiras linhas reais.
+
 Versão 18.2.1
 --------------
 - Audita também NCM válido porém semanticamente incompatível com a descrição.
@@ -273,6 +279,7 @@ class IndiceNCMDescricao:
     por_prefixo3: Dict[str, Counter] = field(default_factory=lambda: defaultdict(Counter))
     por_marca_prefixo2: Dict[tuple[str, str], Counter] = field(default_factory=lambda: defaultdict(Counter))
     amostra_prefixo: Dict[tuple[str, str], str] = field(default_factory=dict)
+    total_linhas: int = 0
 
 
 @dataclass
@@ -849,12 +856,12 @@ class AuditoriaCadastrosExcelService:
         if not pendentes:
             return resultado
 
-        limite = min(int(ws.max_row or 1), 102)
-        if limite < 2:
-            return resultado
-
-        for linha in ws.iter_rows(min_row=2, max_row=limite):
-            if not pendentes:
+        # Alguns XLSX gerados por sistemas/exports trazem dimensão da planilha
+        # incorreta (ex.: max_row=1) mesmo contendo milhares de linhas. A leitura
+        # principal do openpyxl ainda enxerga os registros; por isso a amostra
+        # não deve depender de max_row.
+        for numero_amostra, linha in enumerate(ws.iter_rows(min_row=2), start=1):
+            if numero_amostra > 100 or not pendentes:
                 break
             resolvidos = []
             for campo in pendentes:
@@ -893,11 +900,20 @@ class AuditoriaCadastrosExcelService:
         indice = IndiceNCMDescricao()
         for linha in ws.iter_rows(min_row=2, values_only=True):
             ncm = _ncm(cls._valor(linha, cabecalhos, "ncm"))
+            descricao = _texto(cls._valor(linha, cabecalhos, "descricao"))
+            codigo_bruto = _texto(cls._valor(linha, cabecalhos, "codigo"))
+            cest = _cest(cls._valor(linha, cabecalhos, "cest"))
+
+            # Conta exatamente as mesmas linhas que a rotina principal considera
+            # itens auditáveis. Isso evita total 0 quando a dimensão XML do XLSX
+            # está incorreta, sem fazer uma terceira varredura completa na planilha.
+            if any((codigo_bruto, descricao, ncm, cest)):
+                indice.total_linhas += 1
+
             if not _ncm_valido(ncm):
                 continue
 
-            descricao = _texto(cls._valor(linha, cabecalhos, "descricao"))
-            codigo = _normalizar_texto(cls._valor(linha, cabecalhos, "codigo"))
+            codigo = _normalizar_texto(codigo_bruto)
             if cls._detectar_servico(descricao, codigo):
                 # Não aprende NCM a partir de mão de obra/serviço, mesmo que o
                 # cadastro antigo tenha um código fiscal preenchido indevidamente.
@@ -1401,9 +1417,10 @@ class AuditoriaCadastrosExcelService:
                 planilha=ws.title,
                 contexto=dict(contexto_final),
             )
-            total = max(0, (ws.max_row or 1) - 1)
             formatos_percentuais = cls._detectar_formatos_percentuais(ws, cabecalhos)
             indice_ncm_descricao = cls._construir_indice_ncm_descricao(ws, cabecalhos)
+            total = int(indice_ncm_descricao.total_linhas or max(0, (ws.max_row or 1) - 1))
+            processados = 0
 
             # Leitura rápida: valores puros, sem materializar objetos/estilos de
             # cada célula em todas as linhas. Em bases grandes faz diferença.
@@ -1415,6 +1432,7 @@ class AuditoriaCadastrosExcelService:
                 codigo_barras_atual = _texto(cls._valor(linha, cabecalhos, "codigo_barras"))
                 if not any((_texto(codigo), _texto(descricao), ncm_atual, cest_atual)):
                     continue
+                processados += 1
 
                 inferencia_ncm: Optional[InferenciaNCMDescricao] = None
                 candidatos_ncm: List[CandidatoNCMDescricao] = []
@@ -1493,8 +1511,8 @@ class AuditoriaCadastrosExcelService:
                         aliq_ipi=_percentual_valor(cls._valor(linha, cabecalhos, "aliq_ipi"), formatos_percentuais.get("aliq_ipi", False)),
                     )
                     resultado.itens.append(item_saida)
-                    if progresso and (indice % 250 == 0 or indice == total + 1):
-                        progresso(indice - 1, total, item_saida.descricao)
+                    if progresso and (processados % 250 == 0 or processados == total):
+                        progresso(processados, total, item_saida.descricao)
                     continue
 
                 bruto = ItemBrutoLote(
@@ -1556,8 +1574,8 @@ class AuditoriaCadastrosExcelService:
                         nat_receita_atual=originais["nat_receita"],
                     )
                 resultado.itens.append(item_saida)
-                if progresso and (indice % 250 == 0 or indice == total + 1):
-                    progresso(indice - 1, total, item_saida.descricao)
+                if progresso and (processados % 250 == 0 or processados == total):
+                    progresso(processados, total, item_saida.descricao)
 
             cls._marcar_codigos_inconsistentes(resultado.itens)
             return resultado
