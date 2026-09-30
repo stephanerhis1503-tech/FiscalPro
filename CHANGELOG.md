@@ -1,3 +1,11 @@
+## 18.2.21 — Progresso da Auditoria Excel
+- corrige o caso em que a tela mostrava `5999/0 (0%)` mesmo com a auditoria processando milhares de produtos;
+- deixa de usar `ws.max_row` como fonte principal do total quando o XLSX traz dimensão interna incorreta;
+- usa a quantidade real de linhas auditáveis encontrada na própria leitura do cadastro;
+- o contador passa a usar itens efetivamente processados, evitando percentuais distorcidos por linhas vazias;
+- a detecção de colunas formatadas como percentual também passa a funcionar mesmo quando `max_row` está incorreto;
+- adiciona teste de regressão específico para planilhas com dimensão inconsistente.
+
 ## 18.2.1 — Auditoria NCM por descrição/família
 - deixa de tratar todo NCM de 8 dígitos como automaticamente coerente com a mercadoria;
 - valida NCM já preenchido contra regras semânticas e consenso forte da mesma marca/família;
