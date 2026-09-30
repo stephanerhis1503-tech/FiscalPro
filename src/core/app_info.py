@@ -1,5 +1,10 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.21 — Progresso confiável na Auditoria Excel:
+- corrige o contador quando o XLSX informa dimensão/max_row incorreta;
+- a porcentagem usa a quantidade real de itens encontrados na planilha;
+- a leitura de formatação percentual também deixa de depender do max_row.
+
 Versão 18.2.20 — Cadastro PF, exclusão segura e bloqueio de duplicidade:
 - o Cadastro Central passa a aceitar Pessoa Jurídica (CNPJ) e Pessoa Física (CPF);
 - pessoas físicas ficam disponíveis no Contas a Pagar, sem entrar nos módulos fiscais, NF-e/NFS-e ou Controle de Entregas;
@@ -778,9 +783,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.20"
+VERSAO_APP = "18.2.21"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.20.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.21.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
