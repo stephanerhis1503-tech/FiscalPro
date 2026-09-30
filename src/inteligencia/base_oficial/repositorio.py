@@ -566,6 +566,29 @@ class BaseOficialRepository:
             conn.close()
 
     @staticmethod
+    def listar_ncm_oficiais() -> List[Dict[str, Any]]:
+        """Retorna o catálogo NCM oficial instalado para análise semântica em memória.
+
+        A auditoria em lote usa esta leitura única para comparar milhares de itens
+        sem executar uma consulta SQL por produto. O catálogo tem poucos milhares
+        de códigos e é seguro mantê-lo em memória durante a sessão.
+        """
+        BaseOficialRepository.preparar_banco()
+        conn = Banco.conectar()
+        try:
+            rows = conn.execute(
+                """
+                SELECT ncm, descricao, descricao_completa, descricao_busca, status,
+                       fonte_codigo, atualizado_em
+                  FROM ncm_oficial
+                 ORDER BY ncm
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
     def buscar_ncm_catalogo(termo: str, limite: int = 300) -> List[Dict[str, Any]]:
         """Pesquisa por código ou por todas as palavras da descrição oficial."""
         BaseOficialRepository.preparar_banco()

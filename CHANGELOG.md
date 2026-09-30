@@ -1,3 +1,14 @@
+## 18.2.22 — Motor Semântico Nacional de NCM
+- confronta cada NCM preenchido com o catálogo NCM/TIPI oficial instalado, em vez de validar apenas o formato de 8 dígitos;
+- monta um índice semântico em memória para auditar cadastros grandes sem consultar o SQLite item a item;
+- usa descrição/hierarquia oficial, sinônimos de linguagem comercial e pistas de função/aplicação para ranquear candidatos em toda a NCM;
+- equivalências de linguagem não contêm NCM e não funcionam como tabela fixa peça→classificação;
+- um candidato só substitui o NCM para simulação tributária quando supera o atual com margem mínima e segurança suficiente;
+- resultados ambíguos ficam em **REVISAR** com até três candidatos, sem inventar classificação;
+- enquanto o NCM estiver semanticamente em revisão, divergências de CEST/ST/FCP/IPI/ICMS/PIS/COFINS deixam de virar **CORRIGIR** com base em um código possivelmente errado;
+- preserva as regras semânticas específicas e o consenso forte já existentes como camada de maior prioridade;
+- atualiza o instalador padrão para 18.2.22.
+
 ## 18.2.21 — Progresso da Auditoria Excel
 - corrige o caso em que a tela mostrava `5999/0 (0%)` mesmo com a auditoria processando milhares de produtos;
 - deixa de usar `ws.max_row` como fonte principal do total quando o XLSX traz dimensão interna incorreta;

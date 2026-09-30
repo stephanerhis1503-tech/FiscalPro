@@ -1,5 +1,12 @@
 """Auditoria tributária de cadastro de produtos importado de planilha Excel.
 
+Versão 18.2.22
+---------------
+- Adiciona validação semântica geral contra todo o catálogo NCM/TIPI oficial.
+- Um NCM de 8 dígitos deixa de ser aceito apenas pela forma quando existe evidência oficial melhor.
+- Candidatos fortes recalculam a tributação provisoriamente; candidatos ambíguos permanecem REVISAR.
+- Divergências tributárias não viram CORRIGIR enquanto o próprio NCM estiver semanticamente em revisão.
+
 Versão 18.2.21
 ---------------
 - Corrige o progresso da auditoria quando o Excel informa max_row incorreto em leitura rápida.
@@ -45,6 +52,10 @@ from src.services.analise_tributaria_lote_service import (
     AnaliseTributariaLoteService,
     ItemBrutoLote,
     ResultadoItemLote,
+)
+from src.services.ncm_validador_semantico_service import (
+    NCMValidadorSemanticoService,
+    ResultadoValidacaoNCMSemantica,
 )
 
 STATUS_CORRIGIR = "CORRIGIR"
@@ -1436,6 +1447,7 @@ class AuditoriaCadastrosExcelService:
 
                 inferencia_ncm: Optional[InferenciaNCMDescricao] = None
                 candidatos_ncm: List[CandidatoNCMDescricao] = []
+                validacao_semantica_geral: Optional[ResultadoValidacaoNCMSemantica] = None
                 ncm_para_motor = ncm_atual
                 deteccao_servico = cls._detectar_servico(descricao, codigo) if not _ncm_valido(ncm_atual) else None
                 if not _ncm_valido(ncm_atual) and not deteccao_servico:
@@ -1457,9 +1469,8 @@ class AuditoriaCadastrosExcelService:
                         )
                 elif _ncm_valido(ncm_atual):
                     # 18.2.1 — um NCM com oito dígitos não é necessariamente um
-                    # NCM coerente. Antes a auditoria tratava qualquer código
-                    # formalmente válido como verdade e, por isso, repetia
-                    # perfumes/vegetais em peças de motocicleta sem alertar.
+                    # NCM coerente. Primeiro preservamos as regras/famílias de
+                    # alta confiança já existentes no cadastro.
                     inferencia_ncm = cls._inferir_ncm_validacao_existente(
                         indice_ncm_descricao,
                         descricao=descricao,
@@ -1467,6 +1478,43 @@ class AuditoriaCadastrosExcelService:
                     )
                     if inferencia_ncm is not None and inferencia_ncm.ncm != ncm_atual:
                         ncm_para_motor = inferencia_ncm.ncm
+                    else:
+                        # 18.2.22 — segunda camada: confronta o item com TODO o
+                        # catálogo nacional NCM/TIPI. Não há tabela peça→NCM:
+                        # o ranking nasce da linguagem da descrição oficial.
+                        try:
+                            validacao_semantica_geral = NCMValidadorSemanticoService.validar(
+                                descricao, ncm_atual
+                            )
+                        except Exception:
+                            validacao_semantica_geral = None
+
+                        if validacao_semantica_geral is not None:
+                            candidatos_ncm = [
+                                CandidatoNCMDescricao(
+                                    ncm=cand.ncm,
+                                    confianca=cand.pontuacao,
+                                    metodo="catálogo NCM/TIPI oficial — similaridade semântica",
+                                    referencia=cand.descricao_oficial,
+                                    ocorrencias=0,
+                                )
+                                for cand in validacao_semantica_geral.candidatos
+                                if cand.ncm != ncm_atual
+                            ][:3]
+
+                            if validacao_semantica_geral.possui_sugestao_forte:
+                                principal = validacao_semantica_geral.candidato_principal
+                                assert principal is not None
+                                inferencia_ncm = InferenciaNCMDescricao(
+                                    ncm=principal.ncm,
+                                    confianca=principal.pontuacao,
+                                    metodo=(
+                                        "motor semântico nacional: descrição comercial × "
+                                        "hierarquia oficial NCM/TIPI"
+                                    ),
+                                    referencia=principal.descricao_oficial,
+                                )
+                                ncm_para_motor = principal.ncm
 
                 cst_compartilhado = _codigo_fiscal(cls._valor(linha, cabecalhos, "cst_piscofins"), 2)
                 cst_pis = _codigo_fiscal(cls._valor(linha, cabecalhos, "cst_pis"), 2) or cst_compartilhado
@@ -1476,6 +1524,7 @@ class AuditoriaCadastrosExcelService:
                     "ncm_original": ncm_atual,
                     "inferencia_ncm": inferencia_ncm,
                     "candidatos_ncm": candidatos_ncm,
+                    "validacao_semantica_geral": validacao_semantica_geral,
                     "deteccao_servico": deteccao_servico,
                     "codigo_barras": codigo_barras_atual,
                     "ex_tipi": _texto(cls._valor(linha, cabecalhos, "ex_tipi")),
@@ -1655,6 +1704,7 @@ class AuditoriaCadastrosExcelService:
         )
         inferencia_ncm = originais.get("inferencia_ncm")
         candidatos_ncm = list(originais.get("candidatos_ncm") or [])
+        validacao_semantica_geral = originais.get("validacao_semantica_geral")
         ncm_sugerido = bruto.ncm
         cest_sugerido = analise.cest_esperado or bruto.cest_atual
         sugestoes: List[str] = []
@@ -1702,6 +1752,23 @@ class AuditoriaCadastrosExcelService:
                 f"Candidatos do cadastro: {texto_candidatos}."
             )
             avisos_candidatos = f"Evidências dos candidatos NCM: {detalhes}"
+        elif (
+            isinstance(validacao_semantica_geral, ResultadoValidacaoNCMSemantica)
+            and validacao_semantica_geral.status == "REVISAR"
+        ):
+            texto_candidatos = cls._texto_candidatos_ncm(candidatos_ncm)
+            pendencias.insert(0, validacao_semantica_geral.motivo)
+            sugestao = (
+                "Revisar o NCM antes de corrigir CEST/ST/IPI/ICMS/PIS/COFINS; "
+                "a tributação calculada com o NCM atual não deve ser tratada como definitiva."
+            )
+            if texto_candidatos:
+                sugestao += f" Candidatos do catálogo oficial: {texto_candidatos}."
+            sugestoes.append(sugestao)
+            avisos_candidatos = (
+                "Candidatos semânticos oficiais: " + texto_candidatos
+                if texto_candidatos else ""
+            )
         else:
             avisos_candidatos = ""
 
@@ -1746,6 +1813,16 @@ class AuditoriaCadastrosExcelService:
         if isinstance(inferencia_ncm, InferenciaNCMDescricao) and divergencias:
             for texto in list(dict.fromkeys(divergencias)):
                 pendencias.append(f"Com o NCM sugerido {inferencia_ncm.ncm}: {texto}")
+            divergencias = []
+        elif (
+            isinstance(validacao_semantica_geral, ResultadoValidacaoNCMSemantica)
+            and validacao_semantica_geral.status == "REVISAR"
+            and divergencias
+        ):
+            # Não mandar corrigir tributação calculada a partir de um NCM que o
+            # próprio motor ainda não conseguiu validar semanticamente.
+            for texto in list(dict.fromkeys(divergencias)):
+                pendencias.append(f"Com o NCM atual ainda não validado: {texto}")
             divergencias = []
 
         # Distingue pendência real de mensagem de cautela genérica do motor.
@@ -1837,6 +1914,14 @@ class AuditoriaCadastrosExcelService:
             )
         if avisos_candidatos:
             observacao_partes.append(avisos_candidatos)
+        if isinstance(validacao_semantica_geral, ResultadoValidacaoNCMSemantica):
+            if validacao_semantica_geral.status in {"REVISAR", "INCOMPATIVEL"}:
+                observacao_partes.append(
+                    "Validação semântica nacional: "
+                    f"{validacao_semantica_geral.status}; "
+                    f"compatibilidade do NCM atual {validacao_semantica_geral.compatibilidade_atual:.0f}%. "
+                    f"{validacao_semantica_geral.motivo}"
+                )
         if avisos_informativos:
             observacao_partes.append(
                 "Alertas informativos (não alteram o status): " + " | ".join(avisos_informativos)
