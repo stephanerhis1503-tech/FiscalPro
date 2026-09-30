@@ -1,0 +1,7 @@
+openpyxl>=3.1
+cryptography>=44
+lxml>=5
+reportlab>=4
+pypdf>=5
+google-api-python-client>=2
+google-auth-oauthlib>=1.2

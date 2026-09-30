@@ -1,8 +1,8 @@
 ﻿#ifndef MyAppVersion
-  #define MyAppVersion "18.2.6"
+  #define MyAppVersion "18.2.21"
 #endif
 #ifndef MyAppFileVersion
-  #define MyAppFileVersion "18.2.6.0"
+  #define MyAppFileVersion "18.2.21.0"
 #endif
 
 #define MyAppName "FiscalPro"
