@@ -81,6 +81,12 @@ def test_capa_banco_errada_nao_e_tratada_como_capilar():
     assert resultado.status != "COMPATIVEL"
 
 
+def test_sanfona_bengala_87141000_nao_vira_falso_erro():
+    resultado = validar("SANFONA BENG. 24D VERM (CIRCUIT)", "87141000")
+    assert resultado.status == "COMPATIVEL"
+    assert resultado.ncm_atual == "87141000"
+
+
 def test_motor_nao_embute_tabela_fixa_peca_para_ncm():
     # A camada de linguagem pode conter sinônimos/conceitos, mas não pode
     # carregar NCMs diretamente. A classificação deve vir do catálogo.
