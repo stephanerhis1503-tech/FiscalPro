@@ -1,3 +1,10 @@
+## 18.2.1 — Auditoria NCM por descrição/família
+- deixa de tratar todo NCM de 8 dígitos como automaticamente coerente com a mercadoria;
+- valida NCM já preenchido contra regras semânticas e consenso forte da mesma marca/família;
+- corrige o caso real **SANFONA BENG. 24D VERM (CIRCUIT)**, em que 33030010 era repetido apesar de ser um outlier frente às demais sanfonas Circuit do cadastro;
+- **FAIXA/ADESIVO TANQ TWISTER** passa a sugerir 39199020 como candidato quando o cadastro traz NCM incompatível, mantendo status **REVISAR** até confirmar que o material é PVC;
+- a tributação de referência pode ser simulada com o NCM sugerido, mas nenhuma correção cadastral é aplicada automaticamente.
+
 ## 18.2.0 — NF-e / NFS-e e Manifestação do Destinatário
 - preserva sem alterações funcionais o módulo NFS-e Nacional existente;
 - renomeia a aba principal para **NF-e / NFS-e** e adiciona subaba própria para NF-e;

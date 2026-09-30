@@ -1,5 +1,12 @@
 """Auditoria tributária de cadastro de produtos importado de planilha Excel.
 
+Versão 18.2.1
+--------------
+- Audita também NCM válido porém semanticamente incompatível com a descrição.
+- Usa consenso forte da mesma marca/família para detectar NCM isolado fora do padrão.
+- Faixa/adesivo de tanque TWISTER passa a sugerir 39199020 como candidato de PVC,
+  sempre em REVISAR para confirmação do material antes da alteração cadastral.
+
 Versão 18.1.11
 ---------------
 - Separa automaticamente linhas de serviço/mão de obra quando o NCM está zerado.
@@ -565,6 +572,13 @@ class AuditoriaCadastrosExcelService:
         (r"^CHAVE\s+LUZ\b", "85365090", 94.0, "interruptor/comutador de luz", "NCM oficial 85365090 — outros interruptores/comutadores"),
         (r"^BOMBA\s+(?:DE\s+)?COMBUSTIVEL\b", "84133010", 94.0, "bomba de combustível para gasolina/álcool", "NCM oficial 84133010 — bombas para gasolina ou álcool"),
         (r"^BOMBA\s+(?:DE\s+)?OLEO\b", "84133030", 94.0, "bomba de óleo lubrificante do motor", "NCM oficial 84133030 — bombas para óleo lubrificante"),
+        (
+            r"^(?:FAIXA|ADESIVO)\s+TANQ(?:UE)?\b.*\b(?:TWISTER|TWSTER)\b",
+            "39199020",
+            89.0,
+            "faixa/adesivo autoadesivo de tanque de motocicleta",
+            "NCM 39199020 — materiais autoadesivos de plástico, de PVC; confirmar o material da faixa antes de corrigir",
+        ),
         (r"^GASOLINA\b", "27101259", 96.0, "gasolina automotiva", "NCM 27101259 — gasolina automotiva; o CEST depende do tipo A/C e Premium"),
         (r"^BUZINA\b", "85123000", 95.0, "aparelho de sinalização acústica", "NCM oficial 85123000 — aparelhos de sinalização acústica"),
         (r"^CORRENTE\s+(?:DE\s+)?(?:TRANSMISSAO|RELACAO)\b", "73151210", 95.0, "corrente de transmissão", "NCM oficial 73151210 — correntes de transmissão"),
@@ -1090,6 +1104,91 @@ class AuditoriaCadastrosExcelService:
         )
 
     @classmethod
+    def _inferir_ncm_validacao_existente(
+        cls,
+        indice: IndiceNCMDescricao,
+        *,
+        descricao: Any,
+        ncm_atual: Any,
+    ) -> Optional[InferenciaNCMDescricao]:
+        """Procura evidência forte de que um NCM existente está fora da família.
+
+        Diferente da inferência usada para NCM zerado, esta rotina não usa código
+        nem EAN do próprio item, porque isso apenas repetiria um cadastro errado.
+        Ela aceita apenas regra semântica específica ou consenso muito forte da
+        mesma marca/família comercial. O retorno sempre deve ser tratado como
+        REVISAR, nunca como correção automática.
+        """
+        atual = _ncm(ncm_atual)
+        if not _ncm_valido(atual):
+            return None
+
+        semantica = cls._inferir_ncm_regra_semantica(descricao)
+        if semantica is not None and semantica.ncm != atual:
+            return semantica
+
+        texto = _texto(descricao)
+        tokens = cls._tokens_prefixo_familia(texto)
+        marca = _marca_descricao(texto)
+
+        def dominante(
+            contador: Optional[Counter],
+            *,
+            minimo_total: int,
+            minimo_pureza: float,
+            metodo: str,
+            referencia_chave: str,
+        ) -> Optional[InferenciaNCMDescricao]:
+            if not contador:
+                return None
+            total = sum(int(v) for v in contador.values())
+            if total < minimo_total:
+                return None
+            ncm, qtd = contador.most_common(1)[0]
+            pureza = float(qtd) / float(total or 1)
+            if not _ncm_valido(ncm) or ncm == atual or pureza < minimo_pureza:
+                return None
+            referencia = indice.amostra_prefixo.get((referencia_chave, ncm), texto)
+            confianca = min(94.0, 84.0 + pureza * 10.0)
+            return InferenciaNCMDescricao(
+                ncm=str(ncm),
+                confianca=confianca,
+                metodo=f"{metodo}: {qtd}/{total} referências ({pureza:.0%})",
+                referencia=referencia,
+            )
+
+        # Marca + dois primeiros termos é o sinal mais útil em catálogos de
+        # autopeças: cores, lados, medidas e modelos variam, mas a família tende
+        # a manter a classificação. Ex.: SANFONA BENG ... (CIRCUIT).
+        if marca and len(tokens) >= 2:
+            chave2 = " ".join(tokens[:2])
+            achado = dominante(
+                indice.por_marca_prefixo2.get((marca, chave2)),
+                minimo_total=5,
+                minimo_pureza=0.90,
+                metodo=f"consenso forte da mesma marca e família ({marca})",
+                referencia_chave="M2:" + marca + ":" + chave2,
+            )
+            if achado is not None:
+                return achado
+
+        # Sem marca, exige um agrupamento maior e mais puro para evitar que uma
+        # família comercial genérica contamine a classificação.
+        if len(tokens) >= 3:
+            chave3 = " ".join(tokens[:3])
+            achado = dominante(
+                indice.por_prefixo3.get(chave3),
+                minimo_total=6,
+                minimo_pureza=0.95,
+                metodo="consenso forte dos três primeiros termos da descrição",
+                referencia_chave="P3:" + chave3,
+            )
+            if achado is not None:
+                return achado
+
+        return None
+
+    @classmethod
     def _candidatos_ncm_descricao(
         cls,
         indice: IndiceNCMDescricao,
@@ -1338,6 +1437,18 @@ class AuditoriaCadastrosExcelService:
                             descricao=descricao,
                             limite=3,
                         )
+                elif _ncm_valido(ncm_atual):
+                    # 18.2.1 — um NCM com oito dígitos não é necessariamente um
+                    # NCM coerente. Antes a auditoria tratava qualquer código
+                    # formalmente válido como verdade e, por isso, repetia
+                    # perfumes/vegetais em peças de motocicleta sem alertar.
+                    inferencia_ncm = cls._inferir_ncm_validacao_existente(
+                        indice_ncm_descricao,
+                        descricao=descricao,
+                        ncm_atual=ncm_atual,
+                    )
+                    if inferencia_ncm is not None and inferencia_ncm.ncm != ncm_atual:
+                        ncm_para_motor = inferencia_ncm.ncm
 
                 cst_compartilhado = _codigo_fiscal(cls._valor(linha, cabecalhos, "cst_piscofins"), 2)
                 cst_pis = _codigo_fiscal(cls._valor(linha, cabecalhos, "cst_pis"), 2) or cst_compartilhado
@@ -1538,13 +1649,19 @@ class AuditoriaCadastrosExcelService:
         avisos_candidatos = ""
         if isinstance(inferencia_ncm, InferenciaNCMDescricao):
             ncm_sugerido = inferencia_ncm.ncm
-            evidencia = (
-                f"NCM atual {ncm_original or '-'} está zerado/ausente. "
-                f"Sugestão {inferencia_ncm.ncm} por {inferencia_ncm.metodo}; "
-                f"referência do cadastro: '{inferencia_ncm.referencia}'."
-            )
-            # O NCM zerado é um problema real, mas o código sugerido foi inferido
-            # a partir de descrição/cadastro e precisa de validação humana antes
+            if _ncm_valido(ncm_original):
+                evidencia = (
+                    f"NCM atual {ncm_original} é formalmente válido, mas diverge da evidência "
+                    f"da descrição/família. Sugestão {inferencia_ncm.ncm} por "
+                    f"{inferencia_ncm.metodo}; referência: '{inferencia_ncm.referencia}'."
+                )
+            else:
+                evidencia = (
+                    f"NCM atual {ncm_original or '-'} está zerado/ausente. "
+                    f"Sugestão {inferencia_ncm.ncm} por {inferencia_ncm.metodo}; "
+                    f"referência do cadastro: '{inferencia_ncm.referencia}'."
+                )
+            # A sugestão por descrição/família precisa de validação humana antes
             # de virar correção definitiva. Por isso permanece como REVISAR.
             pendencias.insert(0, evidencia)
             sugestoes.append(
