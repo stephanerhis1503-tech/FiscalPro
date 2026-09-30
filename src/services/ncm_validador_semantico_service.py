@@ -210,6 +210,8 @@ class NCMValidadorSemanticoService:
                 extras.extend(("NIVEL", "COMBUSTIVEL"))
             if "PASTILHA FREIO" in normalizado:
                 extras.extend(("GUARNICAO", "FREIO"))
+            if "SANFONA BENG" in normalizado or "SANFONA BENGALA" in normalizado:
+                extras.extend(("SUSPENSAO", "MOTOCICLETA"))
             if extras:
                 tokens = tokens[:2] + extras + tokens[2:]
 
@@ -325,6 +327,12 @@ class NCMValidadorSemanticoService:
         sequencia = SequenceMatcher(None, texto_produto, texto_oficial).ratio()
 
         score = (58.0 * primaria) + (27.0 * janela) + (10.0 * cobertura) + (5.0 * sequencia)
+
+        # Pista de domínio é diferente de regra peça→NCM: ela apenas reconhece
+        # que uma descrição pertence ao universo de motocicletas e favorece
+        # aberturas oficiais que também declaram esse domínio.
+        if "MOTOCICLETA" in principais and "MOTOCICLETA" in registro.tokens:
+            score += 38.0
 
         # Correspondência direta com a descrição terminal da NCM vale mais que
         # coincidência apenas na hierarquia superior.
