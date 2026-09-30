@@ -246,7 +246,7 @@ class ContasPagarRepositorio:
             self._sincronizar_empresas_centralizadas_conexao(conexao)
 
     def _sincronizar_empresas_centralizadas_conexao(self, conexao: sqlite3.Connection) -> None:
-        cadastros = EmpresasRegimesService.listar_cadastros()
+        cadastros = EmpresasRegimesService.listar_cadastros(incluir_pessoas_fisicas=True)
         if not cadastros:
             return
 

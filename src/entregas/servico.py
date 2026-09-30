@@ -125,6 +125,12 @@ class EntregasServico:
         cnpj_limpo = "".join(ch for ch in (cnpj or "") if ch.isdigit())
         if len(cnpj_limpo) != 14:
             raise ValueError("Informe um CNPJ válido com 14 dígitos.")
+        documento_existente = self.repositorio.obter_empresa_por_documento(cnpj_limpo)
+        if documento_existente is not None:
+            raise ValueError(
+                f"Este CNPJ já está cadastrado para {documento_existente['nome']}. "
+                "Edite o cadastro existente em vez de criar outro."
+            )
         regime_limpo = " ".join((regime or "").strip().upper().split()) or "A DEFINIR"
         empresa_existente = self.repositorio.obter_empresa_por_nome(nome)
         if empresa_existente is not None and int(empresa_existente["ativa"] or 0):
@@ -148,6 +154,13 @@ class EntregasServico:
         cnpj_limpo = "".join(ch for ch in (cnpj or "") if ch.isdigit())
         if len(cnpj_limpo) != 14:
             raise ValueError("Informe um CNPJ válido com 14 dígitos.")
+        documento_existente = self.repositorio.obter_empresa_por_documento(
+            cnpj_limpo, excluir_id=int(empresa_id)
+        )
+        if documento_existente is not None:
+            raise ValueError(
+                f"Este CNPJ já está cadastrado para {documento_existente['nome']}."
+            )
         regime_limpo = " ".join((regime or "").strip().upper().split()) or "A DEFINIR"
         nome_original = str(empresa["nome"])
         nomes_fixos = {nome.casefold() for nome, _regime in self.EMPRESAS_ATUAIS}

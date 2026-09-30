@@ -1,5 +1,13 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.20 — Cadastro PF, exclusão segura e bloqueio de duplicidade:
+- o Cadastro Central passa a aceitar Pessoa Jurídica (CNPJ) e Pessoa Física (CPF);
+- pessoas físicas ficam disponíveis no Contas a Pagar, sem entrar nos módulos fiscais, NF-e/NFS-e ou Controle de Entregas;
+- adiciona botão Excluir para remover cadastros duplicados/manuais sem histórico de entregas;
+- protege empresas-base e cadastros com entregas históricas contra exclusão acidental;
+- bloqueia novos cadastros com CPF/CNPJ já existente e também nomes equivalentes por caixa/acentuação;
+- a grade passa a exibir Tipo e CPF/CNPJ e permite pesquisar pelo documento.
+
 Versão 18.2.19 — DIFAL / memória de cálculo por C190/CST:
 - acrescenta memória de cálculo rastreável no DIFAL automático sem alterar a lógica principal aprovada na 18.2.16;
 - detalha cada segmento C190 com CST, origem, CFOP, base, alíquota interna, alíquota interestadual do cenário, diferença e fórmula;
@@ -770,9 +778,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.19"
+VERSAO_APP = "18.2.20"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.19.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.20.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"

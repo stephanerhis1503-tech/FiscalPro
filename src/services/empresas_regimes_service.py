@@ -77,13 +77,16 @@ class EmpresasRegimesService:
         return " ".join(texto.split())
 
     @classmethod
-    def listar_cadastros(cls, incluir_inativas: bool = False) -> Tuple[Dict[str, Any], ...]:
-        """Retorna o cadastro central persistente das empresas do FiscalPro.
+    def listar_cadastros(
+        cls,
+        incluir_inativas: bool = False,
+        incluir_pessoas_fisicas: bool = False,
+    ) -> Tuple[Dict[str, Any], ...]:
+        """Retorna o cadastro central persistente do FiscalPro.
 
-        Desde a 18.2.18, ``empresas_entregas`` deixa de ser apenas um cadastro
-        operacional do Controle de Entregas e passa a ser a fonte única de
-        identidade da empresa (nome, CNPJ, regime e situação) para os módulos.
-        O nome físico da tabela é preservado para não quebrar bases antigas.
+        Por padrão, somente pessoas jurídicas entram no contexto fiscal. Pessoas
+        físicas podem ser solicitadas explicitamente por módulos administrativos,
+        como Contas a Pagar.
         """
         banco = BANCO_ENTREGAS
         if not banco.is_file():
@@ -99,13 +102,24 @@ class EmpresasRegimesService:
             if not existe:
                 return ()
             colunas = {
-                str(linha[1]) for linha in conexao.execute("PRAGMA table_info(empresas_entregas)").fetchall()
+                str(linha[1])
+                for linha in conexao.execute("PRAGMA table_info(empresas_entregas)").fetchall()
             }
             campos = ["id", "nome", "cnpj"]
             campos.append("regime" if "regime" in colunas else "'' AS regime")
             campos.append("ativa" if "ativa" in colunas else "1 AS ativa")
             campos.append("manual" if "manual" in colunas else "0 AS manual")
-            where = "" if incluir_inativas else "WHERE ativa = 1"
+            campos.append(
+                "tipo_pessoa" if "tipo_pessoa" in colunas else "'PJ' AS tipo_pessoa"
+            )
+
+            filtros: list[str] = []
+            if not incluir_inativas:
+                filtros.append("ativa = 1")
+            if not incluir_pessoas_fisicas and "tipo_pessoa" in colunas:
+                filtros.append("COALESCE(tipo_pessoa, 'PJ') <> 'PF'")
+            where = f"WHERE {' AND '.join(filtros)}" if filtros else ""
+
             linhas = conexao.execute(
                 f"SELECT {', '.join(campos)} FROM empresas_entregas {where} ORDER BY nome"
             ).fetchall()
