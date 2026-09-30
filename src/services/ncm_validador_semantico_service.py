@@ -346,17 +346,28 @@ class NCMValidadorSemanticoService:
 
     @classmethod
     def _candidatos(cls, tokens_produto: Sequence[str], limite: int = 5) -> List[CandidatoNCMSemantico]:
-        ids: set[int] = set()
+        # Usa primeiro os conceitos mais raros no catálogo. Assim uma planilha
+        # com dezenas de milhares de produtos não compara cada linha com todos
+        # os NCMs existentes.
+        conjuntos: List[set[int]] = []
         for token in tokens_produto[:6]:
+            posicoes: set[int] = set()
             for termo in cls._expandir(token):
-                ids.update(cls._por_token.get(termo, ()))
+                posicoes.update(cls._por_token.get(termo, ()))
+            if posicoes:
+                conjuntos.append(posicoes)
 
-        if not ids:
+        if not conjuntos:
             return []
 
-        # Proteção de desempenho para palavras muito amplas.
-        if len(ids) > 2500:
-            ids = set(sorted(ids)[:2500])
+        conjuntos.sort(key=len)
+        ids: set[int] = set()
+        for conjunto in conjuntos[:4]:
+            ids.update(conjunto)
+
+        # Limite de contingência: termos genéricos não podem degradar a auditoria.
+        if len(ids) > 1200:
+            ids = set(sorted(ids)[:1200])
 
         pontuados: List[CandidatoNCMSemantico] = []
         for pos in ids:
