@@ -42,6 +42,23 @@ class RepositorioManifestacaoNFe:
                     PRIMARY KEY(cnpj, ambiente)
                 );
 
+                CREATE TABLE IF NOT EXISTS consultas_dfe_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cnpj TEXT NOT NULL,
+                    ambiente TEXT NOT NULL,
+                    uf_autor TEXT NOT NULL DEFAULT '',
+                    consultado_em TEXT NOT NULL,
+                    nsu_enviado INTEGER NOT NULL DEFAULT 0,
+                    cstat TEXT NOT NULL DEFAULT '',
+                    motivo TEXT NOT NULL DEFAULT '',
+                    ultimo_nsu_retornado INTEGER,
+                    max_nsu_retornado INTEGER,
+                    quantidade_documentos INTEGER NOT NULL DEFAULT 0,
+                    observacao TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_consultas_dfe_cnpj
+                    ON consultas_dfe_log(cnpj, ambiente, id DESC);
+
                 CREATE TABLE IF NOT EXISTS documentos_nfe (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     cnpj_empresa TEXT NOT NULL,
@@ -145,6 +162,61 @@ class RepositorioManifestacaoNFe:
                     str(ambiente or "PRODUCAO").upper(), uf, ult, maximo, bloqueio, ultima, cstat, motivo, agora,
                 ),
             )
+
+    def registrar_consulta_dfe(
+        self,
+        cnpj: str,
+        ambiente: str,
+        uf_autor: str,
+        *,
+        nsu_enviado: int,
+        cstat: str,
+        motivo: str = "",
+        ultimo_nsu_retornado: int | None = None,
+        max_nsu_retornado: int | None = None,
+        quantidade_documentos: int = 0,
+        observacao: str = "",
+        consultado_em: str | None = None,
+    ) -> None:
+        """Guarda um rastro local de cada chamada feita pelo FiscalPro à Distribuição DF-e."""
+        cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+        ambiente = str(ambiente or "PRODUCAO").upper()
+        quando = str(consultado_em or datetime.now().isoformat(timespec="seconds"))
+        with self.conectar() as conn:
+            conn.execute(
+                """
+                INSERT INTO consultas_dfe_log(
+                    cnpj,ambiente,uf_autor,consultado_em,nsu_enviado,cstat,motivo,
+                    ultimo_nsu_retornado,max_nsu_retornado,quantidade_documentos,observacao
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    cnpj, ambiente, str(uf_autor or "").upper(), quando, int(nsu_enviado or 0),
+                    str(cstat or ""), str(motivo or ""),
+                    None if ultimo_nsu_retornado is None else int(ultimo_nsu_retornado),
+                    None if max_nsu_retornado is None else int(max_nsu_retornado),
+                    int(quantidade_documentos or 0), str(observacao or ""),
+                ),
+            )
+
+    def listar_consultas_dfe(self, cnpj: str, ambiente: str, limite: int = 8) -> list[dict]:
+        cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+        ambiente = str(ambiente or "PRODUCAO").upper()
+        limite = max(1, min(int(limite or 8), 50))
+        with self.conectar() as conn:
+            linhas = conn.execute(
+                """
+                SELECT * FROM consultas_dfe_log
+                WHERE cnpj=? AND ambiente=?
+                ORDER BY id DESC LIMIT ?
+                """,
+                (cnpj, ambiente, limite),
+            ).fetchall()
+        return [dict(linha) for linha in linhas]
+
+    def obter_ultima_consulta_dfe(self, cnpj: str, ambiente: str) -> dict:
+        historico = self.listar_consultas_dfe(cnpj, ambiente, 1)
+        return historico[0] if historico else {}
 
     def salvar_documento(self, cnpj: str, ambiente: str, nsu: int, schema: str, xml: str, dados: dict) -> bool:
         agora = datetime.now().isoformat(timespec="seconds")
