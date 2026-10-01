@@ -1,5 +1,12 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.24 — Detalhe do documento DF-e + grade ampliada:
+- o diagnóstico identifica cada documento retornado com NSU, tipo, disponibilidade, schema, chave e emitente quando disponíveis;
+- consultas antigas sem esse detalhe são reconstruídas pelo intervalo de NSU já armazenado localmente, sem nova chamada à SEFAZ;
+- eventos e resumos passam a ficar visíveis no diagnóstico mesmo quando não geram uma terceira linha na grade de NF-e;
+- aumenta a área da tabela de NF-e e reduz proporcionalmente a prévia do XML para facilitar a conferência das notas;
+- preserva o rastro de NSU, a proteção contra cStat 656 e a lógica de manifestação da 18.2.23.
+
 Versão 18.2.23 — Rastro da Distribuição DF-e / diagnóstico cStat 656:
 - registra localmente cada chamada feita pelo FiscalPro com horário, NSU enviado, cStat, ultNSU/maxNSU retornados e quantidade de documentos;
 - preserva o último maxNSU válido quando uma rejeição 656 omite ou devolve maxNSU zerado;
@@ -798,9 +805,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.22"
+VERSAO_APP = "18.2.24"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.22.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.24.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
