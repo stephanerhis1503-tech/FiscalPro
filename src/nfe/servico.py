@@ -129,12 +129,19 @@ class ServicoManifestacaoNFe:
 
         while lotes < max_lotes:
             lotes += 1
+            nsu_enviado = int(atual)
             if progresso:
-                progresso(f"Consultando NF-e destinadas a partir do NSU {atual:015d}…")
+                progresso(f"Consultando NF-e destinadas a partir do NSU {nsu_enviado:015d}…")
             try:
-                resposta = cliente.consultar_distribuicao(cnpj, uf_autor, atual)
+                resposta = cliente.consultar_distribuicao(cnpj, uf_autor, nsu_enviado)
             except ErroNFe as exc:
                 instante_erro = datetime.now()
+                self.repo.registrar_consulta_dfe(
+                    cnpj, ambiente, uf_autor,
+                    nsu_enviado=nsu_enviado, cstat="CONEXAO", motivo=str(exc),
+                    observacao="A chamada não produziu retorno DF-e parseável.",
+                    consultado_em=_data_iso(instante_erro),
+                )
                 self.repo.salvar_config(
                     cnpj, ambiente, uf_autor=uf_autor,
                     bloqueado_ate="", ultima_consulta_em=_data_iso(instante_erro),
@@ -143,24 +150,54 @@ class ServicoManifestacaoNFe:
                 raise
             except Exception as exc:
                 instante_erro = datetime.now()
+                motivo_local = f"{exc.__class__.__name__}: {exc}"
+                self.repo.registrar_consulta_dfe(
+                    cnpj, ambiente, uf_autor,
+                    nsu_enviado=nsu_enviado, cstat="ERRO_LOCAL", motivo=motivo_local,
+                    observacao="Falha local antes de concluir a leitura do retorno DF-e.",
+                    consultado_em=_data_iso(instante_erro),
+                )
                 self.repo.salvar_config(
                     cnpj, ambiente, uf_autor=uf_autor,
                     bloqueado_ate="", ultima_consulta_em=_data_iso(instante_erro),
                     ultimo_cstat="ERRO_LOCAL",
-                    ultimo_motivo=f"{exc.__class__.__name__}: {exc}",
+                    ultimo_motivo=motivo_local,
                 )
                 raise
 
             instante_resposta = datetime.now()
             ultimo_cstat, ultimo_motivo = resposta.cstat, resposta.motivo
-            if resposta.max_nsu_informado:
-                max_nsu = int(resposta.max_nsu or 0)
+            ult_retornado = int(resposta.ultimo_nsu or 0) if resposta.ultimo_nsu_informado else None
+            max_retornado = int(resposta.max_nsu or 0) if resposta.max_nsu_informado else None
+            self.repo.registrar_consulta_dfe(
+                cnpj, ambiente, uf_autor,
+                nsu_enviado=nsu_enviado,
+                cstat=resposta.cstat,
+                motivo=resposta.motivo,
+                ultimo_nsu_retornado=ult_retornado,
+                max_nsu_retornado=max_retornado,
+                quantidade_documentos=len(resposta.documentos),
+                observacao=(
+                    "cStat 656: comparar NSU enviado com ultNSU retornado."
+                    if resposta.cstat == "656" else ""
+                ),
+                consultado_em=_data_iso(instante_resposta),
+            )
+
+            # maxNSU só é atualizado por resposta normal da Distribuição. Uma rejeição
+            # 656 pode omitir maxNSU ou devolvê-lo zerado; nunca apagamos o último
+            # maxNSU válido por causa disso.
+            if resposta.cstat in {"137", "138"} and resposta.max_nsu_informado:
+                max_recebido = int(resposta.max_nsu or 0)
+                if max_recebido > 0:
+                    max_nsu = max(max_nsu, max_recebido)
 
             if resposta.cstat == "656":
                 # A NT 2014.002 prevê que o 656 de distNSU devolva o ultNSU da última
                 # consulta. Guardamos esse ponto para a próxima tentativa após 1 hora.
                 nsu_sefaz = int(resposta.ultimo_nsu or 0) if resposta.ultimo_nsu_informado else atual
-                max_sefaz = int(resposta.max_nsu or 0) if resposta.max_nsu_informado else max_nsu
+                max_retornado_656 = int(resposta.max_nsu or 0) if resposta.max_nsu_informado else 0
+                max_sefaz = max(max_nsu, max_retornado_656) if max_retornado_656 > 0 else max_nsu
                 ate = self._registrar_bloqueio(
                     cnpj, ambiente, uf_autor, cstat=resposta.cstat, motivo=resposta.motivo,
                     ultimo_nsu=nsu_sefaz, max_nsu=max_sefaz,
@@ -248,6 +285,20 @@ class ServicoManifestacaoNFe:
         motivo = str(config.get("ultimo_motivo") or "").strip()
         faltantes = max(0, max_nsu - ultimo_nsu) if max_nsu else 0
         notas_locais = len(self.repo.listar_notas(cnpj, ambiente))
+        ultima_chamada = self.repo.obter_ultima_consulta_dfe(cnpj, ambiente)
+        historico_chamadas = self.repo.listar_consultas_dfe(cnpj, ambiente, 8)
+
+        nsu_enviado = ultima_chamada.get("nsu_enviado")
+        nsu_retornado = ultima_chamada.get("ultimo_nsu_retornado")
+        max_retornado = ultima_chamada.get("max_nsu_retornado")
+        qtd_retornada = int(ultima_chamada.get("quantidade_documentos") or 0)
+
+        divergencia_nsu = (
+            cstat == "656"
+            and nsu_enviado is not None
+            and nsu_retornado is not None
+            and int(nsu_enviado) != int(nsu_retornado)
+        )
 
         if not cert_ok:
             situacao = "CERTIFICADO A1 NÃO ENCONTRADO"
@@ -274,10 +325,20 @@ class ServicoManifestacaoNFe:
             )
         elif cstat == "656":
             situacao = "CONSUMO INDEVIDO"
-            orientacao = (
-                "Não faça novas tentativas até a liberação. Se outro sistema também consulta DF-e "
-                "desse CNPJ, ele precisa respeitar a mesma sequência de NSU."
-            )
+            if divergencia_nsu:
+                situacao = "CONSUMO INDEVIDO • SEQUÊNCIA DE NSU DIVERGENTE"
+                orientacao = (
+                    f"O FiscalPro enviou o NSU {int(nsu_enviado):015d}, mas a SEFAZ informou "
+                    f"ultNSU {int(nsu_retornado):015d}. Isso é um indício forte de que a sequência "
+                    "esperada pela SEFAZ avançou fora desta chamada do FiscalPro, por consulta concorrente "
+                    "ou por outro processo/instância usando o mesmo CNPJ. Aguarde a liberação antes de testar novamente."
+                )
+            else:
+                orientacao = (
+                    "Não faça novas tentativas até a liberação. O rastro abaixo mostra exatamente o NSU "
+                    "enviado pelo FiscalPro e o retorno recebido. Se outro sistema também consulta DF-e "
+                    "desse CNPJ, ele precisa respeitar a mesma sequência de NSU."
+                )
         elif cstat == "137":
             situacao = "SEM NOVOS DOCUMENTOS NA ÚLTIMA CONSULTA"
             orientacao = (
@@ -315,8 +376,13 @@ class ServicoManifestacaoNFe:
             f"Última tentativa: {_data_humana(ultima) or '—'}",
             f"Último cStat: {cstat or '—'}",
             f"Motivo/erro: {motivo or '—'}",
-            f"Último NSU: {ultimo_nsu:015d}",
-            f"Máximo NSU: {max_nsu:015d}",
+            f"Último NSU salvo: {ultimo_nsu:015d}",
+            f"Último maxNSU válido preservado: {max_nsu:015d}",
+            f"NSU enviado na última chamada do FiscalPro: {int(nsu_enviado):015d}" if nsu_enviado is not None else "NSU enviado na última chamada do FiscalPro: —",
+            f"ultNSU retornado pela SEFAZ: {int(nsu_retornado):015d}" if nsu_retornado is not None else "ultNSU retornado pela SEFAZ: —",
+            f"maxNSU retornado nesta chamada: {int(max_retornado):015d}" if max_retornado is not None else "maxNSU retornado nesta chamada: não informado",
+            f"Documentos retornados nesta chamada: {qtd_retornada}",
+            f"Indício de sequência concorrente: {'SIM' if divergencia_nsu else 'NÃO CONCLUÍDO'}",
             f"NF-e armazenadas localmente: {notas_locais}",
             f"Consulta protegida agora: {'SIM' if config.get('bloqueado') else 'NÃO'}",
             f"Próxima consulta permitida: {proxima or '—'}",
@@ -324,8 +390,26 @@ class ServicoManifestacaoNFe:
             "Orientação:",
             orientacao,
             "",
-            "Este diagnóstico é local e NÃO faz uma nova consulta à SEFAZ.",
+            "Rastro das últimas chamadas feitas pelo FiscalPro:",
         ]
+        if historico_chamadas:
+            for item in historico_chamadas:
+                enviado = int(item.get("nsu_enviado") or 0)
+                ret = item.get("ultimo_nsu_retornado")
+                mx = item.get("max_nsu_retornado")
+                docs = int(item.get("quantidade_documentos") or 0)
+                ret_txt = f"{int(ret):015d}" if ret is not None else "—"
+                max_txt = f"{int(mx):015d}" if mx is not None else "—"
+                linhas.append(
+                    f"- {item.get('consultado_em') or '—'} | enviado {enviado:015d} | "
+                    f"cStat {item.get('cstat') or '—'} | ultNSU {ret_txt} | maxNSU {max_txt} | docs {docs}"
+                )
+        else:
+            linhas.append("- Ainda não há chamadas registradas nesta versão.")
+        linhas.extend([
+            "",
+            "Este diagnóstico é local e NÃO faz uma nova consulta à SEFAZ.",
+        ])
         return {
             "situacao": situacao,
             "orientacao": orientacao,
@@ -333,6 +417,11 @@ class ServicoManifestacaoNFe:
             "motivo": motivo,
             "ultimo_nsu": ultimo_nsu,
             "max_nsu": max_nsu,
+            "nsu_enviado": nsu_enviado,
+            "nsu_retornado": nsu_retornado,
+            "max_nsu_retornado": max_retornado,
+            "divergencia_nsu": bool(divergencia_nsu),
+            "historico_chamadas": historico_chamadas,
             "bloqueado": bool(config.get("bloqueado")),
             "proxima_consulta": proxima,
             "certificado_ok": cert_ok,
