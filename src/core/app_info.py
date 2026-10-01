@@ -1,5 +1,13 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.23 — Rastro da Distribuição DF-e / diagnóstico cStat 656:
+- registra localmente cada chamada feita pelo FiscalPro com horário, NSU enviado, cStat, ultNSU/maxNSU retornados e quantidade de documentos;
+- preserva o último maxNSU válido quando uma rejeição 656 omite ou devolve maxNSU zerado;
+- o diagnóstico passa a comparar o NSU enviado pelo FiscalPro com o ultNSU informado pela SEFAZ;
+- quando os NSUs divergem em um 656, sinaliza indício de sequência concorrente sem afirmar qual programa realizou a outra consulta;
+- mostra as últimas chamadas do próprio FiscalPro para separar chamada interna de avanço externo;
+- mantém a proteção de 1 hora e o encerramento imediato quando a fila chega ao fim.
+
 Versão 18.2.22 — Motor Semântico Nacional de NCM:
 - confronta todo NCM preenchido com o catálogo NCM/TIPI oficial instalado;
 - procura candidatos em toda a nomenclatura, sem tabela fixa peça→NCM;
