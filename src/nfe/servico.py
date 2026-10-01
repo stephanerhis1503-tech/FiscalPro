@@ -35,6 +35,35 @@ def _data_humana(dt: datetime | None) -> str:
     return dt.strftime("%d/%m/%Y às %H:%M:%S") if dt else ""
 
 
+def _detalhe_documento_dfe(
+    nsu: int,
+    schema: str,
+    tipo: str,
+    chave: str,
+    emitente: str,
+    tem_xml_completo: bool,
+) -> str:
+    tipo_txt = str(tipo or "").strip().upper()
+    schema_txt = str(schema or "").strip()
+    if tipo_txt == "NFE":
+        natureza = "NF-e"
+    elif tipo_txt == "EVENTO":
+        natureza = "EVENTO"
+    else:
+        natureza = tipo_txt or schema_txt or "DOCUMENTO"
+    disponibilidade = "XML completo" if tem_xml_completo else ("Evento" if natureza == "EVENTO" else "Resumo")
+    partes = [f"NSU {int(nsu or 0):015d}", natureza, disponibilidade]
+    if schema_txt:
+        partes.append(f"schema {schema_txt}")
+    chave_txt = str(chave or "").strip()
+    if chave_txt:
+        partes.append(f"chave {chave_txt}")
+    emitente_txt = str(emitente or "").strip()
+    if emitente_txt:
+        partes.append(f"emitente {emitente_txt}")
+    return " | ".join(partes)
+
+
 class ServicoManifestacaoNFe:
     def __init__(self, repositorio: RepositorioManifestacaoNFe | None = None,
                  repo_empresas: RepositorioNFSe | None = None):
@@ -169,6 +198,24 @@ class ServicoManifestacaoNFe:
             ultimo_cstat, ultimo_motivo = resposta.cstat, resposta.motivo
             ult_retornado = int(resposta.ultimo_nsu or 0) if resposta.ultimo_nsu_informado else None
             max_retornado = int(resposta.max_nsu or 0) if resposta.max_nsu_informado else None
+
+            documentos_analisados: list[tuple[object, dict]] = []
+            detalhes_documentos: list[str] = []
+            if resposta.cstat in {"137", "138"}:
+                for doc in resposta.documentos:
+                    dados = analisar_documento_distribuido(doc.xml, doc.schema)
+                    documentos_analisados.append((doc, dados))
+                    detalhes_documentos.append(
+                        _detalhe_documento_dfe(
+                            int(doc.nsu or 0),
+                            str(doc.schema or ""),
+                            str(dados.get("tipo") or ""),
+                            str(dados.get("chave") or ""),
+                            str(dados.get("emitente_nome") or dados.get("emitente_doc") or ""),
+                            bool(dados.get("tem_xml_completo")),
+                        )
+                    )
+
             self.repo.registrar_consulta_dfe(
                 cnpj, ambiente, uf_autor,
                 nsu_enviado=nsu_enviado,
@@ -177,6 +224,7 @@ class ServicoManifestacaoNFe:
                 ultimo_nsu_retornado=ult_retornado,
                 max_nsu_retornado=max_retornado,
                 quantidade_documentos=len(resposta.documentos),
+                detalhes_documentos="\n".join(detalhes_documentos),
                 observacao=(
                     "cStat 656: comparar NSU enviado com ultNSU retornado."
                     if resposta.cstat == "656" else ""
@@ -219,8 +267,7 @@ class ServicoManifestacaoNFe:
                 )
                 raise ErroNFe(f"Distribuição DF-e retornou {resposta.cstat}: {resposta.motivo}")
 
-            for doc in resposta.documentos:
-                dados = analisar_documento_distribuido(doc.xml, doc.schema)
+            for doc, dados in documentos_analisados:
                 if dados.get("tipo") == "EVENTO":
                     self.repo.registrar_evento_distribuido(cnpj, ambiente, dados, doc.xml)
                 if self.repo.salvar_documento(cnpj, ambiente, doc.nsu, doc.schema, doc.xml, dados):
@@ -292,6 +339,34 @@ class ServicoManifestacaoNFe:
         nsu_retornado = ultima_chamada.get("ultimo_nsu_retornado")
         max_retornado = ultima_chamada.get("max_nsu_retornado")
         qtd_retornada = int(ultima_chamada.get("quantidade_documentos") or 0)
+        detalhes_ultima = str(ultima_chamada.get("detalhes_documentos") or "").strip()
+
+        # Compatibilidade: consultas feitas antes da 18.2.24 não tinham o detalhe
+        # gravado no rastro. Se os documentos já estiverem no banco local, o
+        # diagnóstico reconstrói o intervalo sem consultar novamente a SEFAZ.
+        if (
+            not detalhes_ultima
+            and qtd_retornada > 0
+            and nsu_enviado is not None
+            and nsu_retornado is not None
+            and int(nsu_retornado) > int(nsu_enviado)
+        ):
+            recuperados = self.repo.listar_documentos_intervalo_nsu(
+                cnpj, ambiente, int(nsu_enviado), int(nsu_retornado)
+            )
+            linhas_recuperadas: list[str] = []
+            for doc_local in recuperados:
+                linhas_recuperadas.append(
+                    _detalhe_documento_dfe(
+                        int(doc_local.get("nsu") or 0),
+                        str(doc_local.get("schema_doc") or ""),
+                        str(doc_local.get("tipo_doc") or ""),
+                        str(doc_local.get("chave") or ""),
+                        str(doc_local.get("emitente_nome") or doc_local.get("emitente_doc") or ""),
+                        bool(doc_local.get("tem_xml_completo")),
+                    )
+                )
+            detalhes_ultima = "\n".join(linhas_recuperadas)
 
         divergencia_nsu = (
             cstat == "656"
@@ -305,7 +380,7 @@ class ServicoManifestacaoNFe:
             orientacao = (
                 "Atualize o certificado A1 na aba NFS-e Nacional antes de tentar sincronizar."
             )
-        elif config.get("bloqueado"):
+        elif config.get("bloqueado") and cstat != "656":
             situacao = "CONSULTA PROTEGIDA"
             orientacao = (
                 "Aguarde o horário de liberação indicado abaixo. O FiscalPro está impedindo "
@@ -383,6 +458,14 @@ class ServicoManifestacaoNFe:
             f"maxNSU retornado nesta chamada: {int(max_retornado):015d}" if max_retornado is not None else "maxNSU retornado nesta chamada: não informado",
             f"Documentos retornados nesta chamada: {qtd_retornada}",
             f"Indício de sequência concorrente: {'SIM' if divergencia_nsu else 'NÃO CONCLUÍDO'}",
+            "",
+            "Documento(s) da última chamada:",
+            *(
+                [f"- {linha}" for linha in detalhes_ultima.splitlines() if linha.strip()]
+                if detalhes_ultima
+                else ["- Nenhum detalhe disponível no banco local para esta chamada."]
+            ),
+            "",
             f"NF-e armazenadas localmente: {notas_locais}",
             f"Consulta protegida agora: {'SIM' if config.get('bloqueado') else 'NÃO'}",
             f"Próxima consulta permitida: {proxima or '—'}",
@@ -420,6 +503,7 @@ class ServicoManifestacaoNFe:
             "nsu_enviado": nsu_enviado,
             "nsu_retornado": nsu_retornado,
             "max_nsu_retornado": max_retornado,
+            "detalhes_documentos": detalhes_ultima,
             "divergencia_nsu": bool(divergencia_nsu),
             "historico_chamadas": historico_chamadas,
             "bloqueado": bool(config.get("bloqueado")),
