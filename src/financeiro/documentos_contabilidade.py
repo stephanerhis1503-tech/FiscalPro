@@ -61,6 +61,16 @@ def _celula(linha: Mapping[str, Any], chave: str, padrao: Any = "") -> Any:
         return padrao
 
 
+def _formatar_cnpj(valor: object) -> str:
+    digitos = "".join(ch for ch in str(valor or "") if ch.isdigit())
+    if len(digitos) == 14:
+        return (
+            f"{digitos[:2]}.{digitos[2:5]}.{digitos[5:8]}/"
+            f"{digitos[8:12]}-{digitos[12:]}"
+        )
+    return str(valor or "").strip()
+
+
 @dataclass(frozen=True)
 class ResumoDocumentosCompetencia:
     total_contas: int
@@ -201,8 +211,9 @@ class GestorDocumentosFinanceiros:
             ws = wb.active
             ws.title = "Conferência"
             cabecalhos = [
-                "Empresa", "Fornecedor", "Descrição", "Nº Documento", "Vencimento",
-                "Valor", "Categoria", "Status", "Competência", "Anexo", "Arquivo"
+                "Empresa", "Fornecedor", "CNPJ do fornecedor", "Descrição",
+                "Nº Documento", "Vencimento", "Valor", "Categoria", "Status",
+                "Competência", "Anexo", "Arquivo"
             ]
             ws.append(cabecalhos)
             azul = "1F4E78"
@@ -258,6 +269,10 @@ class GestorDocumentosFinanceiros:
                 ws.append([
                     empresa,
                     _celula(conta, "fornecedor", ""),
+                    _formatar_cnpj(
+                        _celula(conta, "fornecedor_cnpj_relatorio", "")
+                        or _celula(conta, "fornecedor_cnpj", "")
+                    ),
                     _celula(conta, "descricao", ""),
                     _celula(conta, "numero_documento", ""),
                     _celula(conta, "vencimento", ""),
@@ -271,10 +286,10 @@ class GestorDocumentosFinanceiros:
 
             ws.freeze_panes = "A2"
             ws.auto_filter.ref = ws.dimensions
-            larguras = [24, 30, 34, 18, 14, 14, 22, 14, 14, 12, 55]
+            larguras = [24, 30, 21, 34, 18, 14, 14, 22, 14, 14, 12, 55]
             for indice, largura in enumerate(larguras, 1):
                 ws.column_dimensions[chr(64 + indice)].width = largura
-            for celula in ws["F"][1:]:
+            for celula in ws["G"][1:]:
                 celula.number_format = 'R$ #,##0.00'
             for linha in ws.iter_rows(min_row=2):
                 for celula in linha:
