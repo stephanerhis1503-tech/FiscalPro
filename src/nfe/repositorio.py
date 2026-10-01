@@ -54,6 +54,7 @@ class RepositorioManifestacaoNFe:
                     ultimo_nsu_retornado INTEGER,
                     max_nsu_retornado INTEGER,
                     quantidade_documentos INTEGER NOT NULL DEFAULT 0,
+                    detalhes_documentos TEXT NOT NULL DEFAULT '',
                     observacao TEXT NOT NULL DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_consultas_dfe_cnpj
@@ -116,6 +117,13 @@ class RepositorioManifestacaoNFe:
                 if nome not in colunas:
                     conn.execute(f"ALTER TABLE configuracao_nfe ADD COLUMN {nome} {definicao}")
 
+            # Migração segura para o rastro detalhado de documentos da Distribuição DF-e.
+            colunas_log = {str(r["name"]) for r in conn.execute("PRAGMA table_info(consultas_dfe_log)").fetchall()}
+            if "detalhes_documentos" not in colunas_log:
+                conn.execute(
+                    "ALTER TABLE consultas_dfe_log ADD COLUMN detalhes_documentos TEXT NOT NULL DEFAULT ''"
+                )
+
     def obter_config(self, cnpj: str, ambiente: str) -> dict:
         cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
         ambiente = str(ambiente or "PRODUCAO").upper()
@@ -175,6 +183,7 @@ class RepositorioManifestacaoNFe:
         ultimo_nsu_retornado: int | None = None,
         max_nsu_retornado: int | None = None,
         quantidade_documentos: int = 0,
+        detalhes_documentos: str = "",
         observacao: str = "",
         consultado_em: str | None = None,
     ) -> None:
@@ -187,15 +196,15 @@ class RepositorioManifestacaoNFe:
                 """
                 INSERT INTO consultas_dfe_log(
                     cnpj,ambiente,uf_autor,consultado_em,nsu_enviado,cstat,motivo,
-                    ultimo_nsu_retornado,max_nsu_retornado,quantidade_documentos,observacao
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                    ultimo_nsu_retornado,max_nsu_retornado,quantidade_documentos,detalhes_documentos,observacao
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     cnpj, ambiente, str(uf_autor or "").upper(), quando, int(nsu_enviado or 0),
                     str(cstat or ""), str(motivo or ""),
                     None if ultimo_nsu_retornado is None else int(ultimo_nsu_retornado),
                     None if max_nsu_retornado is None else int(max_nsu_retornado),
-                    int(quantidade_documentos or 0), str(observacao or ""),
+                    int(quantidade_documentos or 0), str(detalhes_documentos or ""), str(observacao or ""),
                 ),
             )
 
@@ -217,6 +226,28 @@ class RepositorioManifestacaoNFe:
     def obter_ultima_consulta_dfe(self, cnpj: str, ambiente: str) -> dict:
         historico = self.listar_consultas_dfe(cnpj, ambiente, 1)
         return historico[0] if historico else {}
+
+    def listar_documentos_intervalo_nsu(
+        self, cnpj: str, ambiente: str, nsu_inicio_exclusivo: int, nsu_fim_inclusivo: int
+    ) -> list[dict]:
+        """Retorna documentos já armazenados entre dois NSUs, sem consultar a SEFAZ."""
+        cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+        ambiente = str(ambiente or "PRODUCAO").upper()
+        inicio = int(nsu_inicio_exclusivo or 0)
+        fim = int(nsu_fim_inclusivo or 0)
+        if fim <= inicio:
+            return []
+        with self.conectar() as conn:
+            linhas = conn.execute(
+                """
+                SELECT nsu,schema_doc,tipo_doc,chave,emitente_nome,emitente_doc,tem_xml_completo
+                FROM documentos_nfe
+                WHERE cnpj_empresa=? AND ambiente=? AND nsu>? AND nsu<=?
+                ORDER BY nsu
+                """,
+                (cnpj, ambiente, inicio, fim),
+            ).fetchall()
+        return [dict(linha) for linha in linhas]
 
     def salvar_documento(self, cnpj: str, ambiente: str, nsu: int, schema: str, xml: str, dados: dict) -> bool:
         agora = datetime.now().isoformat(timespec="seconds")
