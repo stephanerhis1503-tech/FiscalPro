@@ -188,19 +188,19 @@ class PainelManifestacaoNFe(ttk.Frame):
         ac.columnconfigure(2, weight=2)
         ac.columnconfigure(3, weight=2)
 
-        # Área principal dividida em duas faixas fixas e proporcionais.
+        # Área principal: prioridade visual para a grade de NF-e.
         area_dividida = ttk.Frame(self, style="Page.TFrame")
         area_dividida.pack(fill=BOTH, expand=True, padx=10, pady=(0, 6))
         area_dividida.columnconfigure(0, weight=1)
-        area_dividida.rowconfigure(0, weight=3, minsize=110)
-        area_dividida.rowconfigure(1, weight=2, minsize=85)
+        area_dividida.rowconfigure(0, weight=5, minsize=220)
+        area_dividida.rowconfigure(1, weight=2, minsize=90)
 
         card_tabela = self._card(area_dividida)
         card_tabela.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
         corpo = ttk.Frame(card_tabela, style="Page.TFrame")
         corpo.pack(fill=BOTH, expand=True, padx=1, pady=1)
         colunas = ("emissao", "emitente", "cnpj", "valor", "situacao", "manifestacao", "prazo", "xml")
-        self.tabela = ttk.Treeview(corpo, columns=colunas, show="headings", selectmode="extended", height=6)
+        self.tabela = ttk.Treeview(corpo, columns=colunas, show="headings", selectmode="extended", height=12)
         cabecalhos = {
             "emissao": "Emissão", "emitente": "Emitente", "cnpj": "CNPJ", "valor": "Valor NF-e",
             "situacao": "Situação", "manifestacao": "Manifestação", "prazo": "Prazo final", "xml": "XML",
@@ -241,7 +241,7 @@ class PainelManifestacaoNFe(ttk.Frame):
         area_xml = Frame(xml_prev, bg=COR_CARD)
         area_xml.pack(fill=BOTH, expand=True)
         self.txt_xml_preview = Text(
-            area_xml, wrap="none", relief="solid", bd=1, height=5, font=("Consolas", 8)
+            area_xml, wrap="none", relief="solid", bd=1, height=4, font=("Consolas", 8)
         )
         sy_xml = ttk.Scrollbar(area_xml, orient="vertical", command=self.txt_xml_preview.yview)
         sx_xml = ttk.Scrollbar(area_xml, orient="horizontal", command=self.txt_xml_preview.xview)
