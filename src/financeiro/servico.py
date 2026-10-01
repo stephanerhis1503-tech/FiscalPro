@@ -425,13 +425,25 @@ class ContasPagarServico:
         selecionadas = tuple(dict.fromkeys(str(nome).strip() for nome in empresas if str(nome).strip()))
         if not selecionadas:
             selecionadas = tuple(self.repositorio.listar_empresas())
+
+        # Para os relatórios da contabilidade, prioriza o CNPJ gravado na conta.
+        # Em lançamentos antigos sem CNPJ próprio, usa automaticamente o cadastro
+        # do fornecedor somente quando existir um único CNPJ ativo, evitando
+        # escolher o estabelecimento errado quando houver matriz/filiais.
         contas: list[object] = []
         for empresa in selecionadas:
-            contas.extend(
-                self.repositorio.listar_contas(
-                    empresa=empresa, competencia=competencia_iso, limite=100000
-                )
-            )
+            for conta in self.repositorio.listar_contas(
+                empresa=empresa, competencia=competencia_iso, limite=100000
+            ):
+                dados = dict(conta)
+                cnpj_relatorio = str(dados.get("fornecedor_cnpj") or "").strip()
+                if not cnpj_relatorio:
+                    fornecedor = str(dados.get("fornecedor") or "").strip()
+                    cnpjs = self.repositorio.listar_cnpjs_fornecedor(fornecedor) if fornecedor else []
+                    if len(cnpjs) == 1:
+                        cnpj_relatorio = str(cnpjs[0] or "").strip()
+                dados["fornecedor_cnpj_relatorio"] = cnpj_relatorio
+                contas.append(dados)
         return contas
 
     def resumo_documentos_competencia(
