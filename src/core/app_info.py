@@ -1,5 +1,11 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.28 — Rolagem da grade de Manifestação:
+- corrige a rolagem vertical da tabela de NF-e com roda do mouse e touchpad;
+- mantém referências persistentes das barras vertical e horizontal da grade;
+- captura a rolagem dentro da tabela para impedir que o contêiner externo do FiscalPro consuma o evento;
+- adiciona Shift + roda do mouse para rolagem horizontal da grade.
+
 Versão 18.2.27 — Manifestação compacta / mais espaço para a grade:
 - remove a linha fixa de consulta por chave que estava comprimindo verticalmente a tela;
 - a consulta por chave passa para um botão compacto e abre uma janela para colar os 44 dígitos;
@@ -827,9 +833,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.27"
+VERSAO_APP = "18.2.28"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.27.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.28.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
