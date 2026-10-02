@@ -1,5 +1,13 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.25 — Consulta NF-e por chave sem disputar o ultNSU:
+- adiciona consulta pontual consChNFe pela chave de 44 dígitos no Ambiente Nacional;
+- a consulta por chave não altera o ultimo_nsu/max_nsu local da Distribuição DF-e;
+- quando a SEFAZ devolve XML completo, o FiscalPro salva a NF-e no banco e grava o XML automaticamente na pasta escolhida;
+- quando retorna apenas resumo, a NF-e entra na grade e pode ser manifestada; depois a mesma chave pode ser consultada novamente;
+- mantém a sincronização por NSU apenas como modo avançado, com aviso explícito para não usar junto com Digisat/outro distribuidor;
+- mesmo durante a proteção de cStat 656 do distNSU, a consulta pontual por chave permanece disponível na interface.
+
 Versão 18.2.24 — Detalhe do documento DF-e + grade ampliada:
 - o diagnóstico identifica cada documento retornado com NSU, tipo, disponibilidade, schema, chave e emitente quando disponíveis;
 - consultas antigas sem esse detalhe são reconstruídas pelo intervalo de NSU já armazenado localmente, sem nova chamada à SEFAZ;
@@ -805,9 +813,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.24"
+VERSAO_APP = "18.2.25"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.24.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.25.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
