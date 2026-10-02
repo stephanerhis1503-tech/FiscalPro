@@ -75,8 +75,8 @@ class PainelManifestacaoNFe(ttk.Frame):
               font=("Segoe UI", 13, "bold")).pack(anchor="w")
         Label(
             miolo,
-            text=("Consulte as NF-e destinadas ao CNPJ pelo Ambiente Nacional e registre Ciência, Confirmação, "
-                  "Desconhecimento ou Operação não Realizada. A senha do certificado A1 não é gravada."),
+            text=("Consulte uma NF-e pela chave sem disputar a sequência de NSU com outro sistema e registre "
+                  "Ciência, Confirmação, Desconhecimento ou Operação não Realizada. A senha do A1 não é gravada."),
             bg=COR_CARD, fg=COR_TEXTO_SUAVE, font=FONTE_NORMAL, justify=LEFT,
         ).pack(anchor="w", pady=(2, 0))
 
@@ -89,6 +89,7 @@ class PainelManifestacaoNFe(ttk.Frame):
         self.var_uf = StringVar(value="MG")
         self.var_senha = StringVar()
         self.var_busca = StringVar()
+        self.var_chave_consulta = StringVar()
         self.var_filtro_manifestacao = StringVar(value="TODAS")
         self.var_status = StringVar(value="Selecione uma empresa do Cadastro Central com certificado A1 configurado na aba NFS-e Nacional.")
         self.var_pasta_xml = StringVar(
@@ -115,12 +116,32 @@ class PainelManifestacaoNFe(ttk.Frame):
 
         acoes = Frame(linha, bg=COR_CARD)
         acoes.grid(row=0, column=3, sticky="sew")
-        self.btn_sincronizar = ttk.Button(acoes, text="Sincronizar NF-e", command=self._sincronizar, style="Accent.TButton")
+        self.btn_sincronizar = ttk.Button(
+            acoes, text="Sincronizar por NSU", command=self._sincronizar, style="Secondary.TButton"
+        )
         self.btn_sincronizar.pack(fill=X)
         linha.columnconfigure(0, weight=5)
         linha.columnconfigure(1, weight=1)
         linha.columnconfigure(2, weight=3)
         linha.columnconfigure(3, weight=2)
+
+        consulta_chave = Frame(config, bg=COR_CARD, padx=10)
+        consulta_chave.pack(fill=X, pady=(0, 7))
+        Label(
+            consulta_chave,
+            text="Chave da NF-e (44 dígitos) • consulta pontual, não avança o ultNSU",
+            bg=COR_CARD, fg=COR_TEXTO_SUAVE, font=("Segoe UI", 8),
+        ).pack(anchor="w")
+        linha_chave = Frame(consulta_chave, bg=COR_CARD)
+        linha_chave.pack(fill=X, pady=(2, 0))
+        self.ent_chave_consulta = ttk.Entry(linha_chave, textvariable=self.var_chave_consulta)
+        self.ent_chave_consulta.pack(side=LEFT, fill=X, expand=True, padx=(0, 7))
+        self.ent_chave_consulta.bind("<Return>", lambda _e: self._consultar_por_chave())
+        self.btn_consultar_chave = ttk.Button(
+            linha_chave, text="Consultar / baixar pela chave",
+            command=self._consultar_por_chave, style="Accent.TButton",
+        )
+        self.btn_consultar_chave.pack(side=RIGHT)
 
         status = Frame(config, bg=COR_CARD, padx=10)
         status.pack(fill=X, pady=(0, 8))
@@ -335,7 +356,7 @@ class PainelManifestacaoNFe(ttk.Frame):
             self._definir_preview_xml(
                 "XML completo ainda não está disponível para esta NF-e.\n\n"
                 "Situação comum: a SEFAZ disponibilizou apenas o resumo do DF-e.\n"
-                "Após a manifestação e nova sincronização no momento permitido, o XML completo pode ficar disponível.",
+                "Após a manifestação, consulte novamente esta mesma chave para tentar obter o XML completo.",
                 f"NF-e {str(reg.get('chave') or '')} disponível apenas como resumo.",
             )
             return
@@ -449,7 +470,7 @@ class PainelManifestacaoNFe(ttk.Frame):
                 f"Consulta DF-e protegida até {status.get('bloqueado_ate_formatado')} "
                 f"• faltam {self._tempo_restante_texto(status.get('segundos_restantes', 0))}"
                 f"{detalhe} • NSU {int(status.get('ultimo_nsu') or 0):015d} / {int(status.get('max_nsu') or 0):015d}"
-                f" • Notas: {len(self.registros)}"
+                f" • Notas: {len(self.registros)} • Consulta por chave continua disponível"
             )
             if agendar:
                 self._bloqueio_after_id = self.after(15000, self._atualizar_bloqueio_ui)
@@ -472,7 +493,7 @@ class PainelManifestacaoNFe(ttk.Frame):
         for botao in (
             self.btn_sincronizar, self.btn_diagnostico, self.btn_ciencia, self.btn_confirmar,
             self.btn_desconhecer, self.btn_nao_realizada, self.btn_xml, self.btn_xml_todos,
-            self.btn_pasta_xml,
+            self.btn_pasta_xml, self.btn_consultar_chave,
         ):
             try:
                 botao.configure(state=estado)
@@ -564,10 +585,103 @@ class PainelManifestacaoNFe(ttk.Frame):
         ttk.Button(botoes, text="Copiar diagnóstico", command=copiar).pack(side=LEFT)
         ttk.Button(botoes, text="Fechar", command=janela.destroy).pack(side=RIGHT)
 
+    def _consultar_por_chave(self):
+        empresa = self._empresa_selecionada()
+        if not empresa:
+            messagebox.showwarning("NF-e / Manifestação", "Selecione uma empresa.", parent=self)
+            return
+        senha = self.var_senha.get()
+        if not senha:
+            messagebox.showwarning("NF-e / Manifestação", "Digite a senha do certificado A1.", parent=self)
+            return
+        chave = "".join(ch for ch in self.var_chave_consulta.get() if ch.isdigit())
+        if len(chave) != 44:
+            messagebox.showwarning(
+                "Consulta por chave",
+                "Informe uma chave de NF-e válida com 44 dígitos.",
+                parent=self,
+            )
+            return
+        self.var_chave_consulta.set(chave)
+        uf = self.var_uf.get()
+        self.servico.salvar_uf(empresa["cnpj"], empresa.get("ambiente", "PRODUCAO"), uf)
+        self.var_status.set(f"Consultando a chave {chave} sem alterar o ultNSU…")
+        self._executar_thread(
+            lambda: self.servico.consultar_por_chave(empresa["id"], senha, uf, chave),
+            self._consulta_chave_concluida,
+        )
+
+    def _consulta_chave_concluida(self, resultado: dict):
+        self._definir_ocupado(False)
+        chave = str(resultado.get("chave") or "")
+        self._consultar_local()
+
+        registro = next((r for r in self.registros if str(r.get("chave") or "") == chave), None)
+        if registro:
+            try:
+                indice = self.registros.index(registro)
+                self.tabela.selection_set(str(indice))
+                self.tabela.focus(str(indice))
+                self.tabela.see(str(indice))
+                self._selecionar_nota()
+            except Exception:
+                pass
+
+        cstat = str(resultado.get("cstat") or "")
+        motivo = str(resultado.get("motivo") or "")
+        if registro and registro.get("tem_xml_completo"):
+            empresa = self._empresa_selecionada() or {}
+            xml = self.servico.obter_xml_completo(int(empresa.get("id") or 0), chave)
+            if xml:
+                try:
+                    destino = self._destino_xml_nota(empresa, registro)
+                    destino.write_text(xml, encoding="utf-8")
+                    self.var_status.set(
+                        f"Consulta por chave concluída • cStat {cstat} • XML completo salvo em {destino}"
+                    )
+                    messagebox.showinfo(
+                        "NF-e localizada",
+                        f"NF-e localizada e XML completo salvo.\n\n{destino}",
+                        parent=self,
+                    )
+                    return
+                except OSError as exc:
+                    self.var_status.set(f"NF-e localizada, mas houve erro ao salvar o XML: {exc}")
+
+        if registro:
+            self.var_status.set(
+                f"Consulta por chave concluída • cStat {cstat} • NF-e disponível como resumo"
+            )
+            messagebox.showinfo(
+                "NF-e localizada",
+                "A NF-e foi localizada, mas a SEFAZ ainda disponibilizou somente o resumo.\n\n"
+                "Você pode fazer a manifestação e depois consultar a mesma chave novamente para tentar obter o XML completo.",
+                parent=self,
+            )
+            return
+
+        detalhe = "\n".join(str(x) for x in (resultado.get("detalhes") or []) if str(x).strip())
+        self.var_status.set(f"Consulta por chave • cStat {cstat}: {motivo}")
+        messagebox.showinfo(
+            "Consulta por chave",
+            f"Retorno: cStat {cstat or '—'}\n{motivo or 'Sem motivo informado.'}"
+            + (f"\n\n{detalhe}" if detalhe else ""),
+            parent=self,
+        )
+
     def _sincronizar(self):
         empresa = self._empresa_selecionada()
         if not empresa:
             messagebox.showwarning("NF-e / Manifestação", "Selecione uma empresa.", parent=self)
+            return
+        if not messagebox.askyesno(
+            "Sincronização por NSU",
+            "Este modo avança a sequência de NSU e deve ser usado somente quando nenhum outro sistema "
+            "(como Digisat) consulta a Distribuição DF-e deste CNPJ.\n\n"
+            "Se o Digisat consulta este CNPJ, use 'Consultar / baixar pela chave'.\n\n"
+            "Deseja continuar com a sincronização por NSU?",
+            parent=self,
+        ):
             return
         status = self.servico.status_sincronizacao(empresa["id"])
         if status.get("bloqueado"):
@@ -774,7 +888,7 @@ class PainelManifestacaoNFe(ttk.Frame):
         if indisponiveis:
             mensagem += (
                 "\n\nAs NF-e marcadas como 'Resumo' não foram consultadas novamente. "
-                "Depois de a SEFAZ disponibilizar o XML completo em uma sincronização permitida, elas poderão ser baixadas."
+                "Use 'Consultar / baixar pela chave' para consultar pontualmente sem avançar o ultNSU."
             )
         if erros:
             mensagem += "\n\nPrimeiro erro: " + erros[0]
