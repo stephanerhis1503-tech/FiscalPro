@@ -460,17 +460,26 @@ class PainelManifestacaoNFe(ttk.Frame):
             return
         status = self.servico.status_sincronizacao(empresa["id"])
         if status.get("bloqueado"):
+            cstat = str(status.get("ultimo_cstat") or "")
+            bloqueio_656 = cstat.startswith("656")
             try:
                 self.btn_sincronizar.configure(state="disabled")
+                self.btn_consultar_chave.configure(
+                    state="disabled" if bloqueio_656 else ("disabled" if self._ocupado else "normal")
+                )
             except Exception:
                 pass
-            cstat = str(status.get("ultimo_cstat") or "")
             detalhe = f" • cStat {cstat}" if cstat else ""
+            complemento_chave = (
+                " • Por segurança, consulta por chave também bloqueada"
+                if bloqueio_656
+                else " • Consulta por chave disponível"
+            )
             self.var_status.set(
                 f"Consulta DF-e protegida até {status.get('bloqueado_ate_formatado')} "
                 f"• faltam {self._tempo_restante_texto(status.get('segundos_restantes', 0))}"
                 f"{detalhe} • NSU {int(status.get('ultimo_nsu') or 0):015d} / {int(status.get('max_nsu') or 0):015d}"
-                f" • Notas: {len(self.registros)} • Consulta por chave continua disponível"
+                f" • Notas: {len(self.registros)}{complemento_chave}"
             )
             if agendar:
                 self._bloqueio_after_id = self.after(15000, self._atualizar_bloqueio_ui)
@@ -479,6 +488,7 @@ class PainelManifestacaoNFe(ttk.Frame):
         if not self._ocupado:
             try:
                 self.btn_sincronizar.configure(state="normal")
+                self.btn_consultar_chave.configure(state="normal")
             except Exception:
                 pass
         if str(self.var_status.get()).startswith("Consulta DF-e protegida"):
