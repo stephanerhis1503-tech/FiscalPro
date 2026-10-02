@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -312,6 +313,81 @@ class ServicoManifestacaoNFe:
             "motivo": ultimo_motivo,
             "bloqueado_ate": bloqueado_ate,
             "bloqueado_ate_formatado": _data_humana(_ler_data_iso(bloqueado_ate)),
+        }
+
+    def consultar_por_chave(self, empresa_id: int, senha: str, uf_autor: str, chave: str) -> dict:
+        """Consulta uma NF-e específica sem avançar nem alterar o ultNSU da distribuição."""
+        empresa = self.obter_empresa(empresa_id)
+        if not empresa:
+            raise ValueError("Empresa não encontrada.")
+        uf_autor = str(uf_autor or "").upper()
+        if uf_autor not in UF_CODIGOS:
+            raise ValueError("Selecione a UF da empresa.")
+        chave = "".join(ch for ch in str(chave or "") if ch.isdigit())
+        if len(chave) != 44:
+            raise ValueError("A chave da NF-e deve conter exatamente 44 dígitos.")
+
+        cert = Path(empresa.get("certificado_path") or "")
+        if not cert.is_file():
+            raise FileNotFoundError("O certificado A1 desta empresa não foi encontrado. Atualize-o na área NFS-e.")
+        if not senha:
+            raise ValueError("Digite a senha do certificado A1.")
+
+        cnpj = str(empresa.get("cnpj") or "")
+        ambiente = str(empresa.get("ambiente") or "PRODUCAO").upper()
+        cliente = ClienteNFeAmbienteNacional(str(cert), senha, ambiente)
+        resposta = cliente.consultar_por_chave(cnpj, uf_autor, chave)
+
+        if resposta.cstat not in {"137", "138"}:
+            raise ErroNFe(
+                f"Consulta por chave retornou {resposta.cstat or 'sem cStat'}: "
+                f"{resposta.motivo or 'sem motivo informado'}"
+            )
+
+        processados = 0
+        salvos = 0
+        detalhes: list[str] = []
+        xml_completo = False
+        chave_localizada = False
+
+        for doc in resposta.documentos:
+            dados = analisar_documento_distribuido(doc.xml, doc.schema)
+            chave_doc = "".join(ch for ch in str(dados.get("chave") or "") if ch.isdigit())
+            if chave_doc == chave:
+                chave_localizada = True
+            if dados.get("tipo") == "EVENTO":
+                self.repo.registrar_evento_distribuido(cnpj, ambiente, dados, doc.xml)
+
+            nsu_local = int(doc.nsu or 0)
+            if nsu_local <= 0:
+                base = f"{chave_doc or chave}|{doc.schema}|{doc.xml}".encode("utf-8", errors="ignore")
+                nsu_local = -max(1, int(hashlib.sha256(base).hexdigest()[:15], 16))
+
+            if self.repo.salvar_documento(cnpj, ambiente, nsu_local, doc.schema, doc.xml, dados):
+                salvos += 1
+            processados += 1
+            completo = bool(dados.get("tem_xml_completo"))
+            xml_completo = xml_completo or (completo and (not chave_doc or chave_doc == chave))
+            detalhes.append(
+                _detalhe_documento_dfe(
+                    int(doc.nsu or 0),
+                    str(doc.schema or ""),
+                    str(dados.get("tipo") or ""),
+                    chave_doc,
+                    str(dados.get("emitente_nome") or dados.get("emitente_doc") or ""),
+                    completo,
+                )
+            )
+
+        return {
+            "chave": chave,
+            "cstat": resposta.cstat,
+            "motivo": resposta.motivo,
+            "processados": processados,
+            "salvos": salvos,
+            "xml_completo": bool(xml_completo),
+            "chave_localizada": bool(chave_localizada),
+            "detalhes": detalhes,
         }
 
     def diagnostico(self, empresa_id: int) -> dict:
