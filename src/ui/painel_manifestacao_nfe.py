@@ -82,7 +82,7 @@ class PainelManifestacaoNFe(ttk.Frame):
 
         config = self._card(self)
         config.pack(fill=X, padx=10, pady=(0, 6))
-        linha = Frame(config, bg=COR_CARD, padx=10, pady=8)
+        linha = Frame(config, bg=COR_CARD, padx=10, pady=5)
         linha.pack(fill=X)
 
         self.var_empresa = StringVar()
@@ -125,30 +125,17 @@ class PainelManifestacaoNFe(ttk.Frame):
         linha.columnconfigure(2, weight=3)
         linha.columnconfigure(3, weight=2)
 
-        consulta_chave = Frame(config, bg=COR_CARD, padx=10)
-        consulta_chave.pack(fill=X, pady=(0, 7))
-        Label(
-            consulta_chave,
-            text="Chave da NF-e (44 dígitos) • consulta pontual, não avança o ultNSU",
-            bg=COR_CARD, fg=COR_TEXTO_SUAVE, font=("Segoe UI", 8),
-        ).pack(anchor="w")
-        linha_chave = Frame(consulta_chave, bg=COR_CARD)
-        linha_chave.pack(fill=X, pady=(2, 0))
-        self.ent_chave_consulta = ttk.Entry(linha_chave, textvariable=self.var_chave_consulta)
-        self.ent_chave_consulta.pack(side=LEFT, fill=X, expand=True, padx=(0, 7))
-        self.ent_chave_consulta.bind("<Return>", lambda _e: self._consultar_por_chave())
-        self.btn_consultar_chave = ttk.Button(
-            linha_chave, text="Consultar / baixar pela chave",
-            command=self._consultar_por_chave, style="Accent.TButton",
-        )
-        self.btn_consultar_chave.pack(side=RIGHT)
-
         status = Frame(config, bg=COR_CARD, padx=10)
-        status.pack(fill=X, pady=(0, 8))
+        status.pack(fill=X, pady=(0, 5))
         Label(status, textvariable=self.var_status, bg=COR_CARD, fg=COR_TEXTO_SUAVE,
               font=("Segoe UI", 8), justify=LEFT).pack(side=LEFT, fill=X, expand=True)
         ttk.Button(status, text="Atualizar empresas", command=self._carregar_empresas,
                    style="Secondary.TButton").pack(side=RIGHT)
+        self.btn_consultar_chave = ttk.Button(
+            status, text="Consultar NF-e por chave",
+            command=self._consultar_por_chave, style="Accent.TButton",
+        )
+        self.btn_consultar_chave.pack(side=RIGHT, padx=(0, 6))
         self.btn_diagnostico = ttk.Button(
             status, text="Diagnóstico", command=self._mostrar_diagnostico,
             style="Secondary.TButton"
@@ -157,7 +144,7 @@ class PainelManifestacaoNFe(ttk.Frame):
 
         filtros = self._card(self)
         filtros.pack(fill=X, padx=10, pady=(0, 6))
-        fl = Frame(filtros, bg=COR_CARD, padx=10, pady=7)
+        fl = Frame(filtros, bg=COR_CARD, padx=10, pady=5)
         fl.pack(fill=X)
         Label(fl, text="Buscar", bg=COR_CARD, fg=COR_TEXTO_SUAVE, font=("Segoe UI", 8)).grid(row=0, column=0, sticky="w")
         Label(fl, text="Manifestação", bg=COR_CARD, fg=COR_TEXTO_SUAVE, font=("Segoe UI", 8)).grid(row=0, column=1, sticky="w")
@@ -178,7 +165,7 @@ class PainelManifestacaoNFe(ttk.Frame):
         # Ações compactas: ficam visíveis sem consumir a área da grade/XML.
         acoes_card = self._card(self)
         acoes_card.pack(fill=X, padx=10, pady=(0, 6))
-        ac = Frame(acoes_card, bg=COR_CARD, padx=8, pady=5)
+        ac = Frame(acoes_card, bg=COR_CARD, padx=8, pady=4)
         ac.pack(fill=X)
 
         self.var_detalhe = StringVar(value="Selecione uma NF-e para manifestar ou baixar XML.")
@@ -213,8 +200,8 @@ class PainelManifestacaoNFe(ttk.Frame):
         area_dividida = ttk.Frame(self, style="Page.TFrame")
         area_dividida.pack(fill=BOTH, expand=True, padx=10, pady=(0, 6))
         area_dividida.columnconfigure(0, weight=1)
-        area_dividida.rowconfigure(0, weight=5, minsize=220)
-        area_dividida.rowconfigure(1, weight=2, minsize=90)
+        area_dividida.rowconfigure(0, weight=6, minsize=250)
+        area_dividida.rowconfigure(1, weight=1, minsize=70)
 
         card_tabela = self._card(area_dividida)
         card_tabela.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
@@ -604,7 +591,16 @@ class PainelManifestacaoNFe(ttk.Frame):
         if not senha:
             messagebox.showwarning("NF-e / Manifestação", "Digite a senha do certificado A1.", parent=self)
             return
-        chave = "".join(ch for ch in self.var_chave_consulta.get() if ch.isdigit())
+
+        informado = simpledialog.askstring(
+            "Consultar NF-e por chave",
+            "Cole a chave da NF-e com 44 dígitos:",
+            initialvalue=self.var_chave_consulta.get(),
+            parent=self,
+        )
+        if informado is None:
+            return
+        chave = "".join(ch for ch in informado if ch.isdigit())
         if len(chave) != 44:
             messagebox.showwarning(
                 "Consulta por chave",
