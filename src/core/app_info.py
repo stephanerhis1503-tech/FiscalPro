@@ -1,5 +1,12 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.27 — Manifestação compacta / mais espaço para a grade:
+- remove a linha fixa de consulta por chave que estava comprimindo verticalmente a tela;
+- a consulta por chave passa para um botão compacto e abre uma janela para colar os 44 dígitos;
+- reduz espaçamentos verticais dos blocos superiores sem retirar nenhuma função;
+- aumenta a prioridade de altura da grade de NF-e e reduz a área mínima da prévia do XML;
+- mantém toda a proteção de cStat 656 e o fluxo consChNFe das versões anteriores.
+
 Versão 18.2.26 — Proteção oficial do consChNFe / cStat 656:
 - mantém a consulta pontual por chave, mas respeita bloqueio de 1 hora quando o Ambiente Nacional retorna cStat 656;
 - adiciona limite local de segurança de até 20 consultas por chave em uma janela de 1 hora por CNPJ;
@@ -820,9 +827,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.26"
+VERSAO_APP = "18.2.27"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.26.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.27.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
