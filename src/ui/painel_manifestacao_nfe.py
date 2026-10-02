@@ -200,15 +200,18 @@ class PainelManifestacaoNFe(ttk.Frame):
         area_dividida = ttk.Frame(self, style="Page.TFrame")
         area_dividida.pack(fill=BOTH, expand=True, padx=10, pady=(0, 6))
         area_dividida.columnconfigure(0, weight=1)
-        area_dividida.rowconfigure(0, weight=6, minsize=250)
-        area_dividida.rowconfigure(1, weight=1, minsize=70)
+        # Não force uma altura maior que a janela: se a linha ficar maior que a
+        # área realmente visível, o Treeview é recortado e a barra acha que todas
+        # as linhas estão visíveis. Deixamos a grade encolher e crescer de verdade.
+        area_dividida.rowconfigure(0, weight=1, minsize=95)
+        area_dividida.rowconfigure(1, weight=0, minsize=58)
 
         card_tabela = self._card(area_dividida)
         card_tabela.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
         corpo = ttk.Frame(card_tabela, style="Page.TFrame")
         corpo.pack(fill=BOTH, expand=True, padx=1, pady=1)
         colunas = ("emissao", "emitente", "cnpj", "valor", "situacao", "manifestacao", "prazo", "xml")
-        self.tabela = ttk.Treeview(corpo, columns=colunas, show="headings", selectmode="extended", height=12)
+        self.tabela = ttk.Treeview(corpo, columns=colunas, show="headings", selectmode="extended", height=4)
         cabecalhos = {
             "emissao": "Emissão", "emitente": "Emitente", "cnpj": "CNPJ", "valor": "Valor NF-e",
             "situacao": "Situação", "manifestacao": "Manifestação", "prazo": "Prazo final", "xml": "XML",
@@ -237,6 +240,8 @@ class PainelManifestacaoNFe(ttk.Frame):
         self.tabela.bind("<Shift-MouseWheel>", self._rolar_tabela_horizontal)
         self.tabela.bind("<Button-4>", self._rolar_tabela_vertical)
         self.tabela.bind("<Button-5>", self._rolar_tabela_vertical)
+        corpo.bind("<MouseWheel>", self._rolar_tabela_vertical)
+        card_tabela.bind("<MouseWheel>", self._rolar_tabela_vertical)
         self.scroll_tabela_y.bind("<MouseWheel>", self._rolar_tabela_vertical)
         self.scroll_tabela_y.bind("<Button-4>", self._rolar_tabela_vertical)
         self.scroll_tabela_y.bind("<Button-5>", self._rolar_tabela_vertical)
@@ -262,7 +267,7 @@ class PainelManifestacaoNFe(ttk.Frame):
         area_xml = Frame(xml_prev, bg=COR_CARD)
         area_xml.pack(fill=BOTH, expand=True)
         self.txt_xml_preview = Text(
-            area_xml, wrap="none", relief="solid", bd=1, height=4, font=("Consolas", 8)
+            area_xml, wrap="none", relief="solid", bd=1, height=2, font=("Consolas", 8)
         )
         sy_xml = ttk.Scrollbar(area_xml, orient="vertical", command=self.txt_xml_preview.yview)
         sx_xml = ttk.Scrollbar(area_xml, orient="horizontal", command=self.txt_xml_preview.xview)
