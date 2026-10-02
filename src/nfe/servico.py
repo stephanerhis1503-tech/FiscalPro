@@ -16,6 +16,7 @@ from .repositorio import RepositorioManifestacaoNFe
 
 
 INTERVALO_SEFAZ_SEGUNDOS = 60 * 60
+LIMITE_CONSULTAS_CHAVE_HORA = 20
 
 
 def _ler_data_iso(valor: str) -> datetime | None:
@@ -335,8 +336,40 @@ class ServicoManifestacaoNFe:
 
         cnpj = str(empresa.get("cnpj") or "")
         ambiente = str(empresa.get("ambiente") or "PRODUCAO").upper()
+
+        status = self.status_sincronizacao(empresa_id)
+        cstat_anterior = str(status.get("ultimo_cstat") or "")
+        if status.get("bloqueado") and cstat_anterior.startswith("656"):
+            raise ErroNFe(
+                "O Ambiente Nacional retornou cStat 656 para este CNPJ. "
+                f"Aguarde até {status.get('bloqueado_ate_formatado')} antes de qualquer nova consulta "
+                "no NFeDistribuicaoDFe, inclusive consulta por chave."
+            )
+
+        usadas_ultima_hora = self.repo.contar_consultas_chave_ultima_hora(cnpj, ambiente)
+        if usadas_ultima_hora >= LIMITE_CONSULTAS_CHAVE_HORA:
+            raise ErroNFe(
+                "Limite local de segurança atingido: 20 consultas por chave na última hora para este CNPJ. "
+                "Aguarde completar 1 hora antes de consultar outra chave."
+            )
+
         cliente = ClienteNFeAmbienteNacional(str(cert), senha, ambiente)
         resposta = cliente.consultar_por_chave(cnpj, uf_autor, chave)
+        self.repo.registrar_consulta_chave(
+            cnpj, ambiente, chave, resposta.cstat, resposta.motivo,
+            consultado_em=_data_iso(datetime.now()),
+        )
+
+        if resposta.cstat == "656":
+            ate = self._registrar_bloqueio(
+                cnpj, ambiente, uf_autor,
+                cstat="656_CHAVE",
+                motivo=f"Consulta por chave: {resposta.motivo}",
+            )
+            raise ErroNFe(
+                "Consumo indevido (cStat 656) na consulta por chave. "
+                f"Não faça nova consulta no NFeDistribuicaoDFe antes de {_data_humana(ate)}."
+            )
 
         if resposta.cstat not in {"137", "138"}:
             raise ErroNFe(
@@ -473,6 +506,12 @@ class ServicoManifestacaoNFe:
             orientacao = (
                 "A comunicação foi interrompida por um erro local do FiscalPro/Windows. "
                 "Use o detalhe abaixo para identificar a causa."
+            )
+        elif cstat == "656_CHAVE":
+            situacao = "CONSUMO INDEVIDO • CONSULTA POR CHAVE"
+            orientacao = (
+                "A última rejeição 656 ocorreu em uma consulta pontual por chave. "
+                "Não faça nenhuma nova consulta ao NFeDistribuicaoDFe até o horário de liberação."
             )
         elif cstat == "656":
             situacao = "CONSUMO INDEVIDO"
