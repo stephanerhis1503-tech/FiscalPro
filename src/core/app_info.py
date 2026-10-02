@@ -1,5 +1,11 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.29 — Correção estrutural da rolagem da Manifestação:
+- corrige a causa da barra vertical imóvel quando a grade era maior que a altura realmente disponível na janela;
+- remove alturas mínimas excessivas que faziam o Treeview ser recortado visualmente sem perceber a redução do viewport;
+- a grade agora começa compacta e cresce com o espaço disponível, fazendo o scrollbar refletir as linhas realmente visíveis;
+- reduz a prévia do XML para preservar espaço e mantém rolagem por mouse, touchpad e arraste da barra.
+
 Versão 18.2.28 — Rolagem da grade de Manifestação:
 - corrige a rolagem vertical da tabela de NF-e com roda do mouse e touchpad;
 - mantém referências persistentes das barras vertical e horizontal da grade;
@@ -833,9 +839,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.28"
+VERSAO_APP = "18.2.29"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.28.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.29.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
