@@ -218,15 +218,28 @@ class PainelManifestacaoNFe(ttk.Frame):
         for col in colunas:
             self.tabela.heading(col, text=cabecalhos[col])
             self.tabela.column(col, width=larguras[col], minwidth=60, anchor="w" if col in {"emitente", "manifestacao"} else "center")
-        sy = ttk.Scrollbar(corpo, orient="vertical", command=self.tabela.yview)
-        sx = ttk.Scrollbar(corpo, orient="horizontal", command=self.tabela.xview)
-        self.tabela.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
+        self.scroll_tabela_y = ttk.Scrollbar(corpo, orient="vertical", command=self.tabela.yview)
+        self.scroll_tabela_x = ttk.Scrollbar(corpo, orient="horizontal", command=self.tabela.xview)
+        self.tabela.configure(
+            yscrollcommand=self.scroll_tabela_y.set,
+            xscrollcommand=self.scroll_tabela_x.set,
+        )
         self.tabela.grid(row=0, column=0, sticky="nsew")
-        sy.grid(row=0, column=1, sticky="ns")
-        sx.grid(row=1, column=0, sticky="ew")
+        self.scroll_tabela_y.grid(row=0, column=1, sticky="ns")
+        self.scroll_tabela_x.grid(row=1, column=0, sticky="ew")
         corpo.rowconfigure(0, weight=1)
         corpo.columnconfigure(0, weight=1)
         self.tabela.bind("<<TreeviewSelect>>", self._selecionar_nota)
+        # O painel principal do FiscalPro possui rolagens próprias; por isso a grade
+        # captura explicitamente a roda do mouse/touchpad para não perder o evento
+        # para o contêiner externo.
+        self.tabela.bind("<MouseWheel>", self._rolar_tabela_vertical)
+        self.tabela.bind("<Shift-MouseWheel>", self._rolar_tabela_horizontal)
+        self.tabela.bind("<Button-4>", self._rolar_tabela_vertical)
+        self.tabela.bind("<Button-5>", self._rolar_tabela_vertical)
+        self.scroll_tabela_y.bind("<MouseWheel>", self._rolar_tabela_vertical)
+        self.scroll_tabela_y.bind("<Button-4>", self._rolar_tabela_vertical)
+        self.scroll_tabela_y.bind("<Button-5>", self._rolar_tabela_vertical)
 
         card_xml = self._card(area_dividida)
         card_xml.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
@@ -261,6 +274,27 @@ class PainelManifestacaoNFe(ttk.Frame):
         area_xml.columnconfigure(0, weight=1)
         self.txt_xml_preview.insert("1.0", "Selecione uma NF-e para visualizar o XML aqui.")
         self.txt_xml_preview.configure(state="disabled")
+
+    def _rolar_tabela_vertical(self, event):
+        if getattr(event, "num", None) == 4:
+            unidades = -1
+        elif getattr(event, "num", None) == 5:
+            unidades = 1
+        else:
+            delta = int(getattr(event, "delta", 0) or 0)
+            if delta == 0:
+                return "break"
+            unidades = -1 if delta > 0 else 1
+        self.tabela.yview_scroll(unidades, "units")
+        return "break"
+
+    def _rolar_tabela_horizontal(self, event):
+        delta = int(getattr(event, "delta", 0) or 0)
+        if delta == 0:
+            return "break"
+        unidades = -1 if delta > 0 else 1
+        self.tabela.xview_scroll(unidades, "units")
+        return "break"
 
     def _empresa_selecionada(self) -> dict | None:
         idx = self.combo_empresa.current()
