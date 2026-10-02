@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from src.core.caminhos import PASTA_DADOS_INTERNOS
@@ -59,6 +59,18 @@ class RepositorioManifestacaoNFe:
                 );
                 CREATE INDEX IF NOT EXISTS idx_consultas_dfe_cnpj
                     ON consultas_dfe_log(cnpj, ambiente, id DESC);
+
+                CREATE TABLE IF NOT EXISTS consultas_chave_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cnpj TEXT NOT NULL,
+                    ambiente TEXT NOT NULL,
+                    chave TEXT NOT NULL,
+                    consultado_em TEXT NOT NULL,
+                    cstat TEXT NOT NULL DEFAULT '',
+                    motivo TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_consultas_chave_cnpj
+                    ON consultas_chave_log(cnpj, ambiente, consultado_em DESC);
 
                 CREATE TABLE IF NOT EXISTS documentos_nfe (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -207,6 +219,38 @@ class RepositorioManifestacaoNFe:
                     int(quantidade_documentos or 0), str(detalhes_documentos or ""), str(observacao or ""),
                 ),
             )
+
+    def registrar_consulta_chave(
+        self, cnpj: str, ambiente: str, chave: str, cstat: str, motivo: str = "",
+        consultado_em: str | None = None,
+    ) -> None:
+        cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+        ambiente = str(ambiente or "PRODUCAO").upper()
+        chave = "".join(ch for ch in str(chave or "") if ch.isdigit())
+        quando = str(consultado_em or datetime.now().isoformat(timespec="seconds"))
+        with self.conectar() as conn:
+            conn.execute(
+                """
+                INSERT INTO consultas_chave_log(cnpj,ambiente,chave,consultado_em,cstat,motivo)
+                VALUES(?,?,?,?,?,?)
+                """,
+                (cnpj, ambiente, chave, quando, str(cstat or ""), str(motivo or "")),
+            )
+
+    def contar_consultas_chave_ultima_hora(self, cnpj: str, ambiente: str) -> int:
+        cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+        ambiente = str(ambiente or "PRODUCAO").upper()
+        corte = (datetime.now() - timedelta(hours=1)).isoformat(timespec="seconds")
+        with self.conectar() as conn:
+            linha = conn.execute(
+                """
+                SELECT COUNT(*) AS qtd
+                FROM consultas_chave_log
+                WHERE cnpj=? AND ambiente=? AND consultado_em>=?
+                """,
+                (cnpj, ambiente, corte),
+            ).fetchone()
+        return int(linha["qtd"] or 0) if linha else 0
 
     def listar_consultas_dfe(self, cnpj: str, ambiente: str, limite: int = 8) -> list[dict]:
         cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
