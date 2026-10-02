@@ -110,29 +110,7 @@ class ClienteNFeAmbienteNacional:
         except TimeoutError as exc:
             raise ErroNFe("Tempo esgotado na comunicação com o Ambiente Nacional da NF-e.") from exc
 
-    def consultar_distribuicao(self, cnpj: str, uf_autor: str, ultimo_nsu: int) -> RespostaDistribuicao:
-        cnpj = _so_digitos(cnpj)
-        uf = str(uf_autor or "").upper().strip()
-        if len(cnpj) != 14:
-            raise ValueError("CNPJ da empresa deve conter 14 dígitos.")
-        if uf not in UF_CODIGOS:
-            raise ValueError("Selecione a UF da empresa para consultar as NF-e destinadas.")
-        nsu = str(max(0, int(ultimo_nsu or 0))).zfill(15)
-
-        envelope = etree.Element(etree.QName(NS_SOAP11, "Envelope"), nsmap={"soap": NS_SOAP11})
-        body = etree.SubElement(envelope, etree.QName(NS_SOAP11, "Body"))
-        oper = etree.SubElement(body, etree.QName(NS_DIST, "nfeDistDFeInteresse"), nsmap={None: NS_DIST})
-        dados_msg = etree.SubElement(oper, etree.QName(NS_DIST, "nfeDadosMsg"))
-        dist = etree.SubElement(dados_msg, etree.QName(NS_NFE, "distDFeInt"), nsmap={None: NS_NFE}, versao="1.01")
-        etree.SubElement(dist, etree.QName(NS_NFE, "tpAmb")).text = self.tp_amb
-        etree.SubElement(dist, etree.QName(NS_NFE, "cUFAutor")).text = UF_CODIGOS[uf]
-        etree.SubElement(dist, etree.QName(NS_NFE, "CNPJ")).text = cnpj
-        dist_nsu = etree.SubElement(dist, etree.QName(NS_NFE, "distNSU"))
-        etree.SubElement(dist_nsu, etree.QName(NS_NFE, "ultNSU")).text = nsu
-
-        xml_envio = etree.tostring(envelope, xml_declaration=True, encoding="UTF-8")
-        acao = f"{NS_DIST}/nfeDistDFeInteresse"
-        retorno = self._post_soap(self.url_distribuicao, acao, xml_envio)
+    def _ler_resposta_distribuicao(self, retorno: str) -> RespostaDistribuicao:
         try:
             raiz = etree.fromstring(retorno.encode("utf-8"))
         except etree.XMLSyntaxError as exc:
@@ -164,6 +142,59 @@ class ClienteNFeAmbienteNacional:
             ultimo_nsu_informado=bool(str(ult_texto).strip()),
             max_nsu_informado=bool(str(max_texto).strip()),
         )
+
+    def consultar_distribuicao(self, cnpj: str, uf_autor: str, ultimo_nsu: int) -> RespostaDistribuicao:
+        cnpj = _so_digitos(cnpj)
+        uf = str(uf_autor or "").upper().strip()
+        if len(cnpj) != 14:
+            raise ValueError("CNPJ da empresa deve conter 14 dígitos.")
+        if uf not in UF_CODIGOS:
+            raise ValueError("Selecione a UF da empresa para consultar as NF-e destinadas.")
+        nsu = str(max(0, int(ultimo_nsu or 0))).zfill(15)
+
+        envelope = etree.Element(etree.QName(NS_SOAP11, "Envelope"), nsmap={"soap": NS_SOAP11})
+        body = etree.SubElement(envelope, etree.QName(NS_SOAP11, "Body"))
+        oper = etree.SubElement(body, etree.QName(NS_DIST, "nfeDistDFeInteresse"), nsmap={None: NS_DIST})
+        dados_msg = etree.SubElement(oper, etree.QName(NS_DIST, "nfeDadosMsg"))
+        dist = etree.SubElement(dados_msg, etree.QName(NS_NFE, "distDFeInt"), nsmap={None: NS_NFE}, versao="1.01")
+        etree.SubElement(dist, etree.QName(NS_NFE, "tpAmb")).text = self.tp_amb
+        etree.SubElement(dist, etree.QName(NS_NFE, "cUFAutor")).text = UF_CODIGOS[uf]
+        etree.SubElement(dist, etree.QName(NS_NFE, "CNPJ")).text = cnpj
+        dist_nsu = etree.SubElement(dist, etree.QName(NS_NFE, "distNSU"))
+        etree.SubElement(dist_nsu, etree.QName(NS_NFE, "ultNSU")).text = nsu
+
+        xml_envio = etree.tostring(envelope, xml_declaration=True, encoding="UTF-8")
+        acao = f"{NS_DIST}/nfeDistDFeInteresse"
+        retorno = self._post_soap(self.url_distribuicao, acao, xml_envio)
+        return self._ler_resposta_distribuicao(retorno)
+
+    def consultar_por_chave(self, cnpj: str, uf_autor: str, chave: str) -> RespostaDistribuicao:
+        """Consulta pontual de um DF-e por chave, sem consumir a sequência distNSU."""
+        cnpj = _so_digitos(cnpj)
+        chave = _so_digitos(chave)
+        uf = str(uf_autor or "").upper().strip()
+        if len(cnpj) != 14:
+            raise ValueError("CNPJ da empresa deve conter 14 dígitos.")
+        if len(chave) != 44:
+            raise ValueError("A chave da NF-e deve conter 44 dígitos.")
+        if uf not in UF_CODIGOS:
+            raise ValueError("Selecione a UF da empresa para consultar a NF-e.")
+
+        envelope = etree.Element(etree.QName(NS_SOAP11, "Envelope"), nsmap={"soap": NS_SOAP11})
+        body = etree.SubElement(envelope, etree.QName(NS_SOAP11, "Body"))
+        oper = etree.SubElement(body, etree.QName(NS_DIST, "nfeDistDFeInteresse"), nsmap={None: NS_DIST})
+        dados_msg = etree.SubElement(oper, etree.QName(NS_DIST, "nfeDadosMsg"))
+        dist = etree.SubElement(dados_msg, etree.QName(NS_NFE, "distDFeInt"), nsmap={None: NS_NFE}, versao="1.01")
+        etree.SubElement(dist, etree.QName(NS_NFE, "tpAmb")).text = self.tp_amb
+        etree.SubElement(dist, etree.QName(NS_NFE, "cUFAutor")).text = UF_CODIGOS[uf]
+        etree.SubElement(dist, etree.QName(NS_NFE, "CNPJ")).text = cnpj
+        consulta = etree.SubElement(dist, etree.QName(NS_NFE, "consChNFe"))
+        etree.SubElement(consulta, etree.QName(NS_NFE, "chNFe")).text = chave
+
+        xml_envio = etree.tostring(envelope, xml_declaration=True, encoding="UTF-8")
+        acao = f"{NS_DIST}/nfeDistDFeInteresse"
+        retorno = self._post_soap(self.url_distribuicao, acao, xml_envio)
+        return self._ler_resposta_distribuicao(retorno)
 
     def enviar_manifestacao(self, cnpj: str, chave: str, tp_evento: str, justificativa: str = "") -> dict:
         from .assinatura import montar_evento_assinado, DESCRICOES_EVENTO
