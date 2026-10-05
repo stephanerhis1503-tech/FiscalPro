@@ -72,6 +72,20 @@ class RepositorioManifestacaoNFe:
                 CREATE INDEX IF NOT EXISTS idx_consultas_chave_cnpj
                     ON consultas_chave_log(cnpj, ambiente, consultado_em DESC);
 
+                CREATE TABLE IF NOT EXISTS uso_certificado_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cnpj TEXT NOT NULL,
+                    ambiente TEXT NOT NULL,
+                    usado_em TEXT NOT NULL,
+                    operacao TEXT NOT NULL DEFAULT '',
+                    certificado_arquivo TEXT NOT NULL DEFAULT '',
+                    processo_id INTEGER NOT NULL DEFAULT 0,
+                    maquina TEXT NOT NULL DEFAULT '',
+                    detalhe TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_uso_certificado_cnpj
+                    ON uso_certificado_log(cnpj, ambiente, id DESC);
+
                 CREATE TABLE IF NOT EXISTS documentos_nfe (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     cnpj_empresa TEXT NOT NULL,
@@ -266,6 +280,41 @@ class RepositorioManifestacaoNFe:
                 (cnpj, ambiente, corte),
             ).fetchone()
         return int(linha["qtd"] or 0) if linha else 0
+
+    def registrar_uso_certificado(
+        self, cnpj: str, ambiente: str, operacao: str, certificado_arquivo: str,
+        processo_id: int, maquina: str, detalhe: str = "", usado_em: str | None = None,
+    ) -> None:
+        cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+        ambiente = str(ambiente or "PRODUCAO").upper()
+        quando = str(usado_em or datetime.now().isoformat(timespec="seconds"))
+        with self.conectar() as conn:
+            conn.execute(
+                """
+                INSERT INTO uso_certificado_log(
+                    cnpj,ambiente,usado_em,operacao,certificado_arquivo,processo_id,maquina,detalhe
+                ) VALUES(?,?,?,?,?,?,?,?)
+                """,
+                (
+                    cnpj, ambiente, quando, str(operacao or ""), str(certificado_arquivo or ""),
+                    int(processo_id or 0), str(maquina or ""), str(detalhe or ""),
+                ),
+            )
+
+    def listar_uso_certificado(self, cnpj: str, ambiente: str, limite: int = 20) -> list[dict]:
+        cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+        ambiente = str(ambiente or "PRODUCAO").upper()
+        limite = max(1, min(int(limite or 20), 100))
+        with self.conectar() as conn:
+            linhas = conn.execute(
+                """
+                SELECT * FROM uso_certificado_log
+                WHERE cnpj=? AND ambiente=?
+                ORDER BY id DESC LIMIT ?
+                """,
+                (cnpj, ambiente, limite),
+            ).fetchall()
+        return [dict(linha) for linha in linhas]
 
     def listar_consultas_dfe(self, cnpj: str, ambiente: str, limite: int = 8) -> list[dict]:
         cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
