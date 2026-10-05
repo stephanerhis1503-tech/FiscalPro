@@ -40,4 +40,7 @@ def test_interface_deixa_semantica_da_baixa_explicita():
     fonte = Path('src/ui/painel_contas_pagar.py').read_text(encoding='utf-8')
     assert '"pagamento": "Data da baixa"' in fonte
     assert 'text="Dar baixa hoje"' in fonte
+    assert 'text="Dar baixa no vencimento"' in fonte
+    assert 'command=self._marcar_paga_no_vencimento' in fonte
+    assert 'data_pagamento=vencimento' in fonte
     assert 'text="Data da baixa:"' in fonte
