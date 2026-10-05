@@ -237,6 +237,21 @@ class RepositorioManifestacaoNFe:
                 (cnpj, ambiente, chave, quando, str(cstat or ""), str(motivo or "")),
             )
 
+    def listar_consultas_chave(self, cnpj: str, ambiente: str, limite: int = 10) -> list[dict]:
+        cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
+        ambiente = str(ambiente or "PRODUCAO").upper()
+        limite = max(1, min(int(limite or 10), 50))
+        with self.conectar() as conn:
+            linhas = conn.execute(
+                """
+                SELECT * FROM consultas_chave_log
+                WHERE cnpj=? AND ambiente=?
+                ORDER BY id DESC LIMIT ?
+                """,
+                (cnpj, ambiente, limite),
+            ).fetchall()
+        return [dict(linha) for linha in linhas]
+
     def contar_consultas_chave_ultima_hora(self, cnpj: str, ambiente: str) -> int:
         cnpj = "".join(ch for ch in str(cnpj or "") if ch.isdigit())
         ambiente = str(ambiente or "PRODUCAO").upper()
