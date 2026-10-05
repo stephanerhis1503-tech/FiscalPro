@@ -443,6 +443,7 @@ class ServicoManifestacaoNFe:
         notas_locais = len(self.repo.listar_notas(cnpj, ambiente))
         ultima_chamada = self.repo.obter_ultima_consulta_dfe(cnpj, ambiente)
         historico_chamadas = self.repo.listar_consultas_dfe(cnpj, ambiente, 8)
+        historico_chaves = self.repo.listar_consultas_chave(cnpj, ambiente, 10)
 
         nsu_enviado = ultima_chamada.get("nsu_enviado")
         nsu_retornado = ultima_chamada.get("ultimo_nsu_retornado")
@@ -606,6 +607,20 @@ class ServicoManifestacaoNFe:
             linhas.append("- Ainda não há chamadas registradas nesta versão.")
         linhas.extend([
             "",
+            "Histórico das consultas pontuais por chave feitas pelo FiscalPro:",
+        ])
+        if historico_chaves:
+            for item in historico_chaves:
+                chave_item = str(item.get("chave") or "")
+                linhas.append(
+                    f"- {item.get('consultado_em') or '—'} | chave {chave_item or '—'} | "
+                    f"cStat {item.get('cstat') or '—'} | {item.get('motivo') or '—'}"
+                )
+        else:
+            linhas.append("- Nenhuma consulta por chave registrada neste FiscalPro.")
+
+        linhas.extend([
+            "",
             "Este diagnóstico é local e NÃO faz uma nova consulta à SEFAZ.",
         ])
         return {
@@ -621,6 +636,7 @@ class ServicoManifestacaoNFe:
             "detalhes_documentos": detalhes_ultima,
             "divergencia_nsu": bool(divergencia_nsu),
             "historico_chamadas": historico_chamadas,
+            "historico_chaves": historico_chaves,
             "bloqueado": bool(config.get("bloqueado")),
             "proxima_consulta": proxima,
             "certificado_ok": cert_ok,
