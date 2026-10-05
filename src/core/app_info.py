@@ -1,5 +1,11 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.30 — Diagnóstico visível + histórico de consultas por chave:
+- move os botões Diagnóstico, Consultar NF-e por chave e Atualizar empresas para uma linha própria, evitando que desapareçam em telas menores;
+- o diagnóstico passa a mostrar também o histórico das consultas pontuais por chave feitas pelo FiscalPro, com horário, chave, cStat e motivo;
+- permite separar com clareza consultas distNSU das consultas consChNFe e confirmar se houve atividade do FiscalPro em determinado horário;
+- não adiciona nenhuma consulta automática nem altera a rotina de comunicação com a SEFAZ.
+
 Versão 18.2.29 — Correção estrutural da rolagem da Manifestação:
 - corrige a causa da barra vertical imóvel quando a grade era maior que a altura realmente disponível na janela;
 - remove alturas mínimas excessivas que faziam o Treeview ser recortado visualmente sem perceber a redução do viewport;
@@ -839,9 +845,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.29"
+VERSAO_APP = "18.2.30"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.29.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.30.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
