@@ -151,7 +151,7 @@ class PainelContasPagar(ttk.Frame):
 
         botoes = ttk.Frame(filtros, style="Card.TFrame")
         botoes.grid(row=1, column=0, columnspan=9, sticky="ew", pady=(8, 0))
-        for coluna in range(6):
+        for coluna in range(7):
             botoes.columnconfigure(coluna, weight=1)
         ttk.Button(
             botoes, text="＋ Nova conta", command=self._nova_conta, style="Primary.TButton"
@@ -162,14 +162,19 @@ class PainelContasPagar(ttk.Frame):
         ttk.Button(botoes, text="Dar baixa hoje", command=self._marcar_paga).grid(
             row=0, column=2, sticky="ew", padx=3
         )
+        ttk.Button(
+            botoes,
+            text="Dar baixa no vencimento",
+            command=self._marcar_paga_no_vencimento,
+        ).grid(row=0, column=3, sticky="ew", padx=3)
         ttk.Button(botoes, text="Reabrir", command=self._reabrir).grid(
-            row=0, column=3, sticky="ew", padx=3
-        )
-        ttk.Button(botoes, text="📎 Anexar documento", command=self._anexar_documento).grid(
             row=0, column=4, sticky="ew", padx=3
         )
+        ttk.Button(botoes, text="📎 Anexar documento", command=self._anexar_documento).grid(
+            row=0, column=5, sticky="ew", padx=3
+        )
         ttk.Button(botoes, text="Abrir documento", command=self._abrir_documento).grid(
-            row=0, column=5, sticky="ew", padx=(3, 0)
+            row=0, column=6, sticky="ew", padx=(3, 0)
         )
         ttk.Button(botoes, text="Importar Excel", command=self._importar_excel).grid(
             row=1, column=0, sticky="ew", padx=(0, 3), pady=(5, 0)
@@ -384,6 +389,23 @@ class PainelContasPagar(ttk.Frame):
         if not conta:
             return
         self.servico.dar_baixa_conta(int(conta["id"]))
+        self.atualizar()
+
+    def _marcar_paga_no_vencimento(self) -> None:
+        conta = self._selecionado()
+        if not conta:
+            return
+        vencimento = str(conta["vencimento"] or "").strip()
+        if not vencimento:
+            messagebox.showwarning(
+                "Contas a Pagar",
+                "A conta selecionada não possui data de vencimento.",
+                parent=self,
+            )
+            return
+        self.servico.dar_baixa_conta(
+            int(conta["id"]), data_pagamento=vencimento
+        )
         self.atualizar()
 
     def _reabrir(self) -> None:
