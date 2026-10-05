@@ -126,21 +126,28 @@ class PainelManifestacaoNFe(ttk.Frame):
         linha.columnconfigure(3, weight=2)
 
         status = Frame(config, bg=COR_CARD, padx=10)
-        status.pack(fill=X, pady=(0, 5))
-        Label(status, textvariable=self.var_status, bg=COR_CARD, fg=COR_TEXTO_SUAVE,
-              font=("Segoe UI", 8), justify=LEFT).pack(side=LEFT, fill=X, expand=True)
-        ttk.Button(status, text="Atualizar empresas", command=self._carregar_empresas,
-                   style="Secondary.TButton").pack(side=RIGHT)
+        status.pack(fill=X, pady=(0, 2))
+        Label(
+            status, textvariable=self.var_status, bg=COR_CARD, fg=COR_TEXTO_SUAVE,
+            font=("Segoe UI", 8), justify=LEFT, anchor="w",
+        ).pack(fill=X, expand=True)
+
+        status_acoes = Frame(config, bg=COR_CARD, padx=10)
+        status_acoes.pack(fill=X, pady=(0, 5))
+        self.btn_diagnostico = ttk.Button(
+            status_acoes, text="Diagnóstico", command=self._mostrar_diagnostico,
+            style="Secondary.TButton",
+        )
+        self.btn_diagnostico.pack(side=LEFT)
         self.btn_consultar_chave = ttk.Button(
-            status, text="Consultar NF-e por chave",
+            status_acoes, text="Consultar NF-e por chave",
             command=self._consultar_por_chave, style="Accent.TButton",
         )
-        self.btn_consultar_chave.pack(side=RIGHT, padx=(0, 6))
-        self.btn_diagnostico = ttk.Button(
-            status, text="Diagnóstico", command=self._mostrar_diagnostico,
-            style="Secondary.TButton"
-        )
-        self.btn_diagnostico.pack(side=RIGHT, padx=(0, 6))
+        self.btn_consultar_chave.pack(side=LEFT, padx=(6, 0))
+        ttk.Button(
+            status_acoes, text="Atualizar empresas", command=self._carregar_empresas,
+            style="Secondary.TButton",
+        ).pack(side=RIGHT)
 
         filtros = self._card(self)
         filtros.pack(fill=X, padx=10, pady=(0, 6))
