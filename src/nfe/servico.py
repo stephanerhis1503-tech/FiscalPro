@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import platform
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -80,6 +82,21 @@ class ServicoManifestacaoNFe:
 
     def obter_config(self, cnpj: str, ambiente: str):
         return self.repo.obter_config(cnpj, ambiente)
+
+    def _registrar_uso_certificado(self, empresa: dict, operacao: str, detalhe: str = "") -> None:
+        """Registra somente usos feitos por ESTE FiscalPro; nunca grava a senha do A1."""
+        ambiente = str(empresa.get("ambiente") or "PRODUCAO").upper()
+        cert = Path(empresa.get("certificado_path") or "")
+        self.repo.registrar_uso_certificado(
+            str(empresa.get("cnpj") or ""),
+            ambiente,
+            operacao,
+            cert.name if cert.name else str(cert),
+            os.getpid(),
+            platform.node(),
+            detalhe,
+            usado_em=_data_iso(datetime.now()),
+        )
 
     def salvar_uf(self, cnpj: str, ambiente: str, uf: str):
         uf = str(uf or "").upper()
@@ -164,6 +181,9 @@ class ServicoManifestacaoNFe:
             if progresso:
                 progresso(f"Consultando NF-e destinadas a partir do NSU {nsu_enviado:015d}…")
             try:
+                self._registrar_uso_certificado(
+                    empresa, "DIST_NSU", f"NSU enviado {nsu_enviado:015d}"
+                )
                 resposta = cliente.consultar_distribuicao(cnpj, uf_autor, nsu_enviado)
             except ErroNFe as exc:
                 instante_erro = datetime.now()
@@ -354,6 +374,9 @@ class ServicoManifestacaoNFe:
             )
 
         cliente = ClienteNFeAmbienteNacional(str(cert), senha, ambiente)
+        self._registrar_uso_certificado(
+            empresa, "CONS_CHAVE", f"Chave {chave}"
+        )
         resposta = cliente.consultar_por_chave(cnpj, uf_autor, chave)
         self.repo.registrar_consulta_chave(
             cnpj, ambiente, chave, resposta.cstat, resposta.motivo,
@@ -444,6 +467,7 @@ class ServicoManifestacaoNFe:
         ultima_chamada = self.repo.obter_ultima_consulta_dfe(cnpj, ambiente)
         historico_chamadas = self.repo.listar_consultas_dfe(cnpj, ambiente, 8)
         historico_chaves = self.repo.listar_consultas_chave(cnpj, ambiente, 10)
+        historico_certificado = self.repo.listar_uso_certificado(cnpj, ambiente, 20)
 
         nsu_enviado = ultima_chamada.get("nsu_enviado")
         nsu_retornado = ultima_chamada.get("ultimo_nsu_retornado")
@@ -621,6 +645,20 @@ class ServicoManifestacaoNFe:
 
         linhas.extend([
             "",
+            "Rastro de uso do certificado A1 por ESTE FiscalPro:",
+        ])
+        if historico_certificado:
+            for item in historico_certificado:
+                linhas.append(
+                    f"- {item.get('usado_em') or '—'} | {item.get('operacao') or '—'} | "
+                    f"máquina {item.get('maquina') or '—'} | PID {int(item.get('processo_id') or 0)} | "
+                    f"{item.get('detalhe') or '—'}"
+                )
+        else:
+            linhas.append("- Nenhum uso do certificado registrado por este FiscalPro nesta versão.")
+
+        linhas.extend([
+            "",
             "Este diagnóstico é local e NÃO faz uma nova consulta à SEFAZ.",
         ])
         return {
@@ -637,6 +675,7 @@ class ServicoManifestacaoNFe:
             "divergencia_nsu": bool(divergencia_nsu),
             "historico_chamadas": historico_chamadas,
             "historico_chaves": historico_chaves,
+            "historico_certificado": historico_certificado,
             "bloqueado": bool(config.get("bloqueado")),
             "proxima_consulta": proxima,
             "certificado_ok": cert_ok,
@@ -662,6 +701,9 @@ class ServicoManifestacaoNFe:
             raise ValueError("Digite a senha do certificado A1.")
         ambiente = str(empresa.get("ambiente") or "PRODUCAO").upper()
         cliente = ClienteNFeAmbienteNacional(str(cert), senha, ambiente)
+        self._registrar_uso_certificado(
+            empresa, "MANIFESTACAO", f"Evento {tp_evento} | Chave {chave}"
+        )
         retorno = cliente.enviar_manifestacao(empresa["cnpj"], chave, tp_evento, justificativa)
         self.repo.salvar_manifestacao(
             empresa["cnpj"], ambiente, chave, tp_evento, DESCRICOES_EVENTO[tp_evento], justificativa,
