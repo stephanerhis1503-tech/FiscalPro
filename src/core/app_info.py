@@ -1,5 +1,12 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.31 — Rastro de uso do certificado A1 pelo FiscalPro:
+- registra cada uso do A1 feito pelo próprio FiscalPro antes de uma chamada à SEFAZ;
+- identifica operação (distNSU, consulta por chave ou manifestação), horário, máquina, PID e detalhe da chamada;
+- nunca grava a senha do certificado;
+- o diagnóstico mostra esse histórico separadamente para provar se houve ou não atividade do FiscalPro em determinado horário;
+- o rastro é local: não identifica usos do mesmo A1 feitos em outro computador, servidor ou outro sistema.
+
 Versão 18.2.30 — Diagnóstico visível + histórico de consultas por chave:
 - move os botões Diagnóstico, Consultar NF-e por chave e Atualizar empresas para uma linha própria, evitando que desapareçam em telas menores;
 - o diagnóstico passa a mostrar também o histórico das consultas pontuais por chave feitas pelo FiscalPro, com horário, chave, cStat e motivo;
@@ -845,9 +852,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.30"
+VERSAO_APP = "18.2.31"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.30.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.31.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
