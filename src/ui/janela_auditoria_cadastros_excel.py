@@ -163,9 +163,9 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
         self.tabela = ttk.Treeview(quadro, columns=colunas, show="headings", selectmode="browse")
         titulos = {
             "status":"Status", "codigo":"Código", "descricao":"Descrição", "ncm":"NCM atual", "cest":"CEST atual",
-            "ncm_sug":"NCM sugerido", "ncm_cand":"NCM candidatos", "cest_sug":"CEST sugerido", "problema":"Problema encontrado", "seg":"Segurança",
+            "ncm_sug":"NCM provável / sugerido", "ncm_cand":"NCM candidatos", "cest_sug":"CEST sugerido", "problema":"Problema encontrado", "seg":"Segurança",
         }
-        larguras = {"status":90,"codigo":125,"descricao":300,"ncm":90,"cest":105,"ncm_sug":100,"ncm_cand":260,"cest_sug":110,"problema":420,"seg":80}
+        larguras = {"status":90,"codigo":125,"descricao":300,"ncm":90,"cest":105,"ncm_sug":145,"ncm_cand":260,"cest_sug":110,"problema":420,"seg":80}
         for col in colunas:
             self.tabela.heading(col, text=titulos[col])
             self.tabela.column(col, width=larguras[col], minwidth=55, anchor="w", stretch=col in {"descricao", "problema"})
@@ -343,7 +343,7 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
             f"STATUS: {item.status} | Segurança: {item.seguranca:.1f}% | Linha Excel: {item.linha_excel}",
             f"Código: {item.codigo or '-'}",
             f"Descrição: {item.descricao}",
-            f"NCM atual: {item.ncm_atual or '-'}   →   sugerido: {item.ncm_sugerido or '-'}",
+            f"NCM atual: {item.ncm_atual or '-'}   →   provável/sugerido: {item.ncm_sugerido or '-'}",
             f"Candidatos NCM: {item.ncm_candidatos or '-'}",
             f"CEST atual: {item.cest_atual or '-'}   →   sugerido: {item.cest_sugerido or '-'}",
         ))
@@ -366,7 +366,7 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
             item.correcao_sugerida or "-",
             "",
             "IMPORTANTE",
-            "A auditoria é analítica. A sugestão de NCM baseada na descrição não substitui a classificação pela composição e função real da mercadoria.",
+            "A auditoria é analítica. NCM provável/sugerido e candidatos não substituem a classificação pela composição, função e aplicação real da mercadoria.",
         ))
 
         abrir_detalhes_ampliados(

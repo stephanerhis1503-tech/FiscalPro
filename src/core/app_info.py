@@ -1,5 +1,12 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.2.32 — NCM provável sem falso 00000000:
+- NCM zerado/ausente deixa de ser repetido como sugestão;
+- candidatos com liderança clara podem aparecer como NCM provável, mas continuam REVISAR;
+- NCM provável não alimenta automaticamente o cálculo tributário;
+- empates, pouca evidência ou apenas uma referência permanecem somente como candidatos;
+- interface e planilhas passam a identificar a coluna como "NCM provável / sugerido".
+
 Versão 18.2.31 — Rastro de uso do certificado A1 pelo FiscalPro:
 - registra cada uso do A1 feito pelo próprio FiscalPro antes de uma chamada à SEFAZ;
 - identifica operação (distNSU, consulta por chave ou manifestação), horário, máquina, PID e detalhe da chamada;
@@ -852,9 +859,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.31"
+VERSAO_APP = "18.2.32"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.31.0"
+VERSAO_ARQUIVO_WINDOWS = "18.2.32.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"

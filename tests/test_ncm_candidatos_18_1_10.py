@@ -2,7 +2,10 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-from src.services.auditoria_cadastros_excel_service import AuditoriaCadastrosExcelService
+from src.services.auditoria_cadastros_excel_service import (
+    AuditoriaCadastrosExcelService,
+    CandidatoNCMDescricao,
+)
 
 
 def _indice(tmp_path: Path, linhas):
@@ -83,3 +86,72 @@ def test_candidato_nao_e_usado_como_ncm_sugerido_automatico(tmp_path):
         assert "%" in texto
     finally:
         wb.close()
+
+
+def test_lideranca_clara_vira_apenas_ncm_provavel_visual():
+    candidatos = [
+        CandidatoNCMDescricao(
+            ncm="73151210",
+            confianca=88.0,
+            metodo="família",
+            referencia="CORRENTE TRANSMISSAO",
+            ocorrencias=14,
+        ),
+        CandidatoNCMDescricao(
+            ncm="87141000",
+            confianca=70.0,
+            metodo="família",
+            referencia="PEÇA MOTOCICLETA",
+            ocorrencias=1,
+        ),
+        CandidatoNCMDescricao(
+            ncm="73151290",
+            confianca=62.0,
+            metodo="família",
+            referencia="OUTRA CORRENTE",
+            ocorrencias=1,
+        ),
+    ]
+    provavel = AuditoriaCadastrosExcelService._ncm_provavel_candidatos(candidatos)
+    assert provavel is not None
+    assert provavel.ncm == "73151210"
+
+
+def test_empate_nao_elege_ncm_provavel():
+    candidatos = [
+        CandidatoNCMDescricao(
+            ncm="73151210",
+            confianca=77.0,
+            metodo="família",
+            referencia="CORRENTE",
+            ocorrencias=3,
+        ),
+        CandidatoNCMDescricao(
+            ncm="87141000",
+            confianca=77.0,
+            metodo="família",
+            referencia="MOTOCICLETA",
+            ocorrencias=2,
+        ),
+    ]
+    assert AuditoriaCadastrosExcelService._ncm_provavel_candidatos(candidatos) is None
+
+
+def test_uma_referencia_nao_basta_para_ncm_provavel():
+    candidatos = [
+        CandidatoNCMDescricao(
+            ncm="87141000",
+            confianca=91.0,
+            metodo="semelhança",
+            referencia="PEÇA",
+            ocorrencias=1,
+        ),
+        CandidatoNCMDescricao(
+            ncm="73151210",
+            confianca=70.0,
+            metodo="semelhança",
+            referencia="CORRENTE",
+            ocorrencias=1,
+        ),
+    ]
+    assert AuditoriaCadastrosExcelService._ncm_provavel_candidatos(candidatos) is None
