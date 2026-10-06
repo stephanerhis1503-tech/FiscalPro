@@ -1,5 +1,13 @@
 """Auditoria tributária de cadastro de produtos importado de planilha Excel.
 
+Versão 18.2.32
+---------------
+- NCM zerado/ausente deixa de aparecer como "NCM sugerido 00000000".
+- Candidatos com liderança clara podem aparecer como NCM provável, sempre em REVISAR.
+- NCM provável é somente uma indicação visual: não alimenta automaticamente o motor tributário.
+- Empates ou evidência fraca permanecem apenas em "NCM candidatos", sem eleger um código.
+- A interface e os relatórios passam a distinguir melhor provável/sugerido de candidatos.
+
 Versão 18.2.22
 ---------------
 - Adiciona validação semântica geral contra todo o catálogo NCM/TIPI oficial.
@@ -1376,6 +1384,43 @@ class AuditoriaCadastrosExcelService:
     def _texto_candidatos_ncm(candidatos: Iterable[CandidatoNCMDescricao]) -> str:
         return " | ".join(c.resumo for c in candidatos)
 
+    @staticmethod
+    def _ncm_provavel_candidatos(
+        candidatos: Iterable[CandidatoNCMDescricao],
+    ) -> Optional[CandidatoNCMDescricao]:
+        """Escolhe somente um provável visual, sem transformar candidato em inferência.
+
+        Critério 18.2.32:
+        - mínimo de 82% de confiança;
+        - pelo menos 2 referências do próprio cadastro;
+        - liderança de pelo menos 10 pontos sobre o segundo colocado.
+        O retorno NÃO deve alimentar o motor tributário. Serve apenas para tornar
+        o relatório mais legível quando existe um favorito claro entre candidatos.
+        """
+        ordenados = sorted(
+            list(candidatos or []),
+            key=lambda item: (float(item.confianca or 0.0), int(item.ocorrencias or 0), item.ncm),
+            reverse=True,
+        )
+        if not ordenados:
+            return None
+
+        primeiro = ordenados[0]
+        if float(primeiro.confianca or 0.0) < 82.0:
+            return None
+        if int(primeiro.ocorrencias or 0) < 2:
+            return None
+
+        if len(ordenados) > 1:
+            segundo = ordenados[1]
+            if primeiro.ncm == segundo.ncm:
+                return None
+            margem = float(primeiro.confianca or 0.0) - float(segundo.confianca or 0.0)
+            if margem < 10.0:
+                return None
+
+        return primeiro
+
     @classmethod
     def analisar(
         cls,
@@ -1601,7 +1646,11 @@ class AuditoriaCadastrosExcelService:
                         descricao=bruto.descricao,
                         ncm_atual=ncm_atual,
                         cest_atual=_formatar_cest(cest_atual),
-                        ncm_sugerido=(inferencia_ncm.ncm if inferencia_ncm else ncm_atual),
+                        ncm_sugerido=(
+                            inferencia_ncm.ncm
+                            if inferencia_ncm
+                            else (ncm_atual if _ncm_valido(ncm_atual) else "")
+                        ),
                         ncm_candidatos=cls._texto_candidatos_ncm(candidatos_ncm),
                         cest_sugerido="",
                         status=STATUS_REVISAR,
@@ -1705,7 +1754,9 @@ class AuditoriaCadastrosExcelService:
         inferencia_ncm = originais.get("inferencia_ncm")
         candidatos_ncm = list(originais.get("candidatos_ncm") or [])
         validacao_semantica_geral = originais.get("validacao_semantica_geral")
-        ncm_sugerido = bruto.ncm
+        # Não repetir 00000000/ausência na coluna de sugestão. Um NCM só
+        # aparece aqui se for válido, inferido ou eleito apenas como provável visual.
+        ncm_sugerido = bruto.ncm if _ncm_valido(bruto.ncm) else ""
         cest_sugerido = analise.cest_esperado or bruto.cest_atual
         sugestoes: List[str] = []
 
@@ -1742,15 +1793,34 @@ class AuditoriaCadastrosExcelService:
                 f"{c.ncm}: {c.metodo} — ref. '{c.referencia}'"
                 for c in candidatos_ncm
             )
-            pendencias.insert(
-                0,
-                f"NCM atual {ncm_original or '-'} está zerado/ausente. "
-                f"Há candidatos para revisão, mas nenhum é seguro o bastante para uso automático: {texto_candidatos}."
-            )
-            sugestoes.append(
-                "Escolher o NCM somente após confirmar material, função e aplicação real da peça. "
-                f"Candidatos do cadastro: {texto_candidatos}."
-            )
+            provavel = cls._ncm_provavel_candidatos(candidatos_ncm)
+            if provavel is not None:
+                # Importante: esta escolha é apenas de apresentação. O motor já
+                # foi executado com o NCM original (zerado/ausente), portanto a
+                # tributação NÃO é recalculada silenciosamente com o provável.
+                ncm_sugerido = provavel.ncm
+                pendencias.insert(
+                    0,
+                    f"NCM atual {ncm_original or '-'} está zerado/ausente. "
+                    f"NCM provável {provavel.ncm} ({provavel.confianca:.0f}%) por liderança clara "
+                    f"entre {provavel.ocorrencias} referências do cadastro. "
+                    "Ainda exige validação de material, função e aplicação antes da correção."
+                )
+                sugestoes.append(
+                    f"Validar o NCM provável {provavel.ncm}. Ele é apenas indicação para revisão "
+                    "e não foi usado automaticamente para recalcular a tributação desta linha. "
+                    f"Demais candidatos: {texto_candidatos}."
+                )
+            else:
+                pendencias.insert(
+                    0,
+                    f"NCM atual {ncm_original or '-'} está zerado/ausente. "
+                    f"Há candidatos para revisão, mas nenhum lidera com segurança suficiente: {texto_candidatos}."
+                )
+                sugestoes.append(
+                    "Escolher o NCM somente após confirmar material, função e aplicação real da peça. "
+                    f"Candidatos do cadastro: {texto_candidatos}."
+                )
             avisos_candidatos = f"Evidências dos candidatos NCM: {detalhes}"
         elif (
             isinstance(validacao_semantica_geral, ResultadoValidacaoNCMSemantica)
@@ -2028,11 +2098,11 @@ class ExportadorAuditoriaCadastrosExcelXLSX:
 
     HEADERS = [
         "Status", "Linha Excel", "Código", "Descrição", "NCM atual", "CEST atual",
-        "NCM sugerido", "NCM candidatos", "CEST sugerido", "PIS atual", "PIS referência",
+        "NCM provável / sugerido", "NCM candidatos", "CEST sugerido", "PIS atual", "PIS referência",
         "COFINS atual", "COFINS referência", "IPI atual %", "IPI TIPI ref. %",
         "Segurança %", "Problema encontrado", "Correção sugerida", "Observação FiscalPro",
     ]
-    LARGURAS = [12, 11, 18, 48, 12, 14, 13, 34, 14, 20, 20, 22, 22, 12, 14, 12, 70, 70, 60]
+    LARGURAS = [12, 11, 18, 48, 12, 14, 20, 34, 14, 20, 20, 22, 22, 12, 14, 12, 70, 70, 60]
 
     @classmethod
     def exportar(
@@ -2176,7 +2246,7 @@ class ExportadorFichaTributariaCompletaXLSX:
         "CST PIS/COFINS SAÍDA", "Aliq. PIS(%)", "Aliq. COFINS(%)", "Nat. de receita",
     ]
     CABECALHOS_AUDITORIA = [
-        "Status Auditoria", "NCM atual", "NCM sugerido", "NCM candidatos", "CEST atual", "CEST referência",
+        "Status Auditoria", "NCM atual", "NCM provável / sugerido", "NCM candidatos", "CEST atual", "CEST referência",
         "ICMS referência (%)", "ST FiscalPro", "MVA FiscalPro (%)", "FEM/FCP referência (%)",
         "PIS referência", "COFINS referência", "IPI TIPI ref. (%)", "Segurança (%)",
         "Problema encontrado", "Correção sugerida", "Observação FiscalPro",
@@ -2194,7 +2264,7 @@ class ExportadorFichaTributariaCompletaXLSX:
         23, 14, 17, 16,
     ]
     LARGURAS_AUDITORIA = [
-        16, 12, 13, 34, 14, 16, 18, 14, 18, 20, 22, 24, 18, 15, 62, 62, 55, 55, 55, 60,
+        16, 12, 20, 34, 14, 16, 18, 14, 18, 20, 22, 24, 18, 15, 62, 62, 55, 55, 55, 60,
     ]
 
     @staticmethod
