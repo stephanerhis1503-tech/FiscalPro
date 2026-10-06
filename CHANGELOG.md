@@ -1,3 +1,12 @@
+## 18.2.32 — NCM provável sem falso 00000000
+- NCM atual zerado/ausente deixa de aparecer como `00000000` na coluna de sugestão;
+- quando existe um candidato com pelo menos 82% de confiança, 2 referências e vantagem mínima de 10 pontos sobre o segundo colocado, ele aparece apenas como **NCM provável**;
+- o NCM provável é visual e permanece **REVISAR**: não alimenta automaticamente o motor tributário nem recalcula CEST/ST/IPI/ICMS/PIS/COFINS;
+- empate, evidência fraca ou candidato apoiado por uma única referência não elegem provável;
+- "NCM candidatos" continua exibindo as alternativas e suas evidências;
+- interface, auditoria completa e Ficha Tributária passam a usar o rótulo **NCM provável / sugerido**;
+- preserva integralmente as melhorias 18.2.23–18.2.31 da Manifestação NF-e e do rastro do certificado A1.
+
 ## 18.2.22 — Motor Semântico Nacional de NCM
 - confronta cada NCM preenchido com o catálogo NCM/TIPI oficial instalado, em vez de validar apenas o formato de 8 dígitos;
 - monta um índice semântico em memória para auditar cadastros grandes sem consultar o SQLite item a item;
