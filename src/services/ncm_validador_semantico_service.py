@@ -387,6 +387,46 @@ class NCMValidadorSemanticoService:
         return pontuados[: max(1, min(int(limite or 5), 10))]
 
     @classmethod
+    def pesquisar_descricao(
+        cls, descricao_produto: Any, limite: int = 5
+    ) -> List[CandidatoNCMSemantico]:
+        """Pesquisa o catálogo NCM inteiro apenas pela descrição comercial.
+
+        É o fallback geral da Ficha Inteligente quando a busca literal/local não
+        encontra resultado. A rotina só ranqueia candidatos: nunca elege nem
+        aplica um NCM automaticamente.
+        """
+        cls._garantir_indice()
+        tokens_produto = cls._tokens(descricao_produto, produto=True)
+        if not tokens_produto:
+            return []
+        return cls._candidatos(tokens_produto, limite=limite)
+
+    @classmethod
+    def _pesquisar_descricao_com_catalogo_teste(
+        cls,
+        descricao_produto: Any,
+        catalogo: Sequence[Dict[str, Any]],
+        limite: int = 5,
+    ) -> tuple[CandidatoNCMSemantico, ...]:
+        """Gancho determinístico para regressões da pesquisa sem NCM prévio."""
+        with cls._lock:
+            estado = (
+                cls._cache_chave,
+                cls._registros,
+                dict(cls._por_ncm),
+                dict(cls._por_token),
+            )
+            try:
+                cls._instalar_catalogo_em_memoria(catalogo, ("TESTE_BUSCA", len(catalogo)))
+                tokens_produto = cls._tokens(descricao_produto, produto=True)
+                if not tokens_produto:
+                    return ()
+                return tuple(cls._candidatos(tokens_produto, limite=limite))
+            finally:
+                cls._cache_chave, cls._registros, cls._por_ncm, cls._por_token = estado
+
+    @classmethod
     def validar(cls, descricao_produto: Any, ncm_atual: Any) -> ResultadoValidacaoNCMSemantica:
         """Compara um item contra todo o catálogo NCM oficial instalado."""
         cls._garantir_indice()
