@@ -20,6 +20,7 @@ from src.services.atualizador_fontes_oficiais import AtualizadorFontesOficiais
 from src.services.consulta_oficial_service import ConsultaOficialService
 from src.services.indicador_seguranca_tributaria import IndicadorSegurancaTributaria
 from src.services.ncm_descricao_service import NCMDescricaoService
+from src.services.ncm_validador_semantico_service import NCMValidadorSemanticoService
 from src.services.empresas_regimes_service import EmpresasRegimesService
 from src.ui.janela_calculo_icms_st import JanelaCalculoICMSSTMG
 from src.ui.janela_xml_icms_st import JanelaXMLICMSST
@@ -2849,13 +2850,39 @@ class JanelaFichaTributaria(tk.Toplevel):
             return FichaTributariaRepository.normalizar_ncm(digitos)
 
         unicos = NCMDescricaoService.pesquisar(termo, limite=60)
+        origem_semantica = False
+
+        # Fallback geral: se o nome comercial não apareceu literalmente na base
+        # oficial, no cadastro local ou nos aliases conhecidos, consulta TODO o
+        # catálogo NCM/TIPI pelo motor semântico. Os resultados continuam sendo
+        # apenas candidatos para escolha humana; nunca são aplicados sozinhos.
+        if not unicos:
+            try:
+                candidatos_semanticos = NCMValidadorSemanticoService.pesquisar_descricao(
+                    termo, limite=5
+                )
+            except Exception:
+                candidatos_semanticos = []
+            if candidatos_semanticos:
+                origem_semantica = True
+                unicos = [
+                    (
+                        candidato.ncm,
+                        (
+                            f"{candidato.descricao_oficial}  •  "
+                            f"aderência semântica {candidato.pontuacao:.0f}%  •  REVISAR"
+                        ),
+                    )
+                    for candidato in candidatos_semanticos
+                ]
 
         if not unicos:
             raise ValueError(
-                "Nenhum NCM foi encontrado para essa descrição. Informe um pouco mais de detalhe "
-                "sobre material/aplicação ou digite o NCM com 8 dígitos."
+                "Nenhum NCM foi encontrado para essa descrição, mesmo após a pesquisa "
+                "semântica no catálogo nacional. Informe mais detalhes de material, função "
+                "e aplicação ou digite o NCM com 8 dígitos."
             )
-        if len(unicos) == 1:
+        if len(unicos) == 1 and not origem_semantica:
             return unicos[0][0]
 
         seletor = _SeletorNCM(self, unicos)
