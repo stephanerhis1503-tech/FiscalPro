@@ -53,3 +53,17 @@ def test_adaptador_espelho_tambem_retorna_candidatos_comerciais():
     ncms = [ncm for ncm, _descricao in candidatos]
     assert "87141000" in ncms
     assert len(ncms) >= 2
+
+
+def test_borracha_fix_tanque_retorna_candidatos_sem_forcar_um_ncm():
+    candidatos = NCMDescricaoService.pesquisar("BORRACHA FIX TANQUE", limite=20)
+    ncms = [ncm for ncm, _descricao in candidatos]
+    assert "40169990" in ncms
+    assert "87141000" in ncms
+
+
+def test_borracha_fiz_tanque_tolera_erro_de_digitacao_comum():
+    candidatos = NCMDescricaoService.pesquisar("BORRACHA FIZ TANQUE", limite=20)
+    ncms = [ncm for ncm, _descricao in candidatos]
+    assert "40169990" in ncms
+    assert "87141000" in ncms

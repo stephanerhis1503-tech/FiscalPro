@@ -66,6 +66,26 @@ class NCMDescricaoService:
                 "Adaptador metálico genérico de alumínio — confirmar material e aplicação.",
             ),
         ),
+        "BORRACHA FIX TANQUE": (
+            (
+                "40169990",
+                "Borracha/coxím de fixação do tanque — possível enquadramento em outras obras de borracha vulcanizada não endurecida; confirmar função e material.",
+            ),
+            (
+                "87141000",
+                "Peça específica de fixação do tanque de motocicleta — possível enquadramento como parte/acessório de motocicleta; confirmar se a função principal decorre do conjunto da moto e não do material.",
+            ),
+        ),
+        "COXIM TANQUE": (
+            (
+                "40169990",
+                "Coxim/borracha de fixação do tanque — possível enquadramento em outras obras de borracha vulcanizada não endurecida; confirmar função e material.",
+            ),
+            (
+                "87141000",
+                "Peça específica do tanque de motocicleta — possível enquadramento como parte/acessório de motocicleta; confirmar natureza da peça.",
+            ),
+        ),
     }
 
     @staticmethod
@@ -100,8 +120,21 @@ class NCMDescricaoService:
         return all(token_busca in encontrados for token_busca in buscados)
 
     @classmethod
-    def _candidatos_comuns(cls, termo: str) -> List[Tuple[str, str]]:
+    def _normalizar_termo_comercial(cls, termo: str) -> str:
+        """Normaliza abreviações/erros comuns sem alterar a pesquisa oficial."""
         normalizado = cls._texto_busca(termo)
+        tokens = normalizado.split()
+        equivalencias = {
+            "FIZ": "FIX",
+            "FIXACAO": "FIX",
+            "FIXADOR": "FIX",
+            "FIXADORA": "FIX",
+        }
+        return " ".join(equivalencias.get(token, token) for token in tokens)
+
+    @classmethod
+    def _candidatos_comuns(cls, termo: str) -> List[Tuple[str, str]]:
+        normalizado = cls._normalizar_termo_comercial(termo)
         tokens = set(normalizado.split())
         resultados: List[Tuple[str, str]] = []
         for chave, candidatos in cls._CANDIDATOS_COMUNS.items():

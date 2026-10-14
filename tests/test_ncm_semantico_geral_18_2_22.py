@@ -220,3 +220,10 @@ def test_ficha_busca_adaptador_retrovisor_sem_ncm_de_parafuso():
     assert "87141000" in ncms
     assert "73181500" not in ncms
     assert len(ncms) >= 2
+
+
+def test_ficha_busca_borracha_fiz_tanque_tolera_erro_comercial():
+    candidatos = NCMDescricaoService._candidatos_comuns("BORRACHA FIZ TANQUE")
+    ncms = [ncm for ncm, _descricao in candidatos]
+    assert "40169990" in ncms
+    assert "87141000" in ncms
