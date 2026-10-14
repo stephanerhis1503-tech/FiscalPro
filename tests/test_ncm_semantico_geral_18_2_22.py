@@ -227,3 +227,25 @@ def test_ficha_busca_borracha_fiz_tanque_tolera_erro_comercial():
     ncms = [ncm for ncm, _descricao in candidatos]
     assert "40169990" in ncms
     assert "87141000" in ncms
+
+
+def test_pesquisa_semantica_por_descricao_sem_ncm_previo():
+    candidatos = NCMValidadorSemanticoService._pesquisar_descricao_com_catalogo_teste(
+        "PASTILHA FREIO TITAN",
+        CATALOGO,
+        limite=5,
+    )
+    assert candidatos
+    assert candidatos[0].ncm == "68138110"
+    assert all(len(item.ncm) == 8 for item in candidatos)
+
+
+def test_pesquisa_semantica_retorna_ranking_e_nao_classificacao_aplicada():
+    candidatos = NCMValidadorSemanticoService._pesquisar_descricao_com_catalogo_teste(
+        "PECA MOTO TITAN",
+        CATALOGO,
+        limite=5,
+    )
+    assert candidatos
+    assert len(candidatos) <= 5
+    assert all(hasattr(item, "pontuacao") for item in candidatos)
