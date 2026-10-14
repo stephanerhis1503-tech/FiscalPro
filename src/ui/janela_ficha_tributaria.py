@@ -2864,6 +2864,41 @@ class JanelaFichaTributaria(tk.Toplevel):
             raise ValueError("A seleção do produto foi cancelada.")
         return seletor.resultado
 
+    def _limpar_resultado_para_nova_consulta(self) -> None:
+        """Evita que uma busca nova exiba resultado fiscal da consulta anterior."""
+        self.ncm_atual = ""
+        self.dados_ficha = {}
+        self.parecer = None
+        self.consulta_oficial = {}
+        self.descricao_consulta_atual = ""
+        self.resultado_status_var.set("AGUARDANDO ANÁLISE")
+        self.lbl_resultado_status.configure(bg="#D9EAD3", fg="#274E13")
+        self.identificacao_var.set("Nenhum produto analisado.")
+        self.descricao_var.set("A Ficha mostrará somente CFOP e tributos essenciais.")
+        self.contexto_st_var.set("ICMS-ST: aguardando análise.")
+        self.resumo_revisao_var.set(
+            "Faça a análise para o FiscalPro separar o que está confirmado do que ainda precisa de conferência."
+        )
+        for chave, (valor_var, detalhe_var) in self.resumo_cards_vars.items():
+            valor_var.set("Aguardando")
+            detalhe_var.set(
+                {
+                    "piscofins": "PIS e COFINS",
+                    "st": "ICMS-ST / CEST / MVA",
+                    "icms_cfop": "ICMS próprio e CFOP",
+                    "ipi": "TIPI x operação",
+                    "seguranca": "Segurança geral",
+                }.get(chave, "")
+            )
+            self._atualizar_card_resumo(chave, valor_var.get(), detalhe_var.get(), "info")
+        for item in self.tree_resultado.get_children():
+            self.tree_resultado.delete(item)
+        self._definir_texto_explicacao(
+            "A nova consulta ainda não foi resolvida. Nenhum resultado anterior está sendo reutilizado."
+        )
+        if hasattr(self, "btn_revisar_tributacao"):
+            self.btn_revisar_tributacao.configure(state=tk.DISABLED)
+
     def _contexto(self) -> Dict[str, str]:
         empresa = self.empresa_var.get().strip()
         empresa_contexto = "" if empresa in {"", "Todas as empresas"} else empresa
@@ -2899,6 +2934,10 @@ class JanelaFichaTributaria(tk.Toplevel):
             return
 
         termo_pesquisado = self.pesquisa_var.get().strip()
+        # Uma consulta nova nunca pode herdar NCM, CEST, MVA ou cards da
+        # análise anterior. Se a resolução por descrição falhar, a tela
+        # permanece limpa em vez de exibir um resultado fiscal obsoleto.
+        self._limpar_resultado_para_nova_consulta()
         try:
             ncm = self._resolver_ncm()
         except ValueError as erro:
