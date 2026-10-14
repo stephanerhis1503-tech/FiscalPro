@@ -1,3 +1,4 @@
+from src.services.ncm_descricao_service import NCMDescricaoService
 from src.services.ncm_validador_semantico_service import (
     CandidatoNCMSemantico,
     NCMValidadorSemanticoService,
@@ -211,3 +212,11 @@ def test_motor_nao_embute_tabela_fixa_peca_para_ncm():
     assert "68138110" not in texto_grupos
     assert "90261029" not in texto_grupos
     assert "87141000" not in texto_grupos
+
+
+def test_ficha_busca_adaptador_retrovisor_sem_ncm_de_parafuso():
+    candidatos = NCMDescricaoService._candidatos_comuns("ADAPTADOR RETROVISOR")
+    ncms = [ncm for ncm, _descricao in candidatos]
+    assert "87141000" in ncms
+    assert "73181500" not in ncms
+    assert len(ncms) >= 2
