@@ -38,6 +38,34 @@ class NCMDescricaoService:
                 "Abraçadeira plástica/nylon — possível enquadramento em outras obras de plástico; confirmar material e aplicação.",
             ),
         ),
+        "ADAPTADOR RETROVISOR": (
+            (
+                "87141000",
+                "Adaptador/suporte específico de retrovisor para motocicleta — possível enquadramento como parte ou acessório de motocicleta; confirmar construção e função.",
+            ),
+            (
+                "73269090",
+                "Adaptador metálico genérico de ferro/aço — possível enquadramento em outras obras de ferro ou aço; confirmar material e se é peça específica da motocicleta.",
+            ),
+            (
+                "76169900",
+                "Adaptador metálico genérico de alumínio — possível enquadramento em outras obras de alumínio; confirmar material e se é peça específica da motocicleta.",
+            ),
+        ),
+        "ADAPTADOR ESPELHO": (
+            (
+                "87141000",
+                "Adaptador/suporte específico de espelho retrovisor para motocicleta — possível enquadramento como parte ou acessório de motocicleta; confirmar construção e função.",
+            ),
+            (
+                "73269090",
+                "Adaptador metálico genérico de ferro/aço — confirmar material e aplicação.",
+            ),
+            (
+                "76169900",
+                "Adaptador metálico genérico de alumínio — confirmar material e aplicação.",
+            ),
+        ),
     }
 
     @staticmethod

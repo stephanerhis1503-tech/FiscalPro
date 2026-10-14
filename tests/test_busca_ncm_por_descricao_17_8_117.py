@@ -38,3 +38,18 @@ def test_ficha_resolve_descricao_sem_exigir_codigo_de_oito_digitos():
 def test_busca_oficial_continua_encontrando_pastilha_de_freio():
     candidatos = NCMDescricaoService.pesquisar("pastilha freio", limite=30)
     assert any(ncm == "68138110" for ncm, _descricao in candidatos)
+
+
+def test_adaptador_retrovisor_retorna_candidatos_sem_reaproveitar_parafuso():
+    candidatos = NCMDescricaoService.pesquisar("ADAPTADOR RETROVISOR", limite=20)
+    ncms = [ncm for ncm, _descricao in candidatos]
+    assert "87141000" in ncms
+    assert "73181500" not in ncms
+    assert len(ncms) >= 2
+
+
+def test_adaptador_espelho_tambem_retorna_candidatos_comerciais():
+    candidatos = NCMDescricaoService.pesquisar("adaptador espelho", limite=20)
+    ncms = [ncm for ncm, _descricao in candidatos]
+    assert "87141000" in ncms
+    assert len(ncms) >= 2
