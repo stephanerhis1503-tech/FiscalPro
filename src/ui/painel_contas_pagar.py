@@ -13,7 +13,7 @@ import webbrowser
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import (
-    BOTH, END, LEFT, RIGHT, X, BooleanVar, Frame, Label, Listbox, StringVar, Text, Toplevel,
+    BOTH, END, LEFT, RIGHT, X, Y, BooleanVar, Canvas, Frame, Label, Listbox, StringVar, Text, Toplevel,
 )
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
@@ -1921,10 +1921,7 @@ class JanelaRelatorioContasPagas:
             "Contas pagas do mês", mensagem + "\n\nDeseja abrir a pasta?", parent=self.janela
         ):
             PainelContasPagar._abrir_caminho(str(resultado.caminho.parent))
-        self.janela.destroy()
-
-
-class JanelaRelatorioVencimentos:
+        self.janela.dclass JanelaRelatorioVencimentos:
     """Configuração dos relatórios de vencimentos da Sprint 16.2.2."""
 
     def __init__(self, master, servico: ContasPagarServico):
@@ -1958,8 +1955,47 @@ class JanelaRelatorioVencimentos:
         self._atualizar_periodo()
 
     def _montar(self) -> None:
-        principal = ttk.Frame(self.janela, padding=12, style="Page.TFrame")
-        principal.pack(fill=BOTH, expand=True)
+        # Rodapé fixo: os botões não podem ser empurrados para fora da tela.
+        raiz = ttk.Frame(self.janela, style="Page.TFrame")
+        raiz.pack(fill=BOTH, expand=True)
+
+        acoes = ttk.Frame(raiz, style="Page.TFrame")
+        acoes.pack(side="bottom", fill=X, padx=12, pady=(4, 12))
+        ttk.Button(acoes, text="Cancelar", command=self.janela.destroy).pack(
+            side=RIGHT
+        )
+        ttk.Button(
+            acoes,
+            text="Gerar relatórios",
+            command=self._gerar,
+            style="Primary.TButton",
+        ).pack(side=RIGHT, padx=(0, 8))
+
+        area_rolagem = ttk.Frame(raiz, style="Page.TFrame")
+        area_rolagem.pack(fill=BOTH, expand=True)
+        barra = ttk.Scrollbar(area_rolagem, orient="vertical")
+        barra.pack(side=RIGHT, fill=Y)
+        canvas = Canvas(
+            area_rolagem, bg=COR_FUNDO, highlightthickness=0, borderwidth=0
+        )
+        canvas.pack(side=LEFT, fill=BOTH, expand=True)
+        canvas.configure(yscrollcommand=barra.set)
+        barra.configure(command=canvas.yview)
+
+        principal = ttk.Frame(canvas, padding=12, style="Page.TFrame")
+        item_principal = canvas.create_window(
+            (0, 0), window=principal, anchor="nw"
+        )
+        principal.bind(
+            "<Configure>",
+            lambda _evento: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda evento: canvas.itemconfigure(
+                item_principal, width=evento.width
+            ),
+        )
 
         cabecalho = Frame(
             principal, bg=COR_CARD, highlightthickness=1, highlightbackground=COR_BORDA
@@ -2127,18 +2163,6 @@ class JanelaRelatorioVencimentos:
             highlightbackground=COR_BORDA,
         )
         aviso.pack(fill=X, pady=(0, 10))
-
-        acoes = ttk.Frame(principal, style="Page.TFrame")
-        acoes.pack(fill=X)
-        ttk.Button(acoes, text="Cancelar", command=self.janela.destroy).pack(
-            side=RIGHT
-        )
-        ttk.Button(
-            acoes,
-            text="Gerar relatórios",
-            command=self._gerar,
-            style="Primary.TButton",
-        ).pack(side=RIGHT, padx=(0, 8))
 
     def _marcar_empresas(self, marcado: bool) -> None:
         for variavel in self.vars_empresas.values():
