@@ -1921,7 +1921,10 @@ class JanelaRelatorioContasPagas:
             "Contas pagas do mês", mensagem + "\n\nDeseja abrir a pasta?", parent=self.janela
         ):
             PainelContasPagar._abrir_caminho(str(resultado.caminho.parent))
-        self.janela.dclass JanelaRelatorioVencimentos:
+        self.janela.destroy()
+
+
+class JanelaRelatorioVencimentos:
     """Configuração dos relatórios de vencimentos da Sprint 16.2.2."""
 
     def __init__(self, master, servico: ContasPagarServico):
