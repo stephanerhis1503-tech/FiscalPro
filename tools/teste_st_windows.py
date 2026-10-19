@@ -16,6 +16,15 @@ from typing import Any
 
 FORMATO_ESPERADO = "FISCALPRO_BASE_FISCAL_SOMENTE_LEITURA_V1"
 
+# Quando executado como "python tools/teste_st_windows.py", o Python inclui
+# "tools" no sys.path, não a raiz do projeto. Acrescentamos a raiz somente
+# na execução por código-fonte; no executável PyInstaller os módulos já ficam
+# no ambiente empacotado.
+if not getattr(sys, "frozen", False):
+    _raiz_projeto = Path(__file__).resolve().parents[1]
+    if str(_raiz_projeto) not in sys.path:
+        sys.path.insert(0, str(_raiz_projeto))
+
 
 def _pasta_execucao() -> Path:
     if getattr(sys, "frozen", False):
