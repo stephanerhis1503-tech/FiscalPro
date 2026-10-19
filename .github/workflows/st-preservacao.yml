@@ -49,7 +49,7 @@ jobs:
       - name: Testar preservacao da comparacao de texto
         env:
           FISCALPRO_DATA_DIR: ${{ runner.temp }}/fiscalpro-st-focados
-        run: python -m pytest -q tests/test_similaridade_textual_preservacao.py tests/test_ncm_semantico_geral_18_2_22.py tests/test_ncm_semantico_18_1_9.py --junitxml=verificacao/focados.xml
+        run: python -m pytest -q tests/test_similaridade_textual_preservacao.py tests/test_st_descricao_mva_preservacao.py tests/test_ncm_semantico_geral_18_2_22.py tests/test_ncm_semantico_18_1_9.py --junitxml=verificacao/focados.xml
 
       - name: Medir busca NCM sem alterar base fiscal
         run: python -m tests.benchmark_similaridade_textual > verificacao/benchmark.json
