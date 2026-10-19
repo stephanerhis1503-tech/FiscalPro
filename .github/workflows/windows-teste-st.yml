@@ -1,0 +1,143 @@
+name: Windows - pacote teste ST isolado
+
+on:
+  push:
+    branches:
+      - teste/st-cest-mva-base-real
+    paths:
+      - 'tools/teste_st_windows.py'
+      - 'src/services/icms_st_mg_service.py'
+      - 'src/services/calculadora_icms_st_mg_service.py'
+      - 'src/services/xml_icms_st_service.py'
+      - 'src/services/exportador_xml_icms_st_xlsx.py'
+      - 'src/ui/janela_xml_icms_st.py'
+      - 'src/ui/layout_responsivo.py'
+      - 'src/inteligencia/base_oficial/**'
+      - 'requirements.txt'
+      - '.github/workflows/windows-teste-st.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-teste-st-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pacote:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout isolado
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Dependencias
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Criar base sintetica para smoke test
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+
+          regras = [
+              {
+                  "id": 1, "segmento": "AUTOPEÇAS", "item": "65.0",
+                  "cest": "01.065.00", "ncm_formatado": "8536.50",
+                  "ncm_digitos": "853650",
+                  "descricao": "Interruptores e seccionadores e comutadores",
+                  "ambito": "1.1", "mva": 71.78, "mva_texto": "71,78",
+                  "fonte_codigo": "TESTE", "vigencia_referencia": "TESTE",
+                  "atualizado_em": "2026-10-19"
+              },
+              {
+                  "id": 2, "segmento": "LÂMPADAS, REATORES E STARTER", "item": "4.0",
+                  "cest": "09.004.00", "ncm_formatado": "8536.50",
+                  "ncm_digitos": "853650", "descricao": "Starter",
+                  "ambito": "9.1", "mva": 102.31, "mva_texto": "102,31",
+                  "fonte_codigo": "TESTE", "vigencia_referencia": "TESTE",
+                  "atualizado_em": "2026-10-19"
+              }
+          ]
+          dados = {
+              "formato": "FISCALPRO_BASE_FISCAL_SOMENTE_LEITURA_V1",
+              "contagens": {"st_mg_oficial": 2},
+              "tabelas": {
+                  "st_mg_oficial": regras,
+                  "st_mg_base_status": [{
+                      "base_completa": 1, "versao_schema": 3, "paginas": 1,
+                      "referencia": "TESTE", "fonte_url": "", "sincronizado_em": "2026-10-19"
+                  }]
+              }
+          }
+          Path("base_sintetica.json").write_text(
+              json.dumps(dados, ensure_ascii=False), encoding="utf-8"
+          )
+          '@ | python -
+
+      - name: Smoke test no codigo-fonte
+        shell: pwsh
+        run: |
+          python tools/teste_st_windows.py --validar-base base_sintetica.json
+
+      - name: Gerar executavel isolado
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --windowed --onefile `
+            --name FiscalPro_Teste_ST `
+            --icon assets/fiscalpro.ico `
+            --paths . `
+            tools/teste_st_windows.py
+
+      - name: Smoke test do executavel
+        shell: pwsh
+        run: |
+          .\dist\FiscalPro_Teste_ST.exe --validar-base base_sintetica.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Montar pacote
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path pacote | Out-Null
+          Copy-Item dist\FiscalPro_Teste_ST.exe pacote\FiscalPro_Teste_ST.exe
+          @'
+          @echo off
+          chcp 65001 >nul
+          cd /d "%~dp0"
+          start "" "%~dp0FiscalPro_Teste_ST.exe"
+          '@ | Set-Content -Path pacote\ABRIR_TESTE_ST.bat -Encoding ASCII
+          @'
+          FISCALPRO - TESTE ISOLADO DE ICMS-ST
+
+          1. Este pacote NAO substitui nem instala o FiscalPro.
+          2. Abra ABRIR_TESTE_ST.bat.
+          3. Selecione o arquivo BASE_FISCAL_PARA_TESTE_*.json exportado do seu computador.
+          4. Na tela de ICMS-ST, importe o XML que deseja conferir.
+          5. Gere a planilha para comparar os resultados.
+          6. Feche a janela quando terminar.
+
+          O executavel usa somente a tabela ST/MG do JSON selecionado.
+          Ele direciona qualquer caminho persistente para uma pasta temporaria separada.
+          Nao use os resultados como apuracao fiscal definitiva enquanto houver itens marcados REVISAR/SIMULADO.
+          '@ | Set-Content -Path pacote\LEIA_ME.txt -Encoding UTF8
+
+      - name: Guardar pacote Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: FiscalPro_Teste_ST_Windows
+          path: pacote/
+          retention-days: 7
+          if-no-files-found: error
