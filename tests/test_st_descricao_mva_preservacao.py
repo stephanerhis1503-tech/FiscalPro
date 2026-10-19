@@ -33,6 +33,11 @@ REGRAS = (
     regra("85443000", "01.073.00", "Jogos de fios para velas de ignição e outros jogos de fios"),
     regra("8511", "01.054.00", "Aparelhos e dispositivos eletricos de ignicao ou arranque para motores"),
     regra("9029", "01.080.00", "Contadores, indicadores de velocidade e tacometros, suas partes e acessorios"),
+    regra("8483", "01.050.00", "Arvores de transmissao, arvores de cames, virabrequins, engrenagens e embreagens"),
+    regra("84099", "01.030.00", "Partes reconheciveis como exclusiva ou principalmente destinadas aos motores das posicoes 8407 ou 8408"),
+    regra("8482", "01.049.00", "Rolamentos"),
+    regra("87141", "01.076.00", "Partes e acessorios de motocicletas"),
+    regra("40169300", "01.007.00", "Juntas, gaxetas e outros elementos com funcao semelhante de vedacao"),
 )
 
 
@@ -160,6 +165,64 @@ def test_componentes_ja_reconhecidos_mantem_calculo(ncm, descricao, cest, base_c
     assert r["mva_original"] == 71.78
     assert r["mva_utilizada"] == 101.11
     assert not r["calculo_condicional"]
+
+
+
+@pytest.mark.parametrize("ncm,descricao,cest", [
+    ("84831020", "ARVORE DO COMANDO BIZ-125 TESTE", "01.050.00"),
+    ("84099190", "BALANCIM CG-150 TESTE", "01.030.00"),
+    ("84099190", "BRACO OSCILANTE CG-125 TESTE", "01.030.00"),
+    ("84821010", "CAIXA DE DIRECAO YES-125 TESTE", "01.049.00"),
+    ("87141000", "EIXO SECUNDARIO NXR-150 TESTE", "01.076.00"),
+    ("84099112", "KIT CILINDRO COMPLETO NMAX-160 TESTE", "01.030.00"),
+    ("87141000", "KIT EMBREAGEM BIZ-125 TESTE", "01.076.00"),
+    ("84099120", "KIT PISTAO COM ANEL CG-150 TESTE", "01.030.00"),
+    ("87141000", "PLACA DA PARTIDA CBX-200 TESTE", "01.076.00"),
+    ("40169300", "RETENTOR BENGALA CB-300 TESTE", "01.007.00"),
+    ("84099190", "TENSIONADOR DE CORRENTE YES-125 TESTE", "01.030.00"),
+    ("84099114", "VALVULA DE ADMISSAO CBX-250 TESTE", "01.030.00"),
+    ("84099114", "VALVULA DE ESCAPE YBR-125 TESTE", "01.030.00"),
+    ("87141000", "SEPARADOR DA EMBREAGEM CG-150 TESTE", "01.076.00"),
+])
+def test_peca_mecanica_com_modelo_de_moto_confirma_segmento_autopecas(
+    ncm, descricao, cest, base_controlada
+):
+    r = calcular(_item(ncm, descricao))
+    assert ST.inferir_finalidade_automotiva(descricao) == "AUTOPECA_CONFIRMADA"
+    assert r["cest"] == cest
+    assert r["calculado"] is True
+    assert r["st_oficial"]["confirmado"] is True
+    assert r["calculo_condicional"] is False
+    assert r["conferencia_status"] == "ST NÃO DESTACADO"
+
+
+@pytest.mark.parametrize("ncm,descricao", [
+    ("84099190", "BALANCIM INDUSTRIAL TESTE"),
+    ("84099120", "KIT PISTAO UNIVERSAL TESTE"),
+    ("84099112", "CILINDRO HIDRAULICO TESTE"),
+    ("87141000", "EMBREAGEM INDUSTRIAL TESTE"),
+    ("84099114", "VALVULA DE ADMISSAO INDUSTRIAL TESTE"),
+    ("84821010", "CAIXA DE DIRECAO GENERICA TESTE"),
+])
+def test_peca_mecanica_sem_modelo_de_moto_continua_condicional(
+    ncm, descricao, base_controlada
+):
+    assert ST.inferir_finalidade_automotiva(descricao) == "NAO_INFORMADA"
+    r = calcular(_item(ncm, descricao))
+    assert r["st_oficial"]["confirmado"] is False
+    assert r["calculo_condicional"] is True
+    assert r["conferencia_status"] == "REVISAR NCM / CEST / MVA"
+
+
+def test_negacao_explicita_prevalece_sobre_modelo_de_moto(base_controlada):
+    r = calcular(
+        _item("84099120", "KIT PISTAO CG-150 TESTE"),
+        finalidade_automotiva="NAO_AUTOMOTIVA",
+    )
+    assert r["st_oficial"]["confirmado"] is False
+    assert r["calculo_condicional"] is True
+    assert r["conferencia_status"] == "REVISAR NCM / CEST / MVA"
+
 
 
 @pytest.mark.parametrize("mva", [0, 71.78, 100, 102.31, 250, "102,31"])
