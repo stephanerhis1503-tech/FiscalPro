@@ -41,6 +41,8 @@ def _decimal(valor: Any, nome: str, minimo: Optional[Decimal] = Decimal("0")) ->
             numero = Decimal(texto)
         except InvalidOperation as erro:
             raise ValueError(f"{nome} deve ser um número válido.") from erro
+    if not numero.is_finite():
+        raise ValueError(f"{nome} deve ser um número finito.")
     if minimo is not None and numero < minimo:
         raise ValueError(f"{nome} não pode ser menor que {minimo}.")
     return numero
@@ -143,8 +145,9 @@ class CalculadoraICMSSTMGService:
         alq_inter = _percentual(_decimal(aliquota_interestadual, "Alíquota interestadual"))
         alq_intra = _percentual(_decimal(aliquota_interna, "Alíquota interna"))
         alq_fcp = _percentual(_decimal(aliquota_fcp_st, "Alíquota FCP-ST"))
+        # MVA e margem sobre o custo, nao aliquota: pode atingir/superar 100%.
+        # Valores negativos ou nao finitos continuam rejeitados na conversao.
         for nome, valor in (
-            ("MVA original", mva_orig),
             ("Alíquota interestadual", alq_inter),
             ("Alíquota interna", alq_intra),
             ("Alíquota FCP-ST", alq_fcp),
