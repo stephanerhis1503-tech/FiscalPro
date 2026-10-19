@@ -393,11 +393,20 @@ class ICMSSTMGService:
             "TRAVA", "FECHADURA", "CAB ", "CABO", "FIACAO", "CHICOTE",
             "INTERRUP", "SENSOR", "ESCOVA", "BATERIA", "BAT POS", "FAROL",
             "LANTERNA", "MANETE", "PEDAL", "PISCA", "RETROVISOR",
+            # Pecas mecanicas reconheciveis de motocicleta. Estes termos so
+            # confirmam a finalidade quando a mesma descricao tambem traz um
+            # modelo de moto conhecido; isoladamente continuam condicionais.
+            "ARVORE DO COMANDO", "BALANCIM", "BRACO OSCILANTE",
+            "CAIXA DE DIRECAO", "EIXO SECUNDARIO", "CILINDRO",
+            "EMBREAGEM", "PISTAO", "PLACA DA PARTIDA",
+            "RETENTOR BENGALA", "TENSIONADOR",
+            "VALVULA DE ADMISSAO", "VALVULA DE ESCAPE",
         )
         modelos_moto = (
             "BIZ", "CG ", "TITAN", "FAN", "BROS", "POP ", "XRE", "CB ",
-            "CBR", "FAZER", "FACTOR", "YBR", "LANDER", "CROSSER", "XTZ",
-            "YS ", "NXR", "NX ", "PCX", "LEAD", "SAHARA", "TWISTER",
+            "CBR", "CBX", "FAZER", "FACTOR", "YBR", "LANDER", "CROSSER",
+            "XTZ", "YS ", "NXR", "NX ", "PCX", "LEAD", "SAHARA",
+            "TWISTER", "FALCON", "ELITE", "INTRUDER", "NMAX", "YES", "XLR",
         )
         interruptor = cls._descricao_indica_interruptor(descricao)
         componente = any(pista in f"{texto} " for pista in componentes) or interruptor
@@ -1245,20 +1254,27 @@ class ICMSSTMGService:
             )
             autopeca_contextual_confirmada = bool(
                 segmento == "AUTOPEÇAS"
-                and finalidade_automotiva == FINALIDADE_AUTO_CONFIRMADA
+                and finalidade_auto_para_desempate
                 and not cls._descricao_indica_consumivel(descricao)
             )
             if aderencia == 0 and autopeca_contextual_confirmada:
-                # 17.8.128 — quando o usuário confirma que a mercadoria é autopeça
-                # e a regra localizada pertence ao segmento AUTOPEÇAS, abreviações
-                # comerciais do XML não podem derrubar um enquadramento que já foi
-                # confirmado pelo contexto. A descrição continua protegendo contra
-                # consumíveis e contra regras de outros segmentos.
-                observacoes.append(
-                    "A descrição comercial não repetiu os termos da descrição legal, mas a finalidade "
-                    "automotiva foi confirmada e o enquadramento localizado pertence ao segmento Autopeças. "
-                    "O cálculo foi mantido; revise apenas se a aplicação real do produto divergir do cadastro."
-                )
+                # A finalidade pode ser confirmada manualmente ou inferida de
+                # forma restrita pela combinacao componente + modelo de moto.
+                # Assim, descricoes comerciais como BALANCIM CG-150 ou KIT
+                # PISTAO CB-300 sustentam o segmento sem transformar palavras
+                # genericas isoladas em ST automatica.
+                if finalidade_automotiva == FINALIDADE_AUTO_CONFIRMADA:
+                    observacoes.append(
+                        "A descrição comercial não repetiu os termos da descrição legal, mas a finalidade "
+                        "automotiva foi confirmada e o enquadramento localizado pertence ao segmento Autopeças. "
+                        "O cálculo foi mantido; revise apenas se a aplicação real do produto divergir do cadastro."
+                    )
+                else:
+                    observacoes.append(
+                        "A descrição comercial identifica objetivamente uma peça e um modelo de motocicleta. "
+                        "Essa evidência confirmou a finalidade automotiva do item localizado no segmento Autopeças; "
+                        "revise apenas se a aplicação real do produto divergir do cadastro."
+                    )
             elif aderencia == 0 and not descricao_7318_compativel and not residual_contextual_confirmado:
                 # 17.8.115 — NCM + operação não bastam. A descrição do produto
                 # também precisa sustentar o enquadramento legal quando não existe
