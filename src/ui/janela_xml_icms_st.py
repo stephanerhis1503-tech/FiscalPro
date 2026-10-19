@@ -581,6 +581,7 @@ class JanelaXMLICMSST(tk.Toplevel):
             f"ST no XML: {_moeda(resumo.get('total_icms_st_xml'))}  •  "
             f"ST calculado: {_moeda(resumo.get('total_icms_st'))}  •  "
             f"Diferença (calculado - XML): {_moeda(resumo.get('diferenca_total_st'))}"
+            + ("\n" + str(resumo["aviso_apuracao"]) if resumo.get("aviso_apuracao") else "")
         )
         self.status_var.set(
             "Conferência concluída. Duplo clique mostra os detalhes; a planilha exportada mantém a memória completa."
