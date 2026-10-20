@@ -1,0 +1,144 @@
+name: Windows - instalador teste ST
+
+on:
+  push:
+    branches:
+      - teste/st-cest-mva-base-real
+    paths:
+      - 'tools/teste_st_windows.py'
+      - 'src/services/icms_st_mg_service.py'
+      - 'src/services/calculadora_icms_st_mg_service.py'
+      - 'src/services/xml_icms_st_service.py'
+      - 'src/services/exportador_xml_icms_st_xlsx.py'
+      - 'src/ui/janela_xml_icms_st.py'
+      - 'src/ui/layout_responsivo.py'
+      - 'src/inteligencia/base_oficial/**'
+      - 'instalador/FiscalPro_Teste_ST.iss'
+      - 'requirements.txt'
+      - '.github/workflows/windows-installer-teste-st.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-teste-st-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Dependencias
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Criar base sintetica
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+          regras = [
+              {
+                  "id": 1, "segmento": "AUTOPEÇAS", "item": "65.0",
+                  "cest": "01.065.00", "ncm_formatado": "8536.50",
+                  "ncm_digitos": "853650",
+                  "descricao": "Interruptores e seccionadores e comutadores",
+                  "ambito": "1.1", "mva": 71.78, "mva_texto": "71,78",
+                  "fonte_codigo": "TESTE", "vigencia_referencia": "TESTE",
+                  "atualizado_em": "2026-10-20"
+              },
+              {
+                  "id": 2, "segmento": "LÂMPADAS, REATORES E STARTER", "item": "4.0",
+                  "cest": "09.004.00", "ncm_formatado": "8536.50",
+                  "ncm_digitos": "853650", "descricao": "Starter",
+                  "ambito": "9.1", "mva": 102.31, "mva_texto": "102,31",
+                  "fonte_codigo": "TESTE", "vigencia_referencia": "TESTE",
+                  "atualizado_em": "2026-10-20"
+              }
+          ]
+          dados = {
+              "formato": "FISCALPRO_BASE_FISCAL_SOMENTE_LEITURA_V1",
+              "contagens": {"st_mg_oficial": 2},
+              "tabelas": {
+                  "st_mg_oficial": regras,
+                  "st_mg_base_status": [{
+                      "base_completa": 1, "versao_schema": 3, "paginas": 1,
+                      "referencia": "TESTE", "fonte_url": "", "sincronizado_em": "2026-10-20"
+                  }]
+              }
+          }
+          Path("base_sintetica.json").write_text(
+              json.dumps(dados, ensure_ascii=False), encoding="utf-8"
+          )
+          '@ | python -
+
+      - name: Smoke test do codigo
+        shell: pwsh
+        run: |
+          python tools/teste_st_windows.py --validar-base base_sintetica.json
+
+      - name: Gerar executavel
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --windowed --onefile `
+            --name FiscalPro_Teste_ST `
+            --icon assets/fiscalpro.ico `
+            --paths . `
+            --distpath dist_teste_st `
+            tools/teste_st_windows.py
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+
+      - name: Gerar instalador
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe nao encontrado" }
+          & $iscc "instalador\FiscalPro_Teste_ST.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Testar instalacao silenciosa
+        shell: pwsh
+        run: |
+          $setup = Resolve-Path "instalador\saida_teste_st\FiscalPro_Teste_ST_Setup.exe"
+          $dir = Join-Path $env:RUNNER_TEMP "FiscalPro_Teste_ST_Instalado"
+          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="$dir"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Join-Path $dir "FiscalPro_Teste_ST.exe"
+          if (-not (Test-Path $exe)) { throw "Executavel instalado nao encontrado" }
+          & $exe --validar-base (Resolve-Path "base_sintetica.json")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $uninstall = Join-Path $dir "unins000.exe"
+          if (Test-Path $uninstall) {
+            & $uninstall /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          }
+
+      - name: Guardar instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: FiscalPro_Teste_ST_Instalador
+          path: instalador/saida_teste_st/FiscalPro_Teste_ST_Setup.exe
+          retention-days: 7
+          if-no-files-found: error
