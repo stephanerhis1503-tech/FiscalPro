@@ -270,6 +270,16 @@ class XMLICMSSTService:
 
     @staticmethod
     def aliquota_interestadual_sugerida(item: ItemNFe, uf_origem: str, uf_destino: str, aliquota_interna: Any) -> Decimal:
+        """Prioriza a aliquota efetivamente destacada no XML.
+
+        A NF-e pode trazer 4% mesmo quando a origem da mercadoria nao permite
+        inferir a aliquota com seguranca apenas pelo codigo de origem. Nesses
+        casos, usar uma taxa generica distorce a MVA ajustada. A inferencia
+        por origem fica somente como fallback quando pICMS nao foi informado.
+        """
+        aliquota_xml = _decimal(item.aliquota_icms_xml)
+        if Decimal("0") < aliquota_xml < Decimal("100"):
+            return aliquota_xml
         if uf_origem and uf_destino and uf_origem == uf_destino:
             return _decimal(aliquota_interna)
         if item.origem_mercadoria in ORIGENS_IMPORTADAS:
