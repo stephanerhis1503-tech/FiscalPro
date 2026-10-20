@@ -249,6 +249,46 @@ def test_limite_de_aliquota_continua_ativo(campo):
         Calc.calcular(**args)
 
 
+
+def test_aliquota_do_xml_tem_prioridade_sobre_inferencia_generica(base_controlada):
+    item = _item("87141000", "PASTILHA DIANT BROS160 TESTE")
+    item = replace(
+        item,
+        origem_mercadoria="0",
+        aliquota_icms_xml=Decimal("4.00"),
+        icms_proprio=Decimal("4.00"),
+        base_icms_proprio=Decimal("100.00"),
+    )
+    r = XML.calcular_item(
+        item,
+        uf_origem="RO",
+        uf_destino="MG",
+        aliquota_interna=18,
+        aplicar_mva_ajustada=True,
+    )
+    assert r["aliquota_interestadual"] == 4.0
+    assert r["icms_proprio_deduzir"] == 4.0
+    assert r["mva_utilizada"] == 101.11
+
+
+def test_sem_picms_xml_mantem_fallback_por_origem(base_controlada):
+    item = _item("87141000", "PASTILHA DIANT BROS160 TESTE")
+    item = replace(
+        item,
+        origem_mercadoria="0",
+        aliquota_icms_xml=Decimal("0"),
+        icms_proprio=Decimal("0"),
+    )
+    r = XML.calcular_item(
+        item,
+        uf_origem="RO",
+        uf_destino="MG",
+        aliquota_interna=18,
+        aplicar_mva_ajustada=True,
+    )
+    assert r["aliquota_interestadual"] == 12.0
+
+
 def test_resumo_separa_simulacoes_e_exporta_aviso(tmp_path, base_controlada):
     nota = SimpleNamespace(
         uf_origem="SC", uf_destino="MG", total_icms_st_xml=Decimal("0"),
