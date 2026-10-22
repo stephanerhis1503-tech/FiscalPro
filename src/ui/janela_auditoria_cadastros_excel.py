@@ -49,7 +49,9 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
         self.var_finalidade = tk.StringVar(value="Revenda")
         self.var_origem = tk.StringVar(value="MG")
         self.var_destino = tk.StringVar(value="MG")
+        self.var_data_referencia = tk.StringVar(value=date.today().isoformat())
         self.var_filtro = tk.StringVar(value="Com problemas")
+        self.var_tipo_problema = tk.StringVar(value="Todos os tipos")
         self.var_busca = tk.StringVar(value="")
         self.var_status = tk.StringVar(value="Selecione a planilha de cadastro de produtos.")
         self.var_resumo = tk.StringVar(value="Itens: 0  •  Corrigir: 0  •  Revisar: 0  •  Serviços: 0  •  OK: 0")
@@ -94,6 +96,15 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
             contexto, textvariable=self.var_empresa_info, foreground="#1F4E78",
             font=("Segoe UI", 9, "bold"),
         ).grid(row=1, column=3, columnspan=5, sticky="w", pady=(8, 0))
+        ttk.Label(contexto, text="Data fiscal").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(contexto, textvariable=self.var_data_referencia, width=14).grid(
+            row=2, column=1, sticky="w", padx=(6, 16), pady=(8, 0)
+        )
+        ttk.Label(
+            contexto,
+            text="Use AAAA-MM-DD. A data define a vigência usada nas regras tributárias da auditoria.",
+            foreground="#7F6000",
+        ).grid(row=2, column=2, columnspan=6, sticky="w", pady=(8, 0))
 
         fonte = ttk.LabelFrame(self, text="2. Planilha de produtos", padding=10)
         fonte.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 7))
@@ -148,6 +159,16 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
         combo = ttk.Combobox(filtros, textvariable=self.var_filtro, state="readonly", width=17, values=("Com problemas", "Corrigir", "Revisar", "Serviços", "OK", "Todos"))
         combo.pack(side=tk.RIGHT)
         combo.bind("<<ComboboxSelected>>", lambda _e: self._preencher())
+        ttk.Label(filtros, text="Tipo:").pack(side=tk.RIGHT, padx=(10, 4))
+        combo_tipo = ttk.Combobox(
+            filtros,
+            textvariable=self.var_tipo_problema,
+            state="readonly",
+            width=19,
+            values=("Todos os tipos", "NCM", "CEST / ST / MVA", "ICMS / CFOP", "PIS / COFINS", "IPI", "Operação", "Processamento"),
+        )
+        combo_tipo.pack(side=tk.RIGHT)
+        combo_tipo.bind("<<ComboboxSelected>>", lambda _e: self._preencher())
 
         area = ttk.Frame(self)
         area.grid(row=4, column=0, sticky="nsew", padx=14, pady=(0, 7))
@@ -159,17 +180,17 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
         quadro.grid(row=1, column=0, sticky="nsew")
         quadro.grid_rowconfigure(0, weight=1)
         quadro.grid_columnconfigure(0, weight=1)
-        colunas = ("status", "codigo", "descricao", "ncm", "cest", "ncm_sug", "ncm_cand", "cest_sug", "problema", "seg")
+        colunas = ("status", "cadastro", "operacao", "codigo", "descricao", "ncm", "cest", "ncm_sug", "ncm_cand", "cest_sug", "problema", "seg")
         self.tabela = ttk.Treeview(quadro, columns=colunas, show="headings", selectmode="browse")
         titulos = {
-            "status":"Status", "codigo":"Código", "descricao":"Descrição", "ncm":"NCM atual", "cest":"CEST atual",
+            "status":"Status", "cadastro":"Cadastro", "operacao":"Operação", "codigo":"Código", "descricao":"Descrição", "ncm":"NCM atual", "cest":"CEST atual",
             "ncm_sug":"NCM provável / sugerido", "ncm_cand":"NCM candidatos", "cest_sug":"CEST sugerido", "problema":"Problema encontrado", "seg":"Segurança",
         }
-        larguras = {"status":90,"codigo":125,"descricao":300,"ncm":90,"cest":105,"ncm_sug":145,"ncm_cand":260,"cest_sug":110,"problema":420,"seg":80}
+        larguras = {"status":90,"cadastro":90,"operacao":90,"codigo":125,"descricao":300,"ncm":90,"cest":105,"ncm_sug":145,"ncm_cand":260,"cest_sug":110,"problema":420,"seg":80}
         for col in colunas:
             self.tabela.heading(col, text=titulos[col])
             self.tabela.column(col, width=larguras[col], minwidth=55, anchor="w", stretch=col in {"descricao", "problema"})
-        for col in ("status", "ncm", "cest", "ncm_sug", "cest_sug", "seg"):
+        for col in ("status", "cadastro", "operacao", "ncm", "cest", "ncm_sug", "cest_sug", "seg"):
             self.tabela.column(col, anchor="center")
         y = ttk.Scrollbar(quadro, orient="vertical", command=self.tabela.yview)
         x = ttk.Scrollbar(quadro, orient="horizontal", command=self.tabela.xview)
@@ -207,7 +228,7 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
             "empresa": "" if self.var_empresa.get().strip() == "Todas as empresas" else self.var_empresa.get().strip(),
             "regime": EmpresasRegimesService.resolver_regime(self.var_empresa.get(), self.var_regime.get()), "operacao": "Venda", "finalidade": self.var_finalidade.get(),
             "uf_origem": self.var_origem.get(), "uf_destino": self.var_destino.get(),
-            "data_operacao": date.today().isoformat(), "consumidor_final": False,
+            "data_operacao": self.var_data_referencia.get().strip(), "consumidor_final": False,
         }
 
     def _analisar(self) -> None:
@@ -222,6 +243,18 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
         self.btn_exportar_pendencias.configure(state="disabled")
         self.btn_ficha_tributaria.configure(state="disabled")
         self.var_status.set("Lendo e auditando os produtos... A planilha original não será alterada.")
+        try:
+            date.fromisoformat(self.var_data_referencia.get().strip())
+        except ValueError:
+            self._processando = False
+            self.btn_analisar.configure(state="normal")
+            self._atualizar_botoes_exportacao()
+            messagebox.showwarning(
+                "FiscalPro",
+                "Informe a Data fiscal no formato AAAA-MM-DD, por exemplo 2026-10-22.",
+                parent=self,
+            )
+            return
         arquivo, contexto = self.arquivo, self._contexto()
 
         def progresso(atual: int, total: int, descricao: str) -> None:
@@ -303,6 +336,7 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
             self.itens_visiveis = []
             return
         filtro = self.var_filtro.get()
+        tipo_problema = self.var_tipo_problema.get()
         busca = self.var_busca.get().strip().upper()
         candidatos: List[ItemAuditoriaExcel] = []
         for item in self.resultado.itens:
@@ -316,6 +350,27 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
                 continue
             if filtro == "OK" and item.status != STATUS_OK:
                 continue
+            texto_tipo = " ".join([
+                item.problema or "",
+                item.correcao_sugerida or "",
+                " ".join(item.divergencias or []),
+                " ".join(item.pendencias or []),
+                " ".join(item.pendencias_operacionais or []),
+            ]).upper()
+            if tipo_problema == "NCM" and "NCM" not in texto_tipo:
+                continue
+            if tipo_problema == "CEST / ST / MVA" and not any(chave in texto_tipo for chave in ("CEST", "ICMS-ST", "MVA", "FCP-ST", " ST ")):
+                continue
+            if tipo_problema == "ICMS / CFOP" and not any(chave in texto_tipo for chave in ("ICMS", "CFOP")):
+                continue
+            if tipo_problema == "PIS / COFINS" and not any(chave in texto_tipo for chave in ("PIS", "COFINS")):
+                continue
+            if tipo_problema == "IPI" and "IPI" not in texto_tipo and "TIPI" not in texto_tipo:
+                continue
+            if tipo_problema == "Operação" and not item.pendencias_operacionais:
+                continue
+            if tipo_problema == "Processamento" and "FALHA" not in texto_tipo and "ERRO" not in texto_tipo:
+                continue
             if busca and busca not in f"{item.codigo} {item.descricao} {item.ncm_atual} {item.cest_atual} {item.ncm_sugerido} {item.ncm_candidatos}".upper():
                 continue
             candidatos.append(item)
@@ -323,7 +378,7 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
         self.itens_visiveis = candidatos[:limite]
         for idx, item in enumerate(self.itens_visiveis):
             self.tabela.insert("", "end", iid=str(idx), tags=(item.status,), values=(
-                item.status, item.codigo or "-", item.descricao, item.ncm_atual or "-", item.cest_atual or "-",
+                item.status, item.status_cadastro, item.status_operacao, item.codigo or "-", item.descricao, item.ncm_atual or "-", item.cest_atual or "-",
                 item.ncm_sugerido or "-", item.ncm_candidatos or "-", item.cest_sugerido or "-", item.problema,
                 f"{item.seguranca:.0f}%" if item.seguranca else "-",
             ))
@@ -340,14 +395,21 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
             return
 
         resumo = "\n".join((
-            f"STATUS: {item.status} | Segurança: {item.seguranca:.1f}% | Linha Excel: {item.linha_excel}",
+            f"STATUS: {item.status} | Cadastro: {item.status_cadastro} | Operação: {item.status_operacao} | Segurança: {item.seguranca:.1f}% | Linha Excel: {item.linha_excel}",
             f"Código: {item.codigo or '-'}",
             f"Descrição: {item.descricao}",
             f"NCM atual: {item.ncm_atual or '-'}   →   provável/sugerido: {item.ncm_sugerido or '-'}",
             f"Candidatos NCM: {item.ncm_candidatos or '-'}",
             f"CEST atual: {item.cest_atual or '-'}   →   sugerido: {item.cest_sugerido or '-'}",
         ))
+        responsabilidade_st = (
+            "CONFIRMADA"
+            if item.st_responsabilidade_confirmada is True
+            else ("NÃO CONFIRMADA" if item.st_responsabilidade_confirmada is False else "NÃO INFORMADA")
+        )
         tributacao = "\n".join((
+            f"ST: {item.st_referencia} | Decisão ST confirmada: {'SIM' if item.st_decisao_confirmada else 'NÃO'}",
+            f"Responsabilidade ST: {responsabilidade_st} | {item.st_responsabilidade_status or '-'}",
             f"PIS: {item.pis_atual_texto} → referência: {item.pis_referencia_texto}",
             f"COFINS: {item.cofins_atual_texto} → referência: {item.cofins_referencia_texto}",
             f"IPI atual: {item.ipi_atual:.2f}% → TIPI: {item.ipi_referencia if item.ipi_referencia is not None else '-'}",
@@ -475,6 +537,8 @@ class JanelaAuditoriaCadastrosExcel(tk.Toplevel):
         self.var_arquivo.set("Nenhuma planilha selecionada.")
         self.var_status.set("Selecione a planilha de cadastro de produtos.")
         self.var_resumo.set("Itens: 0  •  Corrigir: 0  •  Revisar: 0  •  Serviços: 0  •  OK: 0")
+        self.var_data_referencia.set(date.today().isoformat())
+        self.var_tipo_problema.set("Todos os tipos")
         self.btn_exportar.configure(state="disabled")
         self.btn_exportar_pendencias.configure(state="disabled")
         self.btn_ficha_tributaria.configure(state="disabled")

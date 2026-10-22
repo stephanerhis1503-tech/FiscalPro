@@ -55,6 +55,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 import re
 import unicodedata
 
+from src.core.app_info import VERSAO_APP
 from src.services.empresas_regimes_service import EmpresasRegimesService
 from src.services.analise_tributaria_lote_service import (
     AnaliseTributariaLoteService,
@@ -180,6 +181,18 @@ def _codigo_fiscal(valor: Any, tamanho: int) -> str:
     if digitos and len(digitos) <= tamanho:
         return digitos.zfill(tamanho)
     return texto
+
+
+def _cst_icms_cadastro(valor: Any) -> str:
+    """Extrai o CST ICMS quando o ERP exporta ICMS e IBS/CBS juntos.
+
+    Exemplo: 60/000 representa CST ICMS 60 + classificacao IBS/CBS 000.
+    A auditoria atual de ICMS deve receber somente a parcela ICMS (060).
+    """
+    texto = _texto(valor)
+    if "/" in texto:
+        texto = texto.split("/", 1)[0].strip()
+    return _codigo_fiscal(texto, 3)
 
 
 def _pct(cst: str, aliquota: Optional[float]) -> str:
@@ -350,6 +363,12 @@ class ItemAuditoriaExcel:
     avisos_informativos: List[str] = field(default_factory=list)
     aliquota_icms_referencia: Optional[float] = None
     st_referencia: str = "REVISAR"
+    st_decisao_confirmada: bool = False
+    st_responsabilidade_confirmada: Optional[bool] = None
+    st_responsabilidade_status: str = ""
+    status_cadastro: str = STATUS_OK
+    status_operacao: str = STATUS_OK
+    pendencias_operacionais: List[str] = field(default_factory=list)
     mva_referencia: Optional[float] = None
     fem_referencia: Optional[float] = None
     fundamento_icms: str = ""
@@ -413,7 +432,10 @@ class AuditoriaCadastrosExcelService:
         },
         "ex_tipi": {"EX", "EX TIPI", "EXTIPI"},
         "cest": {"CEST", "CEST ATUAL", "CEST CADASTRADO", "CEST ORIGINAL"},
-        "cst_icms": {"CST ICMS", "ICMS CST", "CSOSN"},
+        "cst_icms": {
+            "CST ICMS", "ICMS CST", "CSOSN",
+            "CST ICMS IBS CBS", "CST ICMS IBS-CBS",
+        },
         "cfop": {"CFOP", "CFOP SAIDA", "CFOP DE SAIDA"},
         "icms_desonerado": {"ICMS DESONERADO", "DESONERACAO ICMS", "DESONERADO"},
         "red_bc_icms": {"RED BC ICMS", "RED BC ICMS %", "REDUCAO BC ICMS", "REDUCAO BC ICMS %"},
@@ -879,7 +901,10 @@ class AuditoriaCadastrosExcelService:
         # incorreta (ex.: max_row=1) mesmo contendo milhares de linhas. A leitura
         # principal do openpyxl ainda enxerga os registros; por isso a amostra
         # não deve depender de max_row.
-        for numero_amostra, linha in enumerate(ws.iter_rows(min_row=2), start=1):
+        primeira_linha_dados = int(cabecalhos.get("__linha_cabecalho__", 1)) + 1
+        for numero_amostra, linha in enumerate(
+            ws.iter_rows(min_row=primeira_linha_dados), start=1
+        ):
             if numero_amostra > 100 or not pendentes:
                 break
             resolvidos = []
@@ -917,7 +942,8 @@ class AuditoriaCadastrosExcelService:
         lado, ano/modelo e marca comercial. Assinaturas ambíguas são descartadas.
         """
         indice = IndiceNCMDescricao()
-        for linha in ws.iter_rows(min_row=2, values_only=True):
+        primeira_linha_dados = int(cabecalhos.get("__linha_cabecalho__", 1)) + 1
+        for linha in ws.iter_rows(min_row=primeira_linha_dados, values_only=True):
             ncm = _ncm(cls._valor(linha, cabecalhos, "ncm"))
             descricao = _texto(cls._valor(linha, cabecalhos, "descricao"))
             codigo_bruto = _texto(cls._valor(linha, cabecalhos, "codigo"))
@@ -1441,18 +1467,19 @@ class AuditoriaCadastrosExcelService:
         try:
             ws = cls._escolher_aba(wb)
             cabecalhos = cls._mapear_cabecalhos(ws)
-            faltantes = [campo for campo in ("codigo", "descricao", "ncm") if campo not in cabecalhos]
+            linha_cabecalho = int(cabecalhos.get("__linha_cabecalho__", 1))
+            faltantes = [campo for campo in ("descricao", "ncm") if campo not in cabecalhos]
             if faltantes:
                 nomes = {
-                    "codigo": "Código",
                     "descricao": "Descrição",
                     "ncm": "NCM",
                 }
                 faltantes_legiveis = ", ".join(nomes.get(campo, campo) for campo in faltantes)
                 raise ValueError(
                     "Não consegui reconhecer a estrutura desta planilha. "
-                    "O FiscalPro aceita também colunas como Código/Cód. Produto, "
-                    "Descrição e NCM/NCM atual/Cód. NCM. "
+                    "O FiscalPro procura automaticamente o cabeçalho nas primeiras 30 linhas "
+                    "e aceita colunas como Código/Cód. Produto (opcional), Descrição e "
+                    "NCM/NCM atual/Cód. NCM. "
                     f"Não localizadas: {faltantes_legiveis}."
                 )
 
@@ -1475,12 +1502,19 @@ class AuditoriaCadastrosExcelService:
             )
             formatos_percentuais = cls._detectar_formatos_percentuais(ws, cabecalhos)
             indice_ncm_descricao = cls._construir_indice_ncm_descricao(ws, cabecalhos)
-            total = int(indice_ncm_descricao.total_linhas or max(0, (ws.max_row or 1) - 1))
+            total = int(
+                indice_ncm_descricao.total_linhas
+                or max(0, (ws.max_row or linha_cabecalho) - linha_cabecalho)
+            )
             processados = 0
 
             # Leitura rápida: valores puros, sem materializar objetos/estilos de
             # cada célula em todas as linhas. Em bases grandes faz diferença.
-            for indice, linha in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            primeira_linha_dados = linha_cabecalho + 1
+            for indice, linha in enumerate(
+                ws.iter_rows(min_row=primeira_linha_dados, values_only=True),
+                start=primeira_linha_dados,
+            ):
                 codigo = cls._valor(linha, cabecalhos, "codigo")
                 descricao = cls._valor(linha, cabecalhos, "descricao")
                 ncm_atual = _ncm(cls._valor(linha, cabecalhos, "ncm"))
@@ -1493,6 +1527,8 @@ class AuditoriaCadastrosExcelService:
                 inferencia_ncm: Optional[InferenciaNCMDescricao] = None
                 candidatos_ncm: List[CandidatoNCMDescricao] = []
                 validacao_semantica_geral: Optional[ResultadoValidacaoNCMSemantica] = None
+                validacao_inferencia: Optional[ResultadoValidacaoNCMSemantica] = None
+                erro_validacao_ncm = ""
                 ncm_para_motor = ncm_atual
                 deteccao_servico = cls._detectar_servico(descricao, codigo) if not _ncm_valido(ncm_atual) else None
                 if not _ncm_valido(ncm_atual) and not deteccao_servico:
@@ -1503,7 +1539,23 @@ class AuditoriaCadastrosExcelService:
                         descricao=descricao,
                     )
                     if inferencia_ncm is not None:
-                        ncm_para_motor = inferencia_ncm.ncm
+                        try:
+                            validacao_inferencia = NCMValidadorSemanticoService.validar(
+                                descricao, inferencia_ncm.ncm
+                            )
+                        except Exception as erro:
+                            validacao_inferencia = None
+                            erro_validacao_ncm = (
+                                "Falha ao validar o NCM sugerido na base oficial instalada: "
+                                f"{erro.__class__.__name__}: {erro}"
+                            )
+                        if (
+                            validacao_inferencia is not None
+                            and validacao_inferencia.status == "INCOMPATIVEL"
+                        ):
+                            ncm_para_motor = ncm_atual
+                        else:
+                            ncm_para_motor = inferencia_ncm.ncm
                     else:
                         candidatos_ncm = cls._candidatos_ncm_descricao(
                             indice_ncm_descricao,
@@ -1513,14 +1565,36 @@ class AuditoriaCadastrosExcelService:
                             limite=3,
                         )
                 elif _ncm_valido(ncm_atual):
-                    # 18.2.1 — um NCM com oito dígitos não é necessariamente um
-                    # NCM coerente. Primeiro preservamos as regras/famílias de
-                    # alta confiança já existentes no cadastro.
-                    inferencia_ncm = cls._inferir_ncm_validacao_existente(
-                        indice_ncm_descricao,
-                        descricao=descricao,
-                        ncm_atual=ncm_atual,
-                    )
+                    # 18.3.1 — a NCM 65061000 foi extinta no desdobramento
+                    # vigente em 2026. Para capacetes comuns (não bombeiro),
+                    # a abertura residual vigente é 65061090. A regra só é
+                    # aplicada após 01/02/2026 e permanece como REVISAR.
+                    data_ref = str(contexto_final.get("data_operacao") or "")
+                    descricao_norm = _normalizar_texto(descricao)
+                    if (
+                        ncm_atual == "65061000"
+                        and data_ref > "2026-02-01"
+                        and "CAPACETE" in descricao_norm
+                        and "BOMBEIRO" not in descricao_norm
+                    ):
+                        inferencia_ncm = InferenciaNCMDescricao(
+                            ncm="65061090",
+                            confianca=99.0,
+                            metodo="vigência NCM 2026: desdobramento de 65061000",
+                            referencia=(
+                                "Resolução Gecex 812/2025 / IT NF-e 2024.001 v2.30 — "
+                                "65061000 extinto; 65061090 = outros capacetes de proteção"
+                            ),
+                        )
+                    else:
+                        # 18.2.1 — um NCM com oito dígitos não é necessariamente um
+                        # NCM coerente. Primeiro preservamos as regras/famílias de
+                        # alta confiança já existentes no cadastro.
+                        inferencia_ncm = cls._inferir_ncm_validacao_existente(
+                            indice_ncm_descricao,
+                            descricao=descricao,
+                            ncm_atual=ncm_atual,
+                        )
                     if inferencia_ncm is not None and inferencia_ncm.ncm != ncm_atual:
                         ncm_para_motor = inferencia_ncm.ncm
                     else:
@@ -1531,8 +1605,12 @@ class AuditoriaCadastrosExcelService:
                             validacao_semantica_geral = NCMValidadorSemanticoService.validar(
                                 descricao, ncm_atual
                             )
-                        except Exception:
+                        except Exception as erro:
                             validacao_semantica_geral = None
+                            erro_validacao_ncm = (
+                                "Falha ao validar o NCM na base oficial instalada: "
+                                f"{erro.__class__.__name__}: {erro}"
+                            )
 
                         if validacao_semantica_geral is not None:
                             candidatos_ncm = [
@@ -1570,10 +1648,12 @@ class AuditoriaCadastrosExcelService:
                     "inferencia_ncm": inferencia_ncm,
                     "candidatos_ncm": candidatos_ncm,
                     "validacao_semantica_geral": validacao_semantica_geral,
+                    "erro_validacao_ncm": erro_validacao_ncm,
+                    "validacao_inferencia_ncm": validacao_inferencia,
                     "deteccao_servico": deteccao_servico,
                     "codigo_barras": codigo_barras_atual,
                     "ex_tipi": _texto(cls._valor(linha, cabecalhos, "ex_tipi")),
-                    "cst_icms": _codigo_fiscal(cls._valor(linha, cabecalhos, "cst_icms"), 3),
+                    "cst_icms": _cst_icms_cadastro(cls._valor(linha, cabecalhos, "cst_icms")),
                     "cfop": _texto(cls._valor(linha, cabecalhos, "cfop")),
                     "icms_desonerado": _sim_nao(cls._valor(linha, cabecalhos, "icms_desonerado")),
                     "red_bc_icms": _percentual_valor(cls._valor(linha, cabecalhos, "red_bc_icms"), formatos_percentuais.get("red_bc_icms", False)),
@@ -1682,31 +1762,115 @@ class AuditoriaCadastrosExcelService:
 
     @classmethod
     def _escolher_aba(cls, wb):
+        melhor_ws = wb[wb.sheetnames[0]]
+        melhor_pontuacao = -1
         for nome in wb.sheetnames:
             ws = wb[nome]
             try:
                 mapa = cls._mapear_cabecalhos(ws)
             except Exception:
                 continue
-            if {"codigo", "descricao", "ncm"}.issubset(mapa):
-                return ws
-        return wb[wb.sheetnames[0]]
+            obrigatorios = {"descricao", "ncm"}
+            if not obrigatorios.issubset(mapa):
+                continue
+            pontuacao = len([campo for campo in mapa if not campo.startswith("__")])
+            if "codigo" in mapa:
+                pontuacao += 2
+            if pontuacao > melhor_pontuacao:
+                melhor_ws = ws
+                melhor_pontuacao = pontuacao
+        return melhor_ws
 
     @classmethod
     def _mapear_cabecalhos(cls, ws) -> Dict[str, int]:
-        primeira = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
-        mapa: Dict[str, int] = {}
+        """Localiza automaticamente a linha de cabeçalho nas primeiras 30 linhas.
+
+        Exportações de ERP frequentemente incluem título, empresa, período e
+        linhas em branco antes do cabeçalho real. A auditoria exige Descrição e
+        NCM; Código/SKU é útil, mas não é obrigatório.
+        """
         inverso = {
             alias: campo
             for campo, aliases in cls.ALIASES.items()
             for alias in aliases
         }
-        for idx, valor in enumerate(primeira):
-            chave = _chave_cabecalho(valor)
-            campo = inverso.get(chave)
-            if campo and campo not in mapa:
-                mapa[campo] = idx
-        return mapa
+        melhor_mapa: Dict[str, int] = {}
+        melhor_linha = 1
+        melhor_pontuacao = -1
+
+        for numero_linha, valores in enumerate(
+            ws.iter_rows(min_row=1, max_row=30, values_only=True),
+            start=1,
+        ):
+            mapa_linha: Dict[str, int] = {}
+            for idx, valor in enumerate(valores):
+                chave = _chave_cabecalho(valor)
+                campo = inverso.get(chave)
+                if campo and campo not in mapa_linha:
+                    mapa_linha[campo] = idx
+
+            possui_minimo = {"descricao", "ncm"}.issubset(mapa_linha)
+            pontuacao = len(mapa_linha)
+            if "codigo" in mapa_linha:
+                pontuacao += 2
+            if possui_minimo:
+                pontuacao += 10
+
+            if pontuacao > melhor_pontuacao:
+                melhor_mapa = mapa_linha
+                melhor_linha = numero_linha
+                melhor_pontuacao = pontuacao
+
+            if possui_minimo and len(mapa_linha) >= 5:
+                break
+
+        if melhor_mapa:
+            melhor_mapa = dict(melhor_mapa)
+
+            # Alguns relatorios usam cabecalhos visuais mesclados. Por exemplo,
+            # "Descricao" pode ocupar C:F, enquanto os dados reais comecam em D.
+            # Em modo read_only o openpyxl nao expoe as mesclagens; por isso
+            # delimitamos a faixa de cada cabecalho pelo proximo cabecalho
+            # reconhecido e escolhemos a primeira coluna com maior preenchimento.
+            campos_ordenados = sorted(
+                (
+                    (idx, campo)
+                    for campo, idx in melhor_mapa.items()
+                    if not campo.startswith("__")
+                ),
+                key=lambda item: item[0],
+            )
+            amostra = list(
+                ws.iter_rows(
+                    min_row=melhor_linha + 1,
+                    max_row=melhor_linha + 80,
+                    values_only=True,
+                )
+            )
+            for pos, (inicio, campo) in enumerate(campos_ordenados):
+                fim = (
+                    campos_ordenados[pos + 1][0] - 1
+                    if pos + 1 < len(campos_ordenados)
+                    else inicio
+                )
+                if fim <= inicio:
+                    continue
+                melhor_coluna = inicio
+                melhor_qtd = -1
+                for coluna in range(inicio, fim + 1):
+                    qtd = sum(
+                        1
+                        for linha in amostra
+                        if coluna < len(linha) and linha[coluna] not in (None, "")
+                    )
+                    if qtd > melhor_qtd:
+                        melhor_qtd = qtd
+                        melhor_coluna = coluna
+                if melhor_qtd > 0:
+                    melhor_mapa[campo] = melhor_coluna
+
+            melhor_mapa["__linha_cabecalho__"] = melhor_linha
+        return melhor_mapa
 
     @staticmethod
     def _valor(linha: Iterable[Any], cabecalhos: Dict[str, int], campo: str) -> Any:
@@ -1720,6 +1884,16 @@ class AuditoriaCadastrosExcelService:
     def _st_referencia(analise: ResultadoItemLote) -> str:
         if bool(analise.st_confirmado):
             return "SIM"
+
+        decisao = getattr(analise, "st_decisao_confirmada", None)
+        if decisao is True:
+            return "NÃO"
+        if decisao is False:
+            return "REVISAR"
+
+        # Compatibilidade com resultados persistidos/testes anteriores à 18.3.0.
+        # No fluxo atual o motor sempre fornece st_decisao_confirmada e este
+        # fallback deixa de participar da decisão normal da auditoria.
         texto = _normalizar_texto(f"{analise.icms_status} {analise.st_status} {analise.observacao}")
         marcadores_nao = (
             "ST NAO APLICAVEL",
@@ -1754,6 +1928,8 @@ class AuditoriaCadastrosExcelService:
         inferencia_ncm = originais.get("inferencia_ncm")
         candidatos_ncm = list(originais.get("candidatos_ncm") or [])
         validacao_semantica_geral = originais.get("validacao_semantica_geral")
+        validacao_inferencia_ncm = originais.get("validacao_inferencia_ncm")
+        erro_validacao_ncm = str(originais.get("erro_validacao_ncm") or "").strip()
         # Não repetir 00000000/ausência na coluna de sugestão. Um NCM só
         # aparece aqui se for válido, inferido ou eleito apenas como provável visual.
         ncm_sugerido = bruto.ncm if _ncm_valido(bruto.ncm) else ""
@@ -1783,10 +1959,19 @@ class AuditoriaCadastrosExcelService:
             # A sugestão por descrição/família precisa de validação humana antes
             # de virar correção definitiva. Por isso permanece como REVISAR.
             pendencias.insert(0, evidencia)
-            sugestoes.append(
-                f"Validar o NCM {inferencia_ncm.ncm}. A tributação exibida foi recalculada "
-                f"provisoriamente com esse NCM (confiança da inferência {inferencia_ncm.confianca:.0f}%)."
-            )
+            if (
+                isinstance(validacao_inferencia_ncm, ResultadoValidacaoNCMSemantica)
+                and validacao_inferencia_ncm.status == "INCOMPATIVEL"
+            ):
+                sugestoes.append(
+                    f"Validar o NCM {inferencia_ncm.ncm}; a base oficial não confirmou a sugestão "
+                    "aprendida no cadastro e ela não foi usada como base tributária automática."
+                )
+            else:
+                sugestoes.append(
+                    f"Validar o NCM {inferencia_ncm.ncm}. A tributação exibida foi recalculada "
+                    f"provisoriamente com esse NCM (confiança da inferência {inferencia_ncm.confianca:.0f}%)."
+                )
         elif candidatos_ncm and not _ncm_valido(ncm_original):
             texto_candidatos = cls._texto_candidatos_ncm(candidatos_ncm)
             detalhes = "; ".join(
@@ -1841,6 +2026,31 @@ class AuditoriaCadastrosExcelService:
             )
         else:
             avisos_candidatos = ""
+
+        if erro_validacao_ncm:
+            pendencias.insert(0, erro_validacao_ncm)
+            sugestoes.append(
+                "Reexecutar a validação do NCM após conferir a disponibilidade da base oficial; "
+                "não tratar esta linha como validada enquanto a falha persistir."
+            )
+
+        if (
+            isinstance(inferencia_ncm, InferenciaNCMDescricao)
+            and isinstance(validacao_inferencia_ncm, ResultadoValidacaoNCMSemantica)
+            and validacao_inferencia_ncm.status == "INCOMPATIVEL"
+        ):
+            pendencias.insert(
+                0,
+                (
+                    f"O NCM {inferencia_ncm.ncm} aprendido no próprio cadastro não foi confirmado "
+                    "pela validação semântica da base oficial. "
+                    f"{validacao_inferencia_ncm.motivo}"
+                ),
+            )
+            sugestoes.append(
+                "Não aplicar automaticamente o NCM aprendido pelo cadastro; revisar material, função "
+                "e aplicação real antes de qualquer correção."
+            )
 
         # Mesmo quando o motor mantém PIS/Cofins como sugestão condicional, a auditoria
         # mostra de forma objetiva a diferença entre o cadastro atual e a referência.
@@ -1960,9 +2170,21 @@ class AuditoriaCadastrosExcelService:
         if not divergencias and not pendencias_bloqueantes:
             sugestoes.append("Nenhuma divergência objetiva foi encontrada para o contexto informado.")
 
+        pendencias_cadastro = [
+            texto for texto in pendencias_bloqueantes
+            if texto not in pendencias_operacionais
+        ]
         if divergencias:
+            status_cadastro = STATUS_CORRIGIR
+        elif pendencias_cadastro:
+            status_cadastro = STATUS_REVISAR
+        else:
+            status_cadastro = STATUS_OK
+        status_operacao = STATUS_REVISAR if pendencias_operacionais else STATUS_OK
+
+        if status_cadastro == STATUS_CORRIGIR:
             status = STATUS_CORRIGIR
-        elif pendencias_bloqueantes:
+        elif status_cadastro == STATUS_REVISAR or status_operacao == STATUS_REVISAR:
             status = STATUS_REVISAR
         else:
             status = STATUS_OK
@@ -1977,10 +2199,18 @@ class AuditoriaCadastrosExcelService:
         problema = " | ".join(divergencias + pendencias_bloqueantes) or "Nenhuma divergência objetiva encontrada."
         observacao_partes = [str(analise.observacao or "").strip()]
         if isinstance(inferencia_ncm, InferenciaNCMDescricao):
+            detalhe_tributacao_ncm = (
+                "não foi recalculada com esta sugestão porque a base oficial a marcou como incompatível."
+                if (
+                    isinstance(validacao_inferencia_ncm, ResultadoValidacaoNCMSemantica)
+                    and validacao_inferencia_ncm.status == "INCOMPATIVEL"
+                )
+                else "foi simulada com o NCM sugerido e deve ser validada antes de alterar o ERP."
+            )
             observacao_partes.append(
                 f"NCM sugerido por descrição: {inferencia_ncm.ncm} ({inferencia_ncm.metodo}; "
                 f"confiança {inferencia_ncm.confianca:.0f}%). A tributação de referência desta linha "
-                "foi simulada com o NCM sugerido e deve ser validada antes de alterar o ERP."
+                f"{detalhe_tributacao_ncm}"
             )
         if avisos_candidatos:
             observacao_partes.append(avisos_candidatos)
@@ -2055,6 +2285,12 @@ class AuditoriaCadastrosExcelService:
             nat_receita_sugerida=campos_operacionais["nat_receita"],
             aliquota_icms_referencia=analise.aliquota_icms_esperada,
             st_referencia=cls._st_referencia(analise),
+            st_decisao_confirmada=bool(getattr(analise, "st_decisao_confirmada", False)),
+            st_responsabilidade_confirmada=getattr(analise, "st_responsabilidade_confirmada", None),
+            st_responsabilidade_status=str(getattr(analise, "st_responsabilidade_status", "") or ""),
+            status_cadastro=status_cadastro,
+            status_operacao=status_operacao,
+            pendencias_operacionais=list(pendencias_operacionais),
             mva_referencia=mva_ref,
             fem_referencia=analise.fcp_esperado,
             fundamento_icms=analise.fundamento_icms,
@@ -2080,6 +2316,8 @@ class AuditoriaCadastrosExcelService:
                 if aviso not in item.pendencias:
                     item.pendencias.append(aviso)
                     item.problema = f"{item.problema} | {aviso}" if item.problema else aviso
+                if item.status_cadastro == STATUS_OK:
+                    item.status_cadastro = STATUS_REVISAR
                 if item.status == STATUS_OK:
                     item.status = STATUS_REVISAR
                 item.seguranca = min(item.seguranca, 70.0) if item.seguranca else 70.0
@@ -2200,6 +2438,7 @@ class ExportadorAuditoriaCadastrosExcelXLSX:
             ["Arquivo", resultado.arquivo],
             ["Aba lida", resultado.planilha],
             ["Modo de exportação", modo],
+            ["Versão FiscalPro", VERSAO_APP],
             ["Linhas exportadas", total],
             ["Itens auditados", resumo["itens"]],
             ["Corrigir", resumo["corrigir"]],
@@ -2246,7 +2485,8 @@ class ExportadorFichaTributariaCompletaXLSX:
         "CST PIS/COFINS SAÍDA", "Aliq. PIS(%)", "Aliq. COFINS(%)", "Nat. de receita",
     ]
     CABECALHOS_AUDITORIA = [
-        "Status Auditoria", "NCM atual", "NCM provável / sugerido", "NCM candidatos", "CEST atual", "CEST referência",
+        "Status Auditoria", "Status Cadastro", "Status Operação",
+        "NCM atual", "NCM provável / sugerido", "NCM candidatos", "CEST atual", "CEST referência",
         "ICMS referência (%)", "ST FiscalPro", "MVA FiscalPro (%)", "FEM/FCP referência (%)",
         "PIS referência", "COFINS referência", "IPI TIPI ref. (%)", "Segurança (%)",
         "Problema encontrado", "Correção sugerida", "Observação FiscalPro",
@@ -2256,7 +2496,7 @@ class ExportadorFichaTributariaCompletaXLSX:
 
     # Índices 1-based das colunas percentuais no arquivo final.
     COLUNAS_PERCENTUAIS = {
-        10, 11, 13, 14, 15, 16, 18, 20, 21, 29, 31, 32, 35, 36,
+        10, 11, 13, 14, 15, 16, 18, 20, 21, 31, 33, 34, 37, 38,
     }
 
     LARGURAS_MODELO = [
@@ -2264,7 +2504,7 @@ class ExportadorFichaTributariaCompletaXLSX:
         23, 14, 17, 16,
     ]
     LARGURAS_AUDITORIA = [
-        16, 12, 20, 34, 14, 16, 18, 14, 18, 20, 22, 24, 18, 15, 62, 62, 55, 55, 55, 60,
+        16, 15, 15, 12, 20, 34, 14, 16, 18, 14, 18, 20, 22, 24, 18, 15, 62, 62, 55, 55, 55, 60,
     ]
 
     @staticmethod
@@ -2299,7 +2539,8 @@ class ExportadorFichaTributariaCompletaXLSX:
                 "N/A", None, "", None, None, item.nat_receita_atual or "",
             ]
             auditoria = [
-                item.status, item.ncm_atual, "", "", item.cest_atual, "", None, "N/A",
+                item.status, item.status_cadastro, item.status_operacao,
+                item.ncm_atual, "", "", item.cest_atual, "", None, "N/A",
                 None, None, "", "", None, cls._pct_excel(item.seguranca),
                 item.problema, item.correcao_sugerida, item.observacao, "", "", "",
             ]
@@ -2357,6 +2598,8 @@ class ExportadorFichaTributariaCompletaXLSX:
         ]
         auditoria = [
             item.status,
+            item.status_cadastro,
+            item.status_operacao,
             item.ncm_atual,
             item.ncm_sugerido,
             item.ncm_candidatos,
@@ -2486,6 +2729,7 @@ class ExportadorFichaTributariaCompletaXLSX:
             ["UF origem", contexto.get("uf_origem") or "-"],
             ["UF destino", contexto.get("uf_destino") or "-"],
             ["Data de referência", contexto.get("data_operacao") or "-"],
+            ["Versão FiscalPro", VERSAO_APP],
             [
                 "Critério",
                 (
@@ -2497,6 +2741,7 @@ class ExportadorFichaTributariaCompletaXLSX:
             [
                 "Status da auditoria",
                 (
+                    "A ficha separa Status Cadastro de Status Operação. "
                     "CORRIGIR = divergência objetiva; REVISAR = pendência específica do item; "
                     "SERVIÇO = linha de mão de obra/serviço fora da classificação NCM de mercadorias; "
                     "OK = sem divergência objetiva. Alertas genéricos do motor permanecem na observação "
