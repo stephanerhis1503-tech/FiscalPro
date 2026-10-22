@@ -33,6 +33,15 @@ ENDERECOS_EMPRESAS: dict[str, str] = {
     for alias in EMPRESAS_POR_ALIAS
 }
 
+MARCADORES_EMPRESAS: dict[str, str] = {
+    "Mega Motos Trilha": "MEGA MOTOS TRILHA",
+    "Mega Motos Comércio": "MEGA MOTOS COMERCIO",
+    "Mega Mix E-commerce": "MEGA MIX E-COMERCE",
+    "Mega T.O. E-commerce": "MEGA TO E-COMERCE",
+    "Mega Serviços": "MEGA MOTOS SERVIÇOS",
+    "Mega Profissional": "MEGA SERVIÇOS PROFISSIONAL",
+}
+
 # Categorias que podem ser marcadas como obrigatórias no controle mensal.
 # "Links" não entra nessa lista porque é uma forma de recebimento, não um
 # documento esperado. Quando o link é baixado, o arquivo entra na categoria real.
