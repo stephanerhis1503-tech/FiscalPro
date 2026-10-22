@@ -886,7 +886,10 @@ class AuditoriaCadastrosExcelService:
         # incorreta (ex.: max_row=1) mesmo contendo milhares de linhas. A leitura
         # principal do openpyxl ainda enxerga os registros; por isso a amostra
         # não deve depender de max_row.
-        for numero_amostra, linha in enumerate(ws.iter_rows(min_row=2), start=1):
+        primeira_linha_dados = int(cabecalhos.get("__linha_cabecalho__", 1)) + 1
+        for numero_amostra, linha in enumerate(
+            ws.iter_rows(min_row=primeira_linha_dados), start=1
+        ):
             if numero_amostra > 100 or not pendentes:
                 break
             resolvidos = []
@@ -924,7 +927,8 @@ class AuditoriaCadastrosExcelService:
         lado, ano/modelo e marca comercial. Assinaturas ambíguas são descartadas.
         """
         indice = IndiceNCMDescricao()
-        for linha in ws.iter_rows(min_row=2, values_only=True):
+        primeira_linha_dados = int(cabecalhos.get("__linha_cabecalho__", 1)) + 1
+        for linha in ws.iter_rows(min_row=primeira_linha_dados, values_only=True):
             ncm = _ncm(cls._valor(linha, cabecalhos, "ncm"))
             descricao = _texto(cls._valor(linha, cabecalhos, "descricao"))
             codigo_bruto = _texto(cls._valor(linha, cabecalhos, "codigo"))
@@ -1448,18 +1452,19 @@ class AuditoriaCadastrosExcelService:
         try:
             ws = cls._escolher_aba(wb)
             cabecalhos = cls._mapear_cabecalhos(ws)
-            faltantes = [campo for campo in ("codigo", "descricao", "ncm") if campo not in cabecalhos]
+            linha_cabecalho = int(cabecalhos.get("__linha_cabecalho__", 1))
+            faltantes = [campo for campo in ("descricao", "ncm") if campo not in cabecalhos]
             if faltantes:
                 nomes = {
-                    "codigo": "Código",
                     "descricao": "Descrição",
                     "ncm": "NCM",
                 }
                 faltantes_legiveis = ", ".join(nomes.get(campo, campo) for campo in faltantes)
                 raise ValueError(
                     "Não consegui reconhecer a estrutura desta planilha. "
-                    "O FiscalPro aceita também colunas como Código/Cód. Produto, "
-                    "Descrição e NCM/NCM atual/Cód. NCM. "
+                    "O FiscalPro procura automaticamente o cabeçalho nas primeiras 30 linhas "
+                    "e aceita colunas como Código/Cód. Produto (opcional), Descrição e "
+                    "NCM/NCM atual/Cód. NCM. "
                     f"Não localizadas: {faltantes_legiveis}."
                 )
 
@@ -1482,12 +1487,19 @@ class AuditoriaCadastrosExcelService:
             )
             formatos_percentuais = cls._detectar_formatos_percentuais(ws, cabecalhos)
             indice_ncm_descricao = cls._construir_indice_ncm_descricao(ws, cabecalhos)
-            total = int(indice_ncm_descricao.total_linhas or max(0, (ws.max_row or 1) - 1))
+            total = int(
+                indice_ncm_descricao.total_linhas
+                or max(0, (ws.max_row or linha_cabecalho) - linha_cabecalho)
+            )
             processados = 0
 
             # Leitura rápida: valores puros, sem materializar objetos/estilos de
             # cada célula em todas as linhas. Em bases grandes faz diferença.
-            for indice, linha in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            primeira_linha_dados = linha_cabecalho + 1
+            for indice, linha in enumerate(
+                ws.iter_rows(min_row=primeira_linha_dados, values_only=True),
+                start=primeira_linha_dados,
+            ):
                 codigo = cls._valor(linha, cabecalhos, "codigo")
                 descricao = cls._valor(linha, cabecalhos, "descricao")
                 ncm_atual = _ncm(cls._valor(linha, cabecalhos, "ncm"))
@@ -1713,31 +1725,72 @@ class AuditoriaCadastrosExcelService:
 
     @classmethod
     def _escolher_aba(cls, wb):
+        melhor_ws = wb[wb.sheetnames[0]]
+        melhor_pontuacao = -1
         for nome in wb.sheetnames:
             ws = wb[nome]
             try:
                 mapa = cls._mapear_cabecalhos(ws)
             except Exception:
                 continue
-            if {"codigo", "descricao", "ncm"}.issubset(mapa):
-                return ws
-        return wb[wb.sheetnames[0]]
+            obrigatorios = {"descricao", "ncm"}
+            if not obrigatorios.issubset(mapa):
+                continue
+            pontuacao = len([campo for campo in mapa if not campo.startswith("__")])
+            if "codigo" in mapa:
+                pontuacao += 2
+            if pontuacao > melhor_pontuacao:
+                melhor_ws = ws
+                melhor_pontuacao = pontuacao
+        return melhor_ws
 
     @classmethod
     def _mapear_cabecalhos(cls, ws) -> Dict[str, int]:
-        primeira = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
-        mapa: Dict[str, int] = {}
+        """Localiza automaticamente a linha de cabeçalho nas primeiras 30 linhas.
+
+        Exportações de ERP frequentemente incluem título, empresa, período e
+        linhas em branco antes do cabeçalho real. A auditoria exige Descrição e
+        NCM; Código/SKU é útil, mas não é obrigatório.
+        """
         inverso = {
             alias: campo
             for campo, aliases in cls.ALIASES.items()
             for alias in aliases
         }
-        for idx, valor in enumerate(primeira):
-            chave = _chave_cabecalho(valor)
-            campo = inverso.get(chave)
-            if campo and campo not in mapa:
-                mapa[campo] = idx
-        return mapa
+        melhor_mapa: Dict[str, int] = {}
+        melhor_linha = 1
+        melhor_pontuacao = -1
+
+        for numero_linha, valores in enumerate(
+            ws.iter_rows(min_row=1, max_row=30, values_only=True),
+            start=1,
+        ):
+            mapa_linha: Dict[str, int] = {}
+            for idx, valor in enumerate(valores):
+                chave = _chave_cabecalho(valor)
+                campo = inverso.get(chave)
+                if campo and campo not in mapa_linha:
+                    mapa_linha[campo] = idx
+
+            possui_minimo = {"descricao", "ncm"}.issubset(mapa_linha)
+            pontuacao = len(mapa_linha)
+            if "codigo" in mapa_linha:
+                pontuacao += 2
+            if possui_minimo:
+                pontuacao += 10
+
+            if pontuacao > melhor_pontuacao:
+                melhor_mapa = mapa_linha
+                melhor_linha = numero_linha
+                melhor_pontuacao = pontuacao
+
+            if possui_minimo and len(mapa_linha) >= 5:
+                break
+
+        if melhor_mapa:
+            melhor_mapa = dict(melhor_mapa)
+            melhor_mapa["__linha_cabecalho__"] = melhor_linha
+        return melhor_mapa
 
     @staticmethod
     def _valor(linha: Iterable[Any], cabecalhos: Dict[str, int], campo: str) -> Any:
