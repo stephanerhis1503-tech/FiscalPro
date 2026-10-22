@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 
 class DependenciasGmailAusentes(RuntimeError):
@@ -32,7 +32,7 @@ def _importar_google() -> tuple[Any, Any, Any, Any, Any]:
 
 
 def criar_servico_gmail(caminho_credenciais: Path, caminho_token: Path):
-    """Cria o cliente Gmail usando apenas permissão de leitura."""
+    """Cria o cliente Gmail com permissão para ler e aplicar marcadores."""
 
     Request, Credentials, InstalledAppFlow, build, _ = _importar_google()
 
@@ -47,6 +47,13 @@ def criar_servico_gmail(caminho_credenciais: Path, caminho_token: Path):
             credenciais = Credentials.from_authorized_user_file(str(caminho_token), SCOPES)
         except (OSError, ValueError):
             caminho_token.unlink(missing_ok=True)
+
+    # Tokens antigos do Robô FiscalPro usavam gmail.readonly. Para aplicar
+    # marcadores é necessário gmail.modify; se o token não tiver o escopo atual,
+    # descartamos somente o token local e pedimos uma nova autorização OAuth.
+    if credenciais and not credenciais.has_scopes(SCOPES):
+        caminho_token.unlink(missing_ok=True)
+        credenciais = None
 
     if credenciais and credenciais.expired and credenciais.refresh_token:
         try:
