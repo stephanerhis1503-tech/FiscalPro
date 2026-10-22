@@ -1,5 +1,9 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.3.2 — Status cadastral consistente na Auditoria Excel:
+- conflitos do mesmo código com NCM/CEST diferentes passam a marcar Status Cadastro = REVISAR;
+- mantém separada a pendência operacional sem esconder inconsistência do cadastro.
+
 Versão 18.3.1 — Auditoria Excel refinada com planilha real:
 - reduz falsos alertas do validador semântico de NCM;
 - reconhece melhor modelos de motocicleta com números na descrição;
@@ -872,9 +876,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.3.1"
+VERSAO_APP = "18.3.2"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.3.1.0"
+VERSAO_ARQUIVO_WINDOWS = "18.3.2.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
