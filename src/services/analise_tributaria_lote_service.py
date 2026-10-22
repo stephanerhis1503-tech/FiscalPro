@@ -193,7 +193,7 @@ class ResultadoItemLote:
     cest_esperado: str = ""
     st_status: str = ""
     st_confirmado: bool = False
-    st_decisao_confirmada: bool = False
+    st_decisao_confirmada: Optional[bool] = None
     st_responsabilidade_confirmada: Optional[bool] = None
     st_responsabilidade_status: str = ""
     confiabilidade_st: float = 0.0
