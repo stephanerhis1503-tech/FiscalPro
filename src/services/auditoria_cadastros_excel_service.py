@@ -350,6 +350,12 @@ class ItemAuditoriaExcel:
     avisos_informativos: List[str] = field(default_factory=list)
     aliquota_icms_referencia: Optional[float] = None
     st_referencia: str = "REVISAR"
+    st_decisao_confirmada: bool = False
+    st_responsabilidade_confirmada: Optional[bool] = None
+    st_responsabilidade_status: str = ""
+    status_cadastro: str = STATUS_OK
+    status_operacao: str = STATUS_OK
+    pendencias_operacionais: List[str] = field(default_factory=list)
     mva_referencia: Optional[float] = None
     fem_referencia: Optional[float] = None
     fundamento_icms: str = ""
@@ -1503,7 +1509,23 @@ class AuditoriaCadastrosExcelService:
                         descricao=descricao,
                     )
                     if inferencia_ncm is not None:
-                        ncm_para_motor = inferencia_ncm.ncm
+                        try:
+                            validacao_inferencia = NCMValidadorSemanticoService.validar(
+                                descricao, inferencia_ncm.ncm
+                            )
+                        except Exception as erro:
+                            validacao_inferencia = None
+                            erro_validacao_ncm = (
+                                "Falha ao validar o NCM sugerido na base oficial instalada: "
+                                f"{erro.__class__.__name__}: {erro}"
+                            )
+                        if (
+                            validacao_inferencia is not None
+                            and validacao_inferencia.status == "INCOMPATIVEL"
+                        ):
+                            ncm_para_motor = ncm_atual
+                        else:
+                            ncm_para_motor = inferencia_ncm.ncm
                     else:
                         candidatos_ncm = cls._candidatos_ncm_descricao(
                             indice_ncm_descricao,
@@ -1527,12 +1549,17 @@ class AuditoriaCadastrosExcelService:
                         # 18.2.22 — segunda camada: confronta o item com TODO o
                         # catálogo nacional NCM/TIPI. Não há tabela peça→NCM:
                         # o ranking nasce da linguagem da descrição oficial.
+                        erro_validacao_ncm = ""
                         try:
                             validacao_semantica_geral = NCMValidadorSemanticoService.validar(
                                 descricao, ncm_atual
                             )
-                        except Exception:
+                        except Exception as erro:
                             validacao_semantica_geral = None
+                            erro_validacao_ncm = (
+                                "Falha ao validar o NCM na base oficial instalada: "
+                                f"{erro.__class__.__name__}: {erro}"
+                            )
 
                         if validacao_semantica_geral is not None:
                             candidatos_ncm = [
@@ -1570,6 +1597,8 @@ class AuditoriaCadastrosExcelService:
                     "inferencia_ncm": inferencia_ncm,
                     "candidatos_ncm": candidatos_ncm,
                     "validacao_semantica_geral": validacao_semantica_geral,
+                    "erro_validacao_ncm": locals().get("erro_validacao_ncm", ""),
+                    "validacao_inferencia_ncm": locals().get("validacao_inferencia", None),
                     "deteccao_servico": deteccao_servico,
                     "codigo_barras": codigo_barras_atual,
                     "ex_tipi": _texto(cls._valor(linha, cabecalhos, "ex_tipi")),
@@ -1720,16 +1749,7 @@ class AuditoriaCadastrosExcelService:
     def _st_referencia(analise: ResultadoItemLote) -> str:
         if bool(analise.st_confirmado):
             return "SIM"
-        texto = _normalizar_texto(f"{analise.icms_status} {analise.st_status} {analise.observacao}")
-        marcadores_nao = (
-            "ST NAO APLICAVEL",
-            "ICMS ST NAO APLICAVEL",
-            "ICMS ST MG NAO",
-            "SEM RESPONSABILIDADE DE ST",
-            "NAO INCIDE NA REGRA ESTADUAL",
-            "NAO SUJEITO A ST",
-        )
-        if any(marcador in texto for marcador in marcadores_nao):
+        if bool(getattr(analise, "st_decisao_confirmada", False)):
             return "NÃO"
         return "REVISAR"
 
@@ -1754,6 +1774,8 @@ class AuditoriaCadastrosExcelService:
         inferencia_ncm = originais.get("inferencia_ncm")
         candidatos_ncm = list(originais.get("candidatos_ncm") or [])
         validacao_semantica_geral = originais.get("validacao_semantica_geral")
+        validacao_inferencia_ncm = originais.get("validacao_inferencia_ncm")
+        erro_validacao_ncm = str(originais.get("erro_validacao_ncm") or "").strip()
         # Não repetir 00000000/ausência na coluna de sugestão. Um NCM só
         # aparece aqui se for válido, inferido ou eleito apenas como provável visual.
         ncm_sugerido = bruto.ncm if _ncm_valido(bruto.ncm) else ""
@@ -1841,6 +1863,31 @@ class AuditoriaCadastrosExcelService:
             )
         else:
             avisos_candidatos = ""
+
+        if erro_validacao_ncm:
+            pendencias.insert(0, erro_validacao_ncm)
+            sugestoes.append(
+                "Reexecutar a validação do NCM após conferir a disponibilidade da base oficial; "
+                "não tratar esta linha como validada enquanto a falha persistir."
+            )
+
+        if (
+            isinstance(inferencia_ncm, InferenciaNCMDescricao)
+            and isinstance(validacao_inferencia_ncm, ResultadoValidacaoNCMSemantica)
+            and validacao_inferencia_ncm.status == "INCOMPATIVEL"
+        ):
+            pendencias.insert(
+                0,
+                (
+                    f"O NCM {inferencia_ncm.ncm} aprendido no próprio cadastro não foi confirmado "
+                    "pela validação semântica da base oficial. "
+                    f"{validacao_inferencia_ncm.motivo}"
+                ),
+            )
+            sugestoes.append(
+                "Não aplicar automaticamente o NCM aprendido pelo cadastro; revisar material, função "
+                "e aplicação real antes de qualquer correção."
+            )
 
         # Mesmo quando o motor mantém PIS/Cofins como sugestão condicional, a auditoria
         # mostra de forma objetiva a diferença entre o cadastro atual e a referência.
@@ -1960,9 +2007,21 @@ class AuditoriaCadastrosExcelService:
         if not divergencias and not pendencias_bloqueantes:
             sugestoes.append("Nenhuma divergência objetiva foi encontrada para o contexto informado.")
 
+        pendencias_cadastro = [
+            texto for texto in pendencias_bloqueantes
+            if texto not in pendencias_operacionais
+        ]
         if divergencias:
+            status_cadastro = STATUS_CORRIGIR
+        elif pendencias_cadastro:
+            status_cadastro = STATUS_REVISAR
+        else:
+            status_cadastro = STATUS_OK
+        status_operacao = STATUS_REVISAR if pendencias_operacionais else STATUS_OK
+
+        if status_cadastro == STATUS_CORRIGIR:
             status = STATUS_CORRIGIR
-        elif pendencias_bloqueantes:
+        elif status_cadastro == STATUS_REVISAR or status_operacao == STATUS_REVISAR:
             status = STATUS_REVISAR
         else:
             status = STATUS_OK
@@ -2055,6 +2114,12 @@ class AuditoriaCadastrosExcelService:
             nat_receita_sugerida=campos_operacionais["nat_receita"],
             aliquota_icms_referencia=analise.aliquota_icms_esperada,
             st_referencia=cls._st_referencia(analise),
+            st_decisao_confirmada=bool(getattr(analise, "st_decisao_confirmada", False)),
+            st_responsabilidade_confirmada=getattr(analise, "st_responsabilidade_confirmada", None),
+            st_responsabilidade_status=str(getattr(analise, "st_responsabilidade_status", "") or ""),
+            status_cadastro=status_cadastro,
+            status_operacao=status_operacao,
+            pendencias_operacionais=list(pendencias_operacionais),
             mva_referencia=mva_ref,
             fem_referencia=analise.fcp_esperado,
             fundamento_icms=analise.fundamento_icms,
