@@ -1,5 +1,12 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.3.0 — Auditoria Excel com contexto fiscal e ST estruturado:
+- separa divergência cadastral de pendência operacional;
+- usa decisão/responsabilidade estruturadas do motor ST;
+- adiciona data fiscal de referência e filtros por tipo de problema;
+- falhas do validador NCM deixam de ser silenciosas;
+- NCM aprendido no cadastro é confrontado com a base oficial antes de uso automático.
+
 Versão 18.2.32 — NCM provável sem falso 00000000:
 - NCM zerado/ausente deixa de ser repetido como sugestão;
 - candidatos com liderança clara podem aparecer como NCM provável, mas continuam REVISAR;
@@ -859,9 +866,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.2.32"
+VERSAO_APP = "18.3.0"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.2.32.0"
+VERSAO_ARQUIVO_WINDOWS = "18.3.0.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
