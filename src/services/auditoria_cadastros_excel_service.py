@@ -2046,17 +2046,18 @@ class AuditoriaCadastrosExcelService:
         problema = " | ".join(divergencias + pendencias_bloqueantes) or "Nenhuma divergência objetiva encontrada."
         observacao_partes = [str(analise.observacao or "").strip()]
         if isinstance(inferencia_ncm, InferenciaNCMDescricao):
+            detalhe_tributacao_ncm = (
+                "não foi recalculada com esta sugestão porque a base oficial a marcou como incompatível."
+                if (
+                    isinstance(validacao_inferencia_ncm, ResultadoValidacaoNCMSemantica)
+                    and validacao_inferencia_ncm.status == "INCOMPATIVEL"
+                )
+                else "foi simulada com o NCM sugerido e deve ser validada antes de alterar o ERP."
+            )
             observacao_partes.append(
                 f"NCM sugerido por descrição: {inferencia_ncm.ncm} ({inferencia_ncm.metodo}; "
                 f"confiança {inferencia_ncm.confianca:.0f}%). A tributação de referência desta linha "
-                (
-                    "não foi recalculada com esta sugestão porque a base oficial a marcou como incompatível."
-                    if (
-                        isinstance(validacao_inferencia_ncm, ResultadoValidacaoNCMSemantica)
-                        and validacao_inferencia_ncm.status == "INCOMPATIVEL"
-                    )
-                    else "foi simulada com o NCM sugerido e deve ser validada antes de alterar o ERP."
-                )
+                f"{detalhe_tributacao_ncm}"
             )
         if avisos_candidatos:
             observacao_partes.append(avisos_candidatos)
