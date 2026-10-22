@@ -1499,6 +1499,8 @@ class AuditoriaCadastrosExcelService:
                 inferencia_ncm: Optional[InferenciaNCMDescricao] = None
                 candidatos_ncm: List[CandidatoNCMDescricao] = []
                 validacao_semantica_geral: Optional[ResultadoValidacaoNCMSemantica] = None
+                validacao_inferencia: Optional[ResultadoValidacaoNCMSemantica] = None
+                erro_validacao_ncm = ""
                 ncm_para_motor = ncm_atual
                 deteccao_servico = cls._detectar_servico(descricao, codigo) if not _ncm_valido(ncm_atual) else None
                 if not _ncm_valido(ncm_atual) and not deteccao_servico:
@@ -1549,7 +1551,6 @@ class AuditoriaCadastrosExcelService:
                         # 18.2.22 — segunda camada: confronta o item com TODO o
                         # catálogo nacional NCM/TIPI. Não há tabela peça→NCM:
                         # o ranking nasce da linguagem da descrição oficial.
-                        erro_validacao_ncm = ""
                         try:
                             validacao_semantica_geral = NCMValidadorSemanticoService.validar(
                                 descricao, ncm_atual
@@ -1597,8 +1598,8 @@ class AuditoriaCadastrosExcelService:
                     "inferencia_ncm": inferencia_ncm,
                     "candidatos_ncm": candidatos_ncm,
                     "validacao_semantica_geral": validacao_semantica_geral,
-                    "erro_validacao_ncm": locals().get("erro_validacao_ncm", ""),
-                    "validacao_inferencia_ncm": locals().get("validacao_inferencia", None),
+                    "erro_validacao_ncm": erro_validacao_ncm,
+                    "validacao_inferencia_ncm": validacao_inferencia,
                     "deteccao_servico": deteccao_servico,
                     "codigo_barras": codigo_barras_atual,
                     "ex_tipi": _texto(cls._valor(linha, cabecalhos, "ex_tipi")),
@@ -1805,10 +1806,19 @@ class AuditoriaCadastrosExcelService:
             # A sugestão por descrição/família precisa de validação humana antes
             # de virar correção definitiva. Por isso permanece como REVISAR.
             pendencias.insert(0, evidencia)
-            sugestoes.append(
-                f"Validar o NCM {inferencia_ncm.ncm}. A tributação exibida foi recalculada "
-                f"provisoriamente com esse NCM (confiança da inferência {inferencia_ncm.confianca:.0f}%)."
-            )
+            if (
+                isinstance(validacao_inferencia_ncm, ResultadoValidacaoNCMSemantica)
+                and validacao_inferencia_ncm.status == "INCOMPATIVEL"
+            ):
+                sugestoes.append(
+                    f"Validar o NCM {inferencia_ncm.ncm}; a base oficial não confirmou a sugestão "
+                    "aprendida no cadastro e ela não foi usada como base tributária automática."
+                )
+            else:
+                sugestoes.append(
+                    f"Validar o NCM {inferencia_ncm.ncm}. A tributação exibida foi recalculada "
+                    f"provisoriamente com esse NCM (confiança da inferência {inferencia_ncm.confianca:.0f}%)."
+                )
         elif candidatos_ncm and not _ncm_valido(ncm_original):
             texto_candidatos = cls._texto_candidatos_ncm(candidatos_ncm)
             detalhes = "; ".join(
@@ -2039,7 +2049,14 @@ class AuditoriaCadastrosExcelService:
             observacao_partes.append(
                 f"NCM sugerido por descrição: {inferencia_ncm.ncm} ({inferencia_ncm.metodo}; "
                 f"confiança {inferencia_ncm.confianca:.0f}%). A tributação de referência desta linha "
-                "foi simulada com o NCM sugerido e deve ser validada antes de alterar o ERP."
+                (
+                    "não foi recalculada com esta sugestão porque a base oficial a marcou como incompatível."
+                    if (
+                        isinstance(validacao_inferencia_ncm, ResultadoValidacaoNCMSemantica)
+                        and validacao_inferencia_ncm.status == "INCOMPATIVEL"
+                    )
+                    else "foi simulada com o NCM sugerido e deve ser validada antes de alterar o ERP."
+                )
             )
         if avisos_candidatos:
             observacao_partes.append(avisos_candidatos)
