@@ -250,6 +250,10 @@ class ExportadorXMLICMSSTXLSX:
             ]
             linhas.append(_linha(idx, celulas, 22))
 
+        aviso_apuracao = str(resumo.get("aviso_apuracao") or "")
+        if aviso_apuracao:
+            linhas.append(_linha(8, [_cell_inline("A8", aviso_apuracao, 8)], 36))
+
         header_row = 9
         header_cells = [_cell_inline(f"{_coluna(i)}{header_row}", cab, 3) for i, cab in enumerate(HEADERS)]
         linhas.append(_linha(header_row, header_cells, 48))
@@ -361,7 +365,7 @@ class ExportadorXMLICMSSTXLSX:
         last_data = data_start + max(len(itens), 1) - 1
         total_row = last_data + 1
         total_cells = [
-            _cell_inline(f"A{total_row}", "TOTAL", 2),
+            _cell_inline(f"A{total_row}", "TOTAL ESTIMADO" if aviso_apuracao else "TOTAL", 2),
             _cell_formula(f"I{total_row}", f"SUM(I{data_start}:I{last_data})", resumo.get("total_produtos", 0), 7),
             _cell_formula(f"N{total_row}", f"SUM(N{data_start}:N{last_data})", resumo.get("total_ipi", 0), 7),
             _cell_formula(f"O{total_row}", f"SUM(O{data_start}:O{last_data})", resumo.get("total_produtos_com_ipi", 0), 7),
@@ -380,6 +384,8 @@ class ExportadorXMLICMSSTXLSX:
         )
         dimensao = f"A1:AH{total_row}"
         merges = ["A1:H1", "A2:J2"]
+        if aviso_apuracao:
+            merges.extend(["A8:AH8", f"A{total_row}:H{total_row}"])
         for row in range(3, 8):
             merges.extend([f"B{row}:D{row}", f"F{row}:AH{row}"])
         merge_cells = (

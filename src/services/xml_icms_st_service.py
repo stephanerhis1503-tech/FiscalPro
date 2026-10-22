@@ -270,6 +270,16 @@ class XMLICMSSTService:
 
     @staticmethod
     def aliquota_interestadual_sugerida(item: ItemNFe, uf_origem: str, uf_destino: str, aliquota_interna: Any) -> Decimal:
+        """Prioriza a aliquota efetivamente destacada no XML.
+
+        A NF-e pode trazer 4% mesmo quando a origem da mercadoria nao permite
+        inferir a aliquota com seguranca apenas pelo codigo de origem. Nesses
+        casos, usar uma taxa generica distorce a MVA ajustada. A inferencia
+        por origem fica somente como fallback quando pICMS nao foi informado.
+        """
+        aliquota_xml = _decimal(item.aliquota_icms_xml)
+        if Decimal("0") < aliquota_xml < Decimal("100"):
+            return aliquota_xml
         if uf_origem and uf_destino and uf_origem == uf_destino:
             return _decimal(aliquota_interna)
         if item.origem_mercadoria in ORIGENS_IMPORTADAS:
@@ -409,6 +419,14 @@ class XMLICMSSTService:
         elif not calculo_disponivel:
             conferencia = "REVISAR NCM / CEST / MVA"
             observacoes.append("O FiscalPro ainda não possui cálculo suficiente para comparar o ICMS-ST.")
+        elif resultado_calculo.get("calculo_condicional") or (
+            (resultado_calculo.get("st_oficial") or {}).get("confirmado") is False
+        ):
+            conferencia = "REVISAR NCM / CEST / MVA"
+            observacoes.append(
+                "O valor e uma simulacao: enquadramento ou MVA ainda requer validacao. "
+                "Nao conclui imposto devido nem falta de destaque no XML."
+            )
         elif informado <= limite and retido_anterior > limite:
             conferencia = "ST RETIDO ANTERIORMENTE — REVISAR"
             observacoes.append(
@@ -549,7 +567,19 @@ class XMLICMSSTService:
             ),
             "nao_aplicavel": bool(st.get("nao_aplicavel")),
             "calculado": False,
+            "calculo_condicional": (
+                not bool(st.get("confirmado")) or mva_manual not in (None, "")
+            ),
         }
+
+        if st.get("aplicabilidade_segmento") == "ENQUADRAMENTO_AMBIGUO" and mva_manual in (None, ""):
+            base["status"] = "REVISAR ENQUADRAMENTO — CÁLCULO BLOQUEADO"
+            base["cest_sugerido"] = st.get("cest_sugerido") or st.get("cest") or ""
+            base["mva_sugerida"] = st.get("mva_sugerida", st.get("mva_original"))
+            base["cest"] = ""
+            base["mva_original"] = None
+            base.update(cls.conferir_icms_st(item, base, tolerancia_conferencia))
+            return base
 
         if st.get("nao_aplicavel"):
             base["status"] = "NÃO CALCULADO — USO EXCLUSIVAMENTE AUTOMOTIVO"
@@ -600,7 +630,9 @@ class XMLICMSSTService:
             base["observacoes"] = obs
         base["calculado"] = True
         responsabilidade = str(st.get("responsabilidade") or "").strip().upper()
-        if responsabilidade.startswith("DESTINATÁRIO MINEIRO"):
+        if base["calculo_condicional"]:
+            base["status"] = "SIMULADO — REVISAR ENQUADRAMENTO / MVA"
+        elif responsabilidade.startswith("DESTINATÁRIO MINEIRO"):
             if st.get("exige_revisao"):
                 base["status"] = "CALCULADO — DESTINATÁRIO MG; REVISAR DETALHES"
             else:
@@ -661,6 +693,13 @@ class XMLICMSSTService:
         total_base = sum((_decimal(r.get("base_calculo_st")) for r in resultados if r.get("calculado")), Decimal("0"))
         total_st = sum((_decimal(r.get("icms_st")) for r in resultados if r.get("calculado")), Decimal("0"))
         total_fcp = sum((_decimal(r.get("fcp_st")) for r in resultados if r.get("calculado")), Decimal("0"))
+        total_st_condicional = sum((
+            _decimal(r.get("icms_st")) for r in resultados
+            if r.get("calculado") and r.get("calculo_condicional")
+        ), Decimal("0"))
+        itens_condicionais = sum(
+            1 for r in resultados if r.get("calculado") and r.get("calculo_condicional")
+        )
         total_st_xml_itens = sum((_decimal(r.get("icms_st_xml")) for r in resultados), Decimal("0"))
         total_st_xml_nota = nota.total_icms_st_xml
         total_st_xml = total_st_xml_nota if total_st_xml_nota > 0 else total_st_xml_itens
@@ -694,6 +733,17 @@ class XMLICMSSTService:
             if str(r.get("deducao_icms_origem") or "").startswith("ALÍQUOTA INTERESTADUAL")
         )
 
+        aviso_apuracao = ""
+        if pendentes:
+            valor_condicional = f"{total_st_condicional:,.2f}".replace(
+                ",", "X"
+            ).replace(".", ",").replace("X", ".")
+            aviso_apuracao = (
+                f"TOTAL ESTIMADO: inclui R$ {valor_condicional} de ST em simulacoes "
+                f"condicionais ({itens_condicionais} item(ns)). Ha {pendentes} pendencia(s). "
+                "Nao e apuracao final para recolhimento."
+            )
+
         return {
             "nota": nota.para_dict(),
             "uf_origem": origem,
@@ -713,7 +763,13 @@ class XMLICMSSTService:
                 "total_ipi": float(total_ipi),
                 "total_produtos_com_ipi": float(total_produtos + total_ipi),
                 "total_base_st": float(total_base),
+                # Compatibilidade: soma dos calculos exibidos, incluindo simulacoes.
                 "total_icms_st": float(total_st),
+                "total_icms_st_condicional": float(total_st_condicional),
+                "total_icms_st_sem_simulacoes": float(total_st - total_st_condicional),
+                "itens_calculo_condicional": itens_condicionais,
+                "apuracao_pendente": bool(pendentes),
+                "aviso_apuracao": aviso_apuracao,
                 "total_icms_st_xml": float(total_st_xml),
                 "total_icms_st_xml_itens": float(total_st_xml_itens),
                 "total_icms_st_xml_nota": float(total_st_xml_nota),

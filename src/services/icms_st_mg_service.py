@@ -204,6 +204,19 @@ class ICMSSTMGService:
         return aliases.get(token, token)
 
     @classmethod
+    def _descricao_indica_interruptor(cls, descricao: str) -> bool:
+        """Reconhece a funcao comercial sem fixar NCM, CEST ou margem."""
+        texto = re.sub(r"[^A-Z0-9]+", " ", cls._normalizar_texto(descricao)).strip()
+        # Partes ou chaves mecanicas avulsas nao comprovam interruptor completo.
+        if re.search(r"\b(SUP|SUPORTE|CAPA|CARCACA|MIOLO|CILINDRO|AVULSA|AVULSO)\b", texto):
+            return False
+        return bool(re.match(
+            r"^(?:CHAVE\s+(?:DE\s+)?IGN(?:ICAO)?\b|"
+            r"INT(?:ER)?\s+(?:FR|FREIO|PART|PARTIDA|TRAS|TRASEIRO)\b|"
+            r"INTERRUPTOR\b)", texto
+        ))
+
+    @classmethod
     def _tokens(cls, valor: Any) -> set[str]:
         ignorar = {
             "A", "AS", "O", "OS", "DE", "DA", "DAS", "DO", "DOS", "E", "EM",
@@ -215,6 +228,8 @@ class ICMSSTMGService:
             token = cls._normalizar_token_descricao(palavra)
             if len(token) >= 3 and token not in ignorar:
                 tokens.add(token)
+        if cls._descricao_indica_interruptor(str(valor or "")):
+            tokens.add("INTERRUPTOR")
         return tokens
 
     @classmethod
@@ -231,6 +246,7 @@ class ICMSSTMGService:
         cls,
         candidatos: Sequence[Dict[str, Any]],
         descricao: str,
+        finalidade_automotiva: str = "",
     ) -> Tuple[Optional[Dict[str, Any]], bool]:
         if not candidatos:
             return None, False
@@ -240,6 +256,22 @@ class ICMSSTMGService:
             item for item in candidatos
             if len(str(item.get("ncm_digitos") or "")) == maior_especificidade
         ]
+        finalidade = cls._normalizar_finalidade_automotiva(finalidade_automotiva)
+        evidencia_auto = finalidade == FINALIDADE_AUTO_CONFIRMADA or (
+            finalidade == FINALIDADE_AUTO_NAO_INFORMADA
+            and cls._descricao_indica_finalidade_automotiva(descricao)
+        )
+        # O segmento so desempata quando funcao e aplicacao sao sustentadas.
+        # NCM/CEST do documento, sem descricao compativel, nao elegem a regra.
+        if evidencia_auto and cls._descricao_indica_interruptor(descricao):
+            interruptores_auto = [
+                item for item in especificos
+                if cls._normalizar_texto(item.get("segmento")) == "AUTOPECAS"
+                and "INTERRUPTOR" in cls._tokens(item.get("descricao"))
+                and cls._aderencia_descricao(descricao, str(item.get("descricao") or "")) > 0
+            ]
+            if interruptores_auto:
+                especificos = interruptores_auto
         if len(especificos) == 1:
             return dict(especificos[0]), False
 
@@ -252,6 +284,8 @@ class ICMSSTMGService:
                 )
                 for item in especificos
             ],
+            # Evita comparar dicts quando ha duplicatas da tabela sincronizada.
+            key=lambda linha: (linha[0], linha[1], str(linha[2].get("item") or "")),
             reverse=True,
         )
         if not pontuados:
@@ -359,14 +393,26 @@ class ICMSSTMGService:
             "TRAVA", "FECHADURA", "CAB ", "CABO", "FIACAO", "CHICOTE",
             "INTERRUP", "SENSOR", "ESCOVA", "BATERIA", "BAT POS", "FAROL",
             "LANTERNA", "MANETE", "PEDAL", "PISCA", "RETROVISOR",
+            # Pecas mecanicas reconheciveis de motocicleta. Estes termos so
+            # confirmam a finalidade quando a mesma descricao tambem traz um
+            # modelo de moto conhecido; isoladamente continuam condicionais.
+            "ARVORE DO COMANDO", "BALANCIM", "BRACO OSCILANTE",
+            "CAIXA DE DIRECAO", "EIXO SECUNDARIO", "CILINDRO",
+            "EMBREAGEM", "PISTAO", "PLACA DA PARTIDA",
+            "RETENTOR BENGALA", "TENSIONADOR",
+            "VALVULA DE ADMISSAO", "VALVULA DE ESCAPE",
         )
         modelos_moto = (
             "BIZ", "CG ", "TITAN", "FAN", "BROS", "POP ", "XRE", "CB ",
-            "CBR", "FAZER", "FACTOR", "YBR", "LANDER", "CROSSER", "XTZ",
-            "YS ", "NXR", "NX ", "PCX", "LEAD", "SAHARA", "TWISTER",
+            "CBR", "CBX", "FAZER", "FACTOR", "YBR", "LANDER", "CROSSER",
+            "XTZ", "YS ", "NXR", "NX ", "PCX", "LEAD", "SAHARA",
+            "TWISTER", "FALCON", "ELITE", "INTRUDER", "NMAX", "YES", "XLR",
         )
-        componente = any(pista in f"{texto} " for pista in componentes)
+        interruptor = cls._descricao_indica_interruptor(descricao)
+        componente = any(pista in f"{texto} " for pista in componentes) or interruptor
         modelo = any(pista in f"{texto} " for pista in modelos_moto)
+        if interruptor and re.search(r"\bXLR(?:\d+)?\b", texto):
+            modelo = True
         if componente and (modelo or cest_digitos == "0199900"):
             return FINALIDADE_AUTO_CONFIRMADA
         return FINALIDADE_AUTO_NAO_INFORMADA
@@ -864,7 +910,9 @@ class ICMSSTMGService:
                 if not str(item.get("cest") or "").startswith("28.")
             ]
 
-        escolhido, ambiguo = cls._selecionar_candidato(candidatos, descricao)
+        escolhido, ambiguo = cls._selecionar_candidato(
+            candidatos, descricao, finalidade_automotiva
+        )
         residual_origem = ""
 
         # 17.8.127 — NCM amplo pode aparecer em mais de um segmento. Se a busca
@@ -1184,6 +1232,9 @@ class ICMSSTMGService:
             observacoes.append("Informe a UF de origem para avaliar o âmbito da operação.")
 
         if ambiguo:
+            confirmado = False
+            exige_revisao = True
+            aplicabilidade_segmento = "ENQUADRAMENTO_AMBIGUO"
             observacoes.append(
                 "Há mais de um enquadramento com a mesma especificidade de NCM. Confira a descrição legal e o CEST."
             )
@@ -1203,20 +1254,27 @@ class ICMSSTMGService:
             )
             autopeca_contextual_confirmada = bool(
                 segmento == "AUTOPEÇAS"
-                and finalidade_automotiva == FINALIDADE_AUTO_CONFIRMADA
+                and finalidade_auto_para_desempate
                 and not cls._descricao_indica_consumivel(descricao)
             )
             if aderencia == 0 and autopeca_contextual_confirmada:
-                # 17.8.128 — quando o usuário confirma que a mercadoria é autopeça
-                # e a regra localizada pertence ao segmento AUTOPEÇAS, abreviações
-                # comerciais do XML não podem derrubar um enquadramento que já foi
-                # confirmado pelo contexto. A descrição continua protegendo contra
-                # consumíveis e contra regras de outros segmentos.
-                observacoes.append(
-                    "A descrição comercial não repetiu os termos da descrição legal, mas a finalidade "
-                    "automotiva foi confirmada e o enquadramento localizado pertence ao segmento Autopeças. "
-                    "O cálculo foi mantido; revise apenas se a aplicação real do produto divergir do cadastro."
-                )
+                # A finalidade pode ser confirmada manualmente ou inferida de
+                # forma restrita pela combinacao componente + modelo de moto.
+                # Assim, descricoes comerciais como BALANCIM CG-150 ou KIT
+                # PISTAO CB-300 sustentam o segmento sem transformar palavras
+                # genericas isoladas em ST automatica.
+                if finalidade_automotiva == FINALIDADE_AUTO_CONFIRMADA:
+                    observacoes.append(
+                        "A descrição comercial não repetiu os termos da descrição legal, mas a finalidade "
+                        "automotiva foi confirmada e o enquadramento localizado pertence ao segmento Autopeças. "
+                        "O cálculo foi mantido; revise apenas se a aplicação real do produto divergir do cadastro."
+                    )
+                else:
+                    observacoes.append(
+                        "A descrição comercial identifica objetivamente uma peça e um modelo de motocicleta. "
+                        "Essa evidência confirmou a finalidade automotiva do item localizado no segmento Autopeças; "
+                        "revise apenas se a aplicação real do produto divergir do cadastro."
+                    )
             elif aderencia == 0 and not descricao_7318_compativel and not residual_contextual_confirmado:
                 # 17.8.115 — NCM + operação não bastam. A descrição do produto
                 # também precisa sustentar o enquadramento legal quando não existe
@@ -1234,6 +1292,19 @@ class ICMSSTMGService:
                     "A regra residual 28.999.00 é definida pelo canal porta a porta/marketing direto, "
                     "por isso a confirmação decorre do contexto da operação e não de palavras da descrição do item."
                 )
+
+        if (
+            segmento == "AUTOPEÇAS"
+            and cls._descricao_indica_interruptor(descricao)
+            and not finalidade_auto_para_desempate
+        ):
+            confirmado = False
+            exige_revisao = True
+            aplicabilidade_segmento = "FINALIDADE_INTERRUPTOR_PENDENTE"
+            observacoes.append(
+                "A funcao de interruptor foi reconhecida, mas a aplicacao automotiva "
+                "nao foi comprovada ou foi negada. Validar o segmento antes de concluir a ST."
+            )
 
         if segmento == "MATERIAIS DE CONSTRUÇÃO E CONGÊNERES" and codigo.startswith("7318"):
             fundamento_7318 = (
@@ -1297,6 +1368,10 @@ class ICMSSTMGService:
 
         if nao_aplicavel:
             status = "NÃO APLICÁVEL — USO EXCLUSIVAMENTE AUTOMOTIVO"
+        elif aplicabilidade_segmento == "ENQUADRAMENTO_AMBIGUO":
+            status = "CONDICIONAL — MAIS DE UM ENQUADRAMENTO"
+        elif aplicabilidade_segmento == "FINALIDADE_INTERRUPTOR_PENDENTE":
+            status = "CONDICIONAL — CONFIRMAR APLICACAO DO INTERRUPTOR"
         elif aplicabilidade_segmento == "DESCRICAO_NAO_CONFIRMADA":
             status = "CONDICIONAL — NCM LOCALIZADO; DESCRIÇÃO NÃO CONFIRMADA"
         elif aplicabilidade_segmento == APLICABILIDADE_7318_PENDENTE:
