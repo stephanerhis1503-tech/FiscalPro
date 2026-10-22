@@ -1,5 +1,11 @@
 """Metadados centrais do FiscalPro.
 
+Versão 18.3.1 — Auditoria Excel refinada com planilha real:
+- reduz falsos alertas do validador semântico de NCM;
+- reconhece melhor modelos de motocicleta com números na descrição;
+- corrige plural semântico como FUSÍVEIS -> FUSÍVEL;
+- sugere 65061090 para capacetes comuns ainda cadastrados no extinto 65061000 após 01/02/2026.
+
 Versão 18.3.0 — Auditoria Excel com contexto fiscal e ST estruturado:
 - separa divergência cadastral de pendência operacional;
 - usa decisão/responsabilidade estruturadas do motor ST;
@@ -866,9 +872,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.3.0"
+VERSAO_APP = "18.3.1"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.3.0.0"
+VERSAO_ARQUIVO_WINDOWS = "18.3.1.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
