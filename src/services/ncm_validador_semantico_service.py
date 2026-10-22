@@ -525,15 +525,21 @@ class NCMValidadorSemanticoService:
         if melhor is not None and melhor.ncm != atual:
             margem_segundo = melhor.pontuacao - (segundo.pontuacao if segundo else 0.0)
             ganho_atual = melhor.pontuacao - score_atual
+            candidato_generico_moto = (
+                melhor.ncm == "87141000"
+                and atual != "87141000"
+            )
             forte = (
                 melhor.pontuacao >= 68.0
                 and ganho_atual >= 20.0
                 and margem_segundo >= 7.0
+                and not candidato_generico_moto
             )
             muito_forte = (
                 melhor.pontuacao >= 76.0
                 and ganho_atual >= 16.0
                 and margem_segundo >= 4.0
+                and not candidato_generico_moto
             )
             if forte or muito_forte:
                 return ResultadoValidacaoNCMSemantica(
@@ -555,14 +561,13 @@ class NCMValidadorSemanticoService:
         if melhor is not None and melhor.ncm != atual and score_atual < 25.0:
             pos_melhor = cls._por_ncm.get(melhor.ncm)
             registro_melhor = cls._registros[pos_melhor] if pos_melhor is not None else None
-            troca_dominio_moto = bool(
-                "MOTOCICLETA" in tokens_produto
-                and registro_melhor is not None
-                and "MOTOCICLETA" in registro_melhor.tokens
-                and "MOTOCICLETA" not in registro_atual.tokens
+            candidato_generico_moto = (
+                melhor.ncm == "87141000"
+                and atual != "87141000"
             )
-            evidencia_suficiente = melhor.pontuacao >= 58.0 or (
-                troca_dominio_moto and melhor.pontuacao >= 45.0
+            evidencia_suficiente = (
+                melhor.pontuacao >= 58.0
+                and not candidato_generico_moto
             )
             if evidencia_suficiente:
                 return ResultadoValidacaoNCMSemantica(
@@ -633,7 +638,7 @@ class NCMValidadorSemanticoService:
                     melhor is None or melhor.ncm == atual or melhor.pontuacao <= score_atual + 8.0
                 ):
                     status = "COMPATIVEL"
-                elif melhor is not None and melhor.ncm != atual and (
+                elif melhor is not None and melhor.ncm != atual and melhor.ncm != "87141000" and (
                     (
                         melhor.pontuacao >= 68.0
                         and melhor.pontuacao - score_atual >= 20.0
@@ -649,16 +654,13 @@ class NCMValidadorSemanticoService:
                 elif melhor is not None and melhor.ncm != atual and score_atual < 25.0:
                     pos_melhor = cls._por_ncm.get(melhor.ncm)
                     registro_melhor = cls._registros[pos_melhor] if pos_melhor is not None else None
-                    troca_dominio_moto = bool(
-                        "MOTOCICLETA" in tokens_produto
-                        and registro_melhor is not None
-                        and "MOTOCICLETA" in registro_melhor.tokens
-                        and registro_atual is not None
-                        and "MOTOCICLETA" not in registro_atual.tokens
+                    candidato_generico_moto = (
+                        melhor.ncm == "87141000"
+                        and atual != "87141000"
                     )
                     status = (
                         "REVISAR"
-                        if melhor.pontuacao >= 58.0 or (troca_dominio_moto and melhor.pontuacao >= 45.0)
+                        if melhor.pontuacao >= 58.0 and not candidato_generico_moto
                         else "SEM_EVIDENCIA"
                     )
                 else:
