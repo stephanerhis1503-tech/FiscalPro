@@ -183,6 +183,18 @@ def _codigo_fiscal(valor: Any, tamanho: int) -> str:
     return texto
 
 
+def _cst_icms_cadastro(valor: Any) -> str:
+    """Extrai o CST ICMS quando o ERP exporta ICMS e IBS/CBS juntos.
+
+    Exemplo: 60/000 representa CST ICMS 60 + classificacao IBS/CBS 000.
+    A auditoria atual de ICMS deve receber somente a parcela ICMS (060).
+    """
+    texto = _texto(valor)
+    if "/" in texto:
+        texto = texto.split("/", 1)[0].strip()
+    return _codigo_fiscal(texto, 3)
+
+
 def _pct(cst: str, aliquota: Optional[float]) -> str:
     partes = []
     if str(cst or "").strip():
@@ -420,7 +432,10 @@ class AuditoriaCadastrosExcelService:
         },
         "ex_tipi": {"EX", "EX TIPI", "EXTIPI"},
         "cest": {"CEST", "CEST ATUAL", "CEST CADASTRADO", "CEST ORIGINAL"},
-        "cst_icms": {"CST ICMS", "ICMS CST", "CSOSN"},
+        "cst_icms": {
+            "CST ICMS", "ICMS CST", "CSOSN",
+            "CST ICMS IBS CBS", "CST ICMS IBS-CBS",
+        },
         "cfop": {"CFOP", "CFOP SAIDA", "CFOP DE SAIDA"},
         "icms_desonerado": {"ICMS DESONERADO", "DESONERACAO ICMS", "DESONERADO"},
         "red_bc_icms": {"RED BC ICMS", "RED BC ICMS %", "REDUCAO BC ICMS", "REDUCAO BC ICMS %"},
@@ -1616,7 +1631,7 @@ class AuditoriaCadastrosExcelService:
                     "deteccao_servico": deteccao_servico,
                     "codigo_barras": codigo_barras_atual,
                     "ex_tipi": _texto(cls._valor(linha, cabecalhos, "ex_tipi")),
-                    "cst_icms": _codigo_fiscal(cls._valor(linha, cabecalhos, "cst_icms"), 3),
+                    "cst_icms": _cst_icms_cadastro(cls._valor(linha, cabecalhos, "cst_icms")),
                     "cfop": _texto(cls._valor(linha, cabecalhos, "cfop")),
                     "icms_desonerado": _sim_nao(cls._valor(linha, cabecalhos, "icms_desonerado")),
                     "red_bc_icms": _percentual_valor(cls._valor(linha, cabecalhos, "red_bc_icms"), formatos_percentuais.get("red_bc_icms", False)),
@@ -1789,6 +1804,49 @@ class AuditoriaCadastrosExcelService:
 
         if melhor_mapa:
             melhor_mapa = dict(melhor_mapa)
+
+            # Alguns relatorios usam cabecalhos visuais mesclados. Por exemplo,
+            # "Descricao" pode ocupar C:F, enquanto os dados reais comecam em D.
+            # Em modo read_only o openpyxl nao expoe as mesclagens; por isso
+            # delimitamos a faixa de cada cabecalho pelo proximo cabecalho
+            # reconhecido e escolhemos a primeira coluna com maior preenchimento.
+            campos_ordenados = sorted(
+                (
+                    (idx, campo)
+                    for campo, idx in melhor_mapa.items()
+                    if not campo.startswith("__")
+                ),
+                key=lambda item: item[0],
+            )
+            amostra = list(
+                ws.iter_rows(
+                    min_row=melhor_linha + 1,
+                    max_row=melhor_linha + 80,
+                    values_only=True,
+                )
+            )
+            for pos, (inicio, campo) in enumerate(campos_ordenados):
+                fim = (
+                    campos_ordenados[pos + 1][0] - 1
+                    if pos + 1 < len(campos_ordenados)
+                    else inicio
+                )
+                if fim <= inicio:
+                    continue
+                melhor_coluna = inicio
+                melhor_qtd = -1
+                for coluna in range(inicio, fim + 1):
+                    qtd = sum(
+                        1
+                        for linha in amostra
+                        if coluna < len(linha) and linha[coluna] not in (None, "")
+                    )
+                    if qtd > melhor_qtd:
+                        melhor_qtd = qtd
+                        melhor_coluna = coluna
+                if melhor_qtd > 0:
+                    melhor_mapa[campo] = melhor_coluna
+
             melhor_mapa["__linha_cabecalho__"] = melhor_linha
         return melhor_mapa
 
