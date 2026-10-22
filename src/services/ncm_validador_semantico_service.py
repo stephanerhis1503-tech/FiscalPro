@@ -477,6 +477,31 @@ class NCMValidadorSemanticoService:
                 ),
             )
 
+        descricao_normalizada = cls._texto(descricao_produto)
+        preservar_ncm_especifico = (
+            (
+                atual == "40169300"
+                and (
+                    descricao_normalizada.startswith("ANEL VED ")
+                    or descricao_normalizada.startswith("REPARO BORRACHA PINCA FREIO ")
+                )
+            )
+            or (
+                atual == "73181500"
+                and re.match(r"^(?:PRES|PRISIONEIRO)\s+CILIND", descricao_normalizada)
+            )
+        )
+        if preservar_ncm_especifico:
+            return ResultadoValidacaoNCMSemantica(
+                status="COMPATIVEL",
+                ncm_atual=atual,
+                compatibilidade_atual=max(score_atual, 55.0),
+                descricao_oficial_atual=registro_atual.descricao_completa or registro_atual.descricao,
+                candidato_principal=melhor,
+                candidatos=tuple(candidatos[:3]),
+                motivo="Descrição comercial compatível com o NCM específico já cadastrado.",
+            )
+
         # Se a descrição deixa claro que é peça/acessório de motocicleta e o
         # NCM atual também declara esse domínio na nomenclatura oficial, preserva
         # o código atual. Evita que termos ambíguos como "protetor" ou "corrente"
@@ -623,8 +648,25 @@ class NCMValidadorSemanticoService:
                 melhor = candidatos[0] if candidatos else None
                 segundo = candidatos[1] if len(candidatos) > 1 else None
 
+                descricao_normalizada = cls._texto(descricao_produto)
+                preservar_ncm_especifico = (
+                    (
+                        atual == "40169300"
+                        and (
+                            descricao_normalizada.startswith("ANEL VED ")
+                            or descricao_normalizada.startswith("REPARO BORRACHA PINCA FREIO ")
+                        )
+                    )
+                    or (
+                        atual == "73181500"
+                        and re.match(r"^(?:PRES|PRISIONEIRO)\s+CILIND", descricao_normalizada)
+                    )
+                )
+
                 if registro_atual is None:
                     status = "REVISAR"
+                elif preservar_ncm_especifico:
+                    status = "COMPATIVEL"
                 elif (
                     registro_atual is not None
                     and "MOTOCICLETA" in tokens_produto
