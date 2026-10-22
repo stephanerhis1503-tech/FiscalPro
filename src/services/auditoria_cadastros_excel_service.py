@@ -55,6 +55,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 import re
 import unicodedata
 
+from src.core.app_info import VERSAO_APP
 from src.services.empresas_regimes_service import EmpresasRegimesService
 from src.services.analise_tributaria_lote_service import (
     AnaliseTributariaLoteService,
@@ -2280,6 +2281,7 @@ class ExportadorAuditoriaCadastrosExcelXLSX:
         modo = "Somente pendências (CORRIGIR + REVISAR)" if somente_pendencias else "Auditoria completa"
         linhas_resumo = [
             ["FiscalPro — Auditoria de Cadastro por Excel", ""],
+            ["Versão FiscalPro", VERSAO_APP],
             ["Arquivo", resultado.arquivo],
             ["Aba lida", resultado.planilha],
             ["Modo de exportação", modo],
@@ -2556,6 +2558,7 @@ class ExportadorFichaTributariaCompletaXLSX:
         contexto = dict(resultado.contexto or {})
         linhas = [
             ["FiscalPro — Ficha Tributária Completa", ""],
+            ["Versão FiscalPro", VERSAO_APP],
             ["Arquivo de origem", resultado.arquivo],
             ["Aba lida", resultado.planilha],
             ["Itens", resumo["itens"]],
