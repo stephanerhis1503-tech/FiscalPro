@@ -173,6 +173,10 @@ class NCMValidadorSemanticoService:
             return token[:-4] + "ZAO"
         if len(token) > 5 and token.endswith("ORES"):
             return token[:-2]
+        # Plurais como FUSIVEIS/PAPEIS precisam reencontrar a forma singular
+        # terminada em L; remover apenas o S produz FUSIVEI/PAPEI.
+        if len(token) > 5 and token.endswith("EIS"):
+            return token[:-3] + "EL"
         if len(token) > 4 and token.endswith("S"):
             return token[:-1]
         return token
@@ -201,7 +205,15 @@ class NCMValidadorSemanticoService:
             # comerciais, para não serem soterradas por modelo/cor/acabamento.
             extras: List[str] = []
             brutos = {cls._raiz_token(t) for t in normalizado.split()}
-            if brutos.intersection(cls._MODELOS_MOTOCICLETA):
+            modelos_detectados = {
+                cls._raiz_token(re.sub(r"\d+$", "", t))
+                for t in normalizado.split()
+                if re.sub(r"\d+$", "", t)
+            }
+            if (
+                brutos.intersection(cls._MODELOS_MOTOCICLETA)
+                or modelos_detectados.intersection(cls._MODELOS_MOTOCICLETA)
+            ):
                 extras.append("MOTOCICLETA")
             # Expressões de balcão ganham conceitos funcionais, nunca NCMs.
             if "CAPA BANCO" in normalizado:
@@ -465,6 +477,25 @@ class NCMValidadorSemanticoService:
                 ),
             )
 
+        # Se a descrição deixa claro que é peça/acessório de motocicleta e o
+        # NCM atual também declara esse domínio na nomenclatura oficial, preserva
+        # o código atual. Evita que termos ambíguos como "protetor" ou "corrente"
+        # puxem códigos elétricos sem relação com motocicletas.
+        if (
+            "MOTOCICLETA" in tokens_produto
+            and "MOTOCICLETA" in registro_atual.tokens
+            and score_atual >= 35.0
+        ):
+            return ResultadoValidacaoNCMSemantica(
+                status="COMPATIVEL",
+                ncm_atual=atual,
+                compatibilidade_atual=score_atual,
+                descricao_oficial_atual=registro_atual.descricao_completa or registro_atual.descricao,
+                candidato_principal=melhor,
+                candidatos=tuple(candidatos[:3]),
+                motivo="Descrição comercial e NCM atual pertencem ao mesmo domínio oficial de motocicletas.",
+            )
+
         # Se o próprio NCM atual lidera a busca e possui ligação semântica
         # razoável, não cria falso alerta.
         if melhor is not None and melhor.ncm == atual and melhor.pontuacao >= 42.0:
@@ -521,20 +552,32 @@ class NCMValidadorSemanticoService:
         # Não rebaixa todo item de balcão apenas porque a nomenclatura oficial usa
         # palavras diferentes. Exige ao menos alguma evidência alternativa antes
         # de bloquear o status.
-        if melhor is not None and melhor.ncm != atual and melhor.pontuacao >= 45.0 and score_atual < 25.0:
-            return ResultadoValidacaoNCMSemantica(
-                status="REVISAR",
-                ncm_atual=atual,
-                compatibilidade_atual=score_atual,
-                descricao_oficial_atual=registro_atual.descricao_completa or registro_atual.descricao,
-                candidato_principal=melhor,
-                candidatos=tuple(candidatos[:3]),
-                motivo=(
-                    f"A descrição não confirma semanticamente o NCM atual {atual}. "
-                    f"O catálogo oficial encontrou alternativa(s) mais relacionadas, lideradas por {melhor.ncm} "
-                    f"({melhor.pontuacao:.0f}%), mas sem segurança para correção automática."
-                ),
+        if melhor is not None and melhor.ncm != atual and score_atual < 25.0:
+            pos_melhor = cls._por_ncm.get(melhor.ncm)
+            registro_melhor = cls._registros[pos_melhor] if pos_melhor is not None else None
+            troca_dominio_moto = bool(
+                "MOTOCICLETA" in tokens_produto
+                and registro_melhor is not None
+                and "MOTOCICLETA" in registro_melhor.tokens
+                and "MOTOCICLETA" not in registro_atual.tokens
             )
+            evidencia_suficiente = melhor.pontuacao >= 58.0 or (
+                troca_dominio_moto and melhor.pontuacao >= 45.0
+            )
+            if evidencia_suficiente:
+                return ResultadoValidacaoNCMSemantica(
+                    status="REVISAR",
+                    ncm_atual=atual,
+                    compatibilidade_atual=score_atual,
+                    descricao_oficial_atual=registro_atual.descricao_completa or registro_atual.descricao,
+                    candidato_principal=melhor,
+                    candidatos=tuple(candidatos[:3]),
+                    motivo=(
+                        f"A descrição não confirma semanticamente o NCM atual {atual}. "
+                        f"O catálogo oficial encontrou alternativa(s) mais relacionadas, lideradas por {melhor.ncm} "
+                        f"({melhor.pontuacao:.0f}%), mas sem segurança para correção automática."
+                    ),
+                )
 
         return ResultadoValidacaoNCMSemantica(
             status="SEM_EVIDENCIA",
@@ -577,6 +620,13 @@ class NCMValidadorSemanticoService:
 
                 if registro_atual is None:
                     status = "REVISAR"
+                elif (
+                    registro_atual is not None
+                    and "MOTOCICLETA" in tokens_produto
+                    and "MOTOCICLETA" in registro_atual.tokens
+                    and score_atual >= 35.0
+                ):
+                    status = "COMPATIVEL"
                 elif melhor is not None and melhor.ncm == atual and melhor.pontuacao >= 42.0:
                     status = "COMPATIVEL"
                 elif score_atual >= 55.0 and (
@@ -596,8 +646,21 @@ class NCMValidadorSemanticoService:
                     )
                 ):
                     status = "INCOMPATIVEL"
-                elif melhor is not None and melhor.ncm != atual and melhor.pontuacao >= 45.0 and score_atual < 25.0:
-                    status = "REVISAR"
+                elif melhor is not None and melhor.ncm != atual and score_atual < 25.0:
+                    pos_melhor = cls._por_ncm.get(melhor.ncm)
+                    registro_melhor = cls._registros[pos_melhor] if pos_melhor is not None else None
+                    troca_dominio_moto = bool(
+                        "MOTOCICLETA" in tokens_produto
+                        and registro_melhor is not None
+                        and "MOTOCICLETA" in registro_melhor.tokens
+                        and registro_atual is not None
+                        and "MOTOCICLETA" not in registro_atual.tokens
+                    )
+                    status = (
+                        "REVISAR"
+                        if melhor.pontuacao >= 58.0 or (troca_dominio_moto and melhor.pontuacao >= 45.0)
+                        else "SEM_EVIDENCIA"
+                    )
                 else:
                     status = "SEM_EVIDENCIA"
 
