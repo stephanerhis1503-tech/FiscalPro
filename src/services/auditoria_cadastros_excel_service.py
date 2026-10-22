@@ -2316,6 +2316,8 @@ class AuditoriaCadastrosExcelService:
                 if aviso not in item.pendencias:
                     item.pendencias.append(aviso)
                     item.problema = f"{item.problema} | {aviso}" if item.problema else aviso
+                if item.status_cadastro == STATUS_OK:
+                    item.status_cadastro = STATUS_REVISAR
                 if item.status == STATUS_OK:
                     item.status = STATUS_REVISAR
                 item.seguranca = min(item.seguranca, 70.0) if item.seguranca else 70.0
