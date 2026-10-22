@@ -590,9 +590,15 @@ class NCMValidadorSemanticoService:
                 melhor.ncm == "87141000"
                 and atual != "87141000"
             )
+            troca_assento_moto = bool(
+                candidato_generico_moto
+                and "ASSENTO" in tokens_produto
+                and "MOTOCICLETA" in tokens_produto
+                and "MOTOCICLETA" not in registro_atual.tokens
+            )
             evidencia_suficiente = (
-                melhor.pontuacao >= 58.0
-                and not candidato_generico_moto
+                (melhor.pontuacao >= 58.0 and not candidato_generico_moto)
+                or (troca_assento_moto and melhor.pontuacao >= 45.0)
             )
             if evidencia_suficiente:
                 return ResultadoValidacaoNCMSemantica(
@@ -700,9 +706,19 @@ class NCMValidadorSemanticoService:
                         melhor.ncm == "87141000"
                         and atual != "87141000"
                     )
+                    troca_assento_moto = bool(
+                        candidato_generico_moto
+                        and "ASSENTO" in tokens_produto
+                        and "MOTOCICLETA" in tokens_produto
+                        and registro_atual is not None
+                        and "MOTOCICLETA" not in registro_atual.tokens
+                    )
                     status = (
                         "REVISAR"
-                        if melhor.pontuacao >= 58.0 and not candidato_generico_moto
+                        if (
+                            (melhor.pontuacao >= 58.0 and not candidato_generico_moto)
+                            or (troca_assento_moto and melhor.pontuacao >= 45.0)
+                        )
                         else "SEM_EVIDENCIA"
                     )
                 else:
