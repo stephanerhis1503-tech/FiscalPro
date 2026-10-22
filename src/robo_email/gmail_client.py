@@ -29,6 +29,7 @@ class MensagemGmail:
     corpo_texto: str
     corpo_html: str
     anexos: list[AnexoGmail]
+    label_ids: list[str]
 
 
 class GmailClient:
@@ -96,6 +97,24 @@ class GmailClient:
             corpo_texto="\n".join(textos),
             corpo_html="\n".join(htmls),
             anexos=list(self._extrair_anexos(payload)),
+            label_ids=list(bruto.get("labelIds", []) or []),
+        )
+
+
+    def listar_rotulos(self) -> list[dict[str, Any]]:
+        resposta = self.servico.users().labels().list(userId="me").execute()
+        return list(resposta.get("labels", []) or [])
+
+    def aplicar_rotulo(self, mensagem_id: str, rotulo_id: str) -> None:
+        (
+            self.servico.users()
+            .messages()
+            .modify(
+                userId="me",
+                id=mensagem_id,
+                body={"addLabelIds": [rotulo_id]},
+            )
+            .execute()
         )
 
     def baixar_anexo(self, mensagem_id: str, anexo: AnexoGmail) -> bytes:
