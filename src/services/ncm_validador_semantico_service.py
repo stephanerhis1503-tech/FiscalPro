@@ -17,7 +17,6 @@ vez de inventar uma classificação.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from threading import RLock
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 import re
@@ -25,6 +24,7 @@ import unicodedata
 
 from src.inteligencia.base_oficial.repositorio import BaseOficialRepository
 from src.services.base_ncm_nacional_service import BaseNCMNacionalService
+from src.services.similaridade_textual_service import similaridade_textual
 
 
 @dataclass(frozen=True)
@@ -324,7 +324,7 @@ class NCMValidadorSemanticoService:
 
         texto_produto = " ".join(principais[:4])
         texto_oficial = " ".join(sorted(registro.tokens_folha or registro.tokens))
-        sequencia = SequenceMatcher(None, texto_produto, texto_oficial).ratio()
+        sequencia = similaridade_textual(texto_produto, texto_oficial)
 
         score = (58.0 * primaria) + (27.0 * janela) + (10.0 * cobertura) + (5.0 * sequencia)
 
