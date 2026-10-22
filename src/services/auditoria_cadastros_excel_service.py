@@ -2483,7 +2483,8 @@ class ExportadorFichaTributariaCompletaXLSX:
         "CST PIS/COFINS SAÍDA", "Aliq. PIS(%)", "Aliq. COFINS(%)", "Nat. de receita",
     ]
     CABECALHOS_AUDITORIA = [
-        "Status Auditoria", "NCM atual", "NCM provável / sugerido", "NCM candidatos", "CEST atual", "CEST referência",
+        "Status Auditoria", "Status Cadastro", "Status Operação",
+        "NCM atual", "NCM provável / sugerido", "NCM candidatos", "CEST atual", "CEST referência",
         "ICMS referência (%)", "ST FiscalPro", "MVA FiscalPro (%)", "FEM/FCP referência (%)",
         "PIS referência", "COFINS referência", "IPI TIPI ref. (%)", "Segurança (%)",
         "Problema encontrado", "Correção sugerida", "Observação FiscalPro",
@@ -2493,7 +2494,7 @@ class ExportadorFichaTributariaCompletaXLSX:
 
     # Índices 1-based das colunas percentuais no arquivo final.
     COLUNAS_PERCENTUAIS = {
-        10, 11, 13, 14, 15, 16, 18, 20, 21, 29, 31, 32, 35, 36,
+        10, 11, 13, 14, 15, 16, 18, 20, 21, 31, 33, 34, 37, 38,
     }
 
     LARGURAS_MODELO = [
@@ -2501,7 +2502,7 @@ class ExportadorFichaTributariaCompletaXLSX:
         23, 14, 17, 16,
     ]
     LARGURAS_AUDITORIA = [
-        16, 12, 20, 34, 14, 16, 18, 14, 18, 20, 22, 24, 18, 15, 62, 62, 55, 55, 55, 60,
+        16, 15, 15, 12, 20, 34, 14, 16, 18, 14, 18, 20, 22, 24, 18, 15, 62, 62, 55, 55, 55, 60,
     ]
 
     @staticmethod
@@ -2536,7 +2537,8 @@ class ExportadorFichaTributariaCompletaXLSX:
                 "N/A", None, "", None, None, item.nat_receita_atual or "",
             ]
             auditoria = [
-                item.status, item.ncm_atual, "", "", item.cest_atual, "", None, "N/A",
+                item.status, item.status_cadastro, item.status_operacao,
+                item.ncm_atual, "", "", item.cest_atual, "", None, "N/A",
                 None, None, "", "", None, cls._pct_excel(item.seguranca),
                 item.problema, item.correcao_sugerida, item.observacao, "", "", "",
             ]
@@ -2594,6 +2596,8 @@ class ExportadorFichaTributariaCompletaXLSX:
         ]
         auditoria = [
             item.status,
+            item.status_cadastro,
+            item.status_operacao,
             item.ncm_atual,
             item.ncm_sugerido,
             item.ncm_candidatos,
@@ -2735,6 +2739,7 @@ class ExportadorFichaTributariaCompletaXLSX:
             [
                 "Status da auditoria",
                 (
+                    "A ficha separa Status Cadastro de Status Operação. "
                     "CORRIGIR = divergência objetiva; REVISAR = pendência específica do item; "
                     "SERVIÇO = linha de mão de obra/serviço fora da classificação NCM de mercadorias; "
                     "OK = sem divergência objetiva. Alertas genéricos do motor permanecem na observação "
