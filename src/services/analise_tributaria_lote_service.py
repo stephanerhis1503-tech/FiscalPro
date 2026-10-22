@@ -193,6 +193,9 @@ class ResultadoItemLote:
     cest_esperado: str = ""
     st_status: str = ""
     st_confirmado: bool = False
+    st_decisao_confirmada: bool = False
+    st_responsabilidade_confirmada: Optional[bool] = None
+    st_responsabilidade_status: str = ""
     confiabilidade_st: float = 0.0
     mva_original: Optional[float] = None
     mva_ajustada: Optional[float] = None
@@ -821,6 +824,9 @@ class AnaliseTributariaLoteService:
             cest_esperado=cest_esperado,
             st_status=str(icms.get("st_status") or ""),
             st_confirmado=st_confirmado,
+            st_decisao_confirmada=decisao_st,
+            st_responsabilidade_confirmada=icms.get("st_responsabilidade_confirmada"),
+            st_responsabilidade_status=str(icms.get("st_responsabilidade_status") or ""),
             confiabilidade_st=round(confiabilidade_st, 2),
             mva_original=self._opcional_numero(icms.get("mva_original")),
             mva_ajustada=self._opcional_numero(icms.get("mva_ajustada")),
