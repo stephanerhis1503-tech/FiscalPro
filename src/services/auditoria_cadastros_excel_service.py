@@ -1751,7 +1751,26 @@ class AuditoriaCadastrosExcelService:
     def _st_referencia(analise: ResultadoItemLote) -> str:
         if bool(analise.st_confirmado):
             return "SIM"
-        if bool(getattr(analise, "st_decisao_confirmada", False)):
+
+        decisao = getattr(analise, "st_decisao_confirmada", None)
+        if decisao is True:
+            return "NÃO"
+        if decisao is False:
+            return "REVISAR"
+
+        # Compatibilidade com resultados persistidos/testes anteriores à 18.3.0.
+        # No fluxo atual o motor sempre fornece st_decisao_confirmada e este
+        # fallback deixa de participar da decisão normal da auditoria.
+        texto = _normalizar_texto(f"{analise.icms_status} {analise.st_status} {analise.observacao}")
+        marcadores_nao = (
+            "ST NAO APLICAVEL",
+            "ICMS ST NAO APLICAVEL",
+            "ICMS ST MG NAO",
+            "SEM RESPONSABILIDADE DE ST",
+            "NAO INCIDE NA REGRA ESTADUAL",
+            "NAO SUJEITO A ST",
+        )
+        if any(marcador in texto for marcador in marcadores_nao):
             return "NÃO"
         return "REVISAR"
 
@@ -2281,10 +2300,10 @@ class ExportadorAuditoriaCadastrosExcelXLSX:
         modo = "Somente pendências (CORRIGIR + REVISAR)" if somente_pendencias else "Auditoria completa"
         linhas_resumo = [
             ["FiscalPro — Auditoria de Cadastro por Excel", ""],
-            ["Versão FiscalPro", VERSAO_APP],
             ["Arquivo", resultado.arquivo],
             ["Aba lida", resultado.planilha],
             ["Modo de exportação", modo],
+            ["Versão FiscalPro", VERSAO_APP],
             ["Linhas exportadas", total],
             ["Itens auditados", resumo["itens"]],
             ["Corrigir", resumo["corrigir"]],
@@ -2558,7 +2577,6 @@ class ExportadorFichaTributariaCompletaXLSX:
         contexto = dict(resultado.contexto or {})
         linhas = [
             ["FiscalPro — Ficha Tributária Completa", ""],
-            ["Versão FiscalPro", VERSAO_APP],
             ["Arquivo de origem", resultado.arquivo],
             ["Aba lida", resultado.planilha],
             ["Itens", resumo["itens"]],
@@ -2572,6 +2590,7 @@ class ExportadorFichaTributariaCompletaXLSX:
             ["UF origem", contexto.get("uf_origem") or "-"],
             ["UF destino", contexto.get("uf_destino") or "-"],
             ["Data de referência", contexto.get("data_operacao") or "-"],
+            ["Versão FiscalPro", VERSAO_APP],
             [
                 "Critério",
                 (
