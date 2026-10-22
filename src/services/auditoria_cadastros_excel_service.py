@@ -1565,14 +1565,36 @@ class AuditoriaCadastrosExcelService:
                             limite=3,
                         )
                 elif _ncm_valido(ncm_atual):
-                    # 18.2.1 — um NCM com oito dígitos não é necessariamente um
-                    # NCM coerente. Primeiro preservamos as regras/famílias de
-                    # alta confiança já existentes no cadastro.
-                    inferencia_ncm = cls._inferir_ncm_validacao_existente(
-                        indice_ncm_descricao,
-                        descricao=descricao,
-                        ncm_atual=ncm_atual,
-                    )
+                    # 18.3.1 — a NCM 65061000 foi extinta no desdobramento
+                    # vigente em 2026. Para capacetes comuns (não bombeiro),
+                    # a abertura residual vigente é 65061090. A regra só é
+                    # aplicada após 01/02/2026 e permanece como REVISAR.
+                    data_ref = str(contexto_final.get("data_operacao") or "")
+                    descricao_norm = _normalizar_texto(descricao)
+                    if (
+                        ncm_atual == "65061000"
+                        and data_ref > "2026-02-01"
+                        and "CAPACETE" in descricao_norm
+                        and "BOMBEIRO" not in descricao_norm
+                    ):
+                        inferencia_ncm = InferenciaNCMDescricao(
+                            ncm="65061090",
+                            confianca=99.0,
+                            metodo="vigência NCM 2026: desdobramento de 65061000",
+                            referencia=(
+                                "Resolução Gecex 812/2025 / IT NF-e 2024.001 v2.30 — "
+                                "65061000 extinto; 65061090 = outros capacetes de proteção"
+                            ),
+                        )
+                    else:
+                        # 18.2.1 — um NCM com oito dígitos não é necessariamente um
+                        # NCM coerente. Primeiro preservamos as regras/famílias de
+                        # alta confiança já existentes no cadastro.
+                        inferencia_ncm = cls._inferir_ncm_validacao_existente(
+                            indice_ncm_descricao,
+                            descricao=descricao,
+                            ncm_atual=ncm_atual,
+                        )
                     if inferencia_ncm is not None and inferencia_ncm.ncm != ncm_atual:
                         ncm_para_motor = inferencia_ncm.ncm
                     else:
