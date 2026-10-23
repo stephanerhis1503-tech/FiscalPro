@@ -95,6 +95,12 @@ if (-not (Test-Path $requirements)) {
 & $venvPython -m pip install -r $requirements
 if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar as dependencias do FiscalPro." }
 
+# Mantem uma versao de cryptography validada para empacotamento no Windows.
+# Versoes mais novas podem carregar bindings Rust que dependem de DLLs
+# que o PyInstaller nao resolve corretamente em alguns ambientes.
+& $venvPython -m pip install --upgrade "cryptography==46.0.3"
+if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a versao compativel do cryptography." }
+
 & $venvPython -m pip install --upgrade pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar o PyInstaller." }
 
@@ -132,6 +138,8 @@ $pyInstallerArgs = @(
     "--add-data", ((Join-Path $repoRoot "templates") + ";templates"),
     "--add-data", ((Join-Path $repoRoot "dados\bases_oficiais") + ";dados\bases_oficiais"),
     "--collect-all", "reportlab",
+    "--collect-all", "cryptography",
+    "--hidden-import", "cryptography.hazmat.bindings._rust",
     "--hidden-import", "googleapiclient.discovery",
     "--hidden-import", "googleapiclient.errors",
     "--hidden-import", "google.auth.transport.requests",

@@ -79,6 +79,17 @@ class AgendaFaturasServico:
                     ON agenda_faturas_itens(competencia, status);
                 CREATE INDEX IF NOT EXISTS idx_agenda_itens_conta
                     ON agenda_faturas_itens(conta_id);
+
+                CREATE TABLE IF NOT EXISTS agenda_faturas_config (
+                    chave TEXT PRIMARY KEY,
+                    valor TEXT NOT NULL
+                );
+                """
+            )
+            conexao.execute(
+                """
+                INSERT OR IGNORE INTO agenda_faturas_config(chave, valor)
+                VALUES ('alarme_sonoro_ativo', '1')
                 """
             )
 
@@ -496,6 +507,30 @@ class AgendaFaturasServico:
             "vencendo_7_dias": vencendo,
             "concluidas_mes": concluidas,
         }
+
+    def alarme_sonoro_ativo(self) -> bool:
+        """Retorna a preferência persistida do alarme sonoro da Agenda."""
+        with self.repositorio._conectar() as conexao:
+            linha = conexao.execute(
+                "SELECT valor FROM agenda_faturas_config WHERE chave = ?",
+                ("alarme_sonoro_ativo",),
+            ).fetchone()
+        if not linha:
+            return True
+        return str(linha["valor"] or "1").strip().lower() not in {"0", "false", "nao", "não", "off"}
+
+    def definir_alarme_sonoro(self, ativo: bool) -> None:
+        """Ativa/desativa o alarme sonoro e preserva a escolha entre sessões."""
+        valor = "1" if ativo else "0"
+        with self.repositorio._conectar() as conexao:
+            conexao.execute(
+                """
+                INSERT INTO agenda_faturas_config(chave, valor)
+                VALUES (?, ?)
+                ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor
+                """,
+                ("alarme_sonoro_ativo", valor),
+            )
 
     def marcar_fatura_baixada(self, item_id: int, caminho_documento: str = "") -> None:
         agora = datetime.now().isoformat(timespec="seconds")
