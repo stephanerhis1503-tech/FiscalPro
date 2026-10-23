@@ -80,6 +80,8 @@ class PainelContasPagar(ttk.Frame):
         self.var_competencia = StringVar(value="Todas")
         self.var_busca = StringVar(value="")
         self.var_agenda_resumo = StringVar(value="🔔 Agenda de faturas: carregando...")
+        self._alertas_globais_exibidos: set[tuple[str, int]] = set()
+        self._alarme_global_after_id = None
         self.var_resumo = {
             "total": StringVar(value="R$ 0,00"),
             "pago": StringVar(value="R$ 0,00"),
@@ -89,6 +91,117 @@ class PainelContasPagar(ttk.Frame):
         }
         self._montar()
         self.atualizar()
+        # O painel financeiro permanece carregado durante toda a sessão do FiscalPro.
+        # Assim o alarme funciona mesmo quando outra aba/módulo está em uso.
+        self._alarme_global_after_id = self.after(2000, self._verificacao_periodica_global)
+
+    def _tocar_alarme_global(self) -> None:
+        """Toca o mesmo alerta audível da Agenda sem bloquear a interface."""
+        def emitir() -> None:
+            if winsound is not None:
+                try:
+                    for frequencia, duracao in ((880, 180), (1120, 180), (880, 300)):
+                        winsound.Beep(frequencia, duracao)
+                    return
+                except Exception:
+                    try:
+                        winsound.PlaySound(
+                            "SystemExclamation",
+                            winsound.SND_ALIAS | winsound.SND_ASYNC,
+                        )
+                        return
+                    except Exception:
+                        pass
+            try:
+                self.after(0, self.bell)
+            except Exception:
+                pass
+
+        threading.Thread(target=emitir, daemon=True).start()
+
+    def _verificar_alertas_globais(self) -> None:
+        """Verifica a Agenda enquanto o FiscalPro estiver aberto."""
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+
+        hoje = date.today()
+        chave_dia = hoje.isoformat()
+        try:
+            itens = self.servico.agenda.listar_itens(incluir_concluidos=False)
+        except Exception:
+            return
+
+        pendentes = []
+        urgentes = []
+        for item in itens:
+            if str(item["status"]) == STATUS_PAGA:
+                continue
+            try:
+                vencimento = date.fromisoformat(str(item["vencimento_previsto"]))
+                dias_alerta = int(item["dias_alerta"] or 0)
+            except (TypeError, ValueError):
+                continue
+
+            if hoje < vencimento - timedelta(days=dias_alerta):
+                continue
+
+            chave = (chave_dia, int(item["id"]))
+            if chave in self._alertas_globais_exibidos:
+                continue
+            self._alertas_globais_exibidos.add(chave)
+            pendentes.append((item, vencimento))
+            if vencimento <= hoje:
+                urgentes.append((item, vencimento))
+
+        if not pendentes:
+            return
+
+        linhas = []
+        for item, vencimento in pendentes[:10]:
+            if vencimento < hoje:
+                situacao = f"VENCIDA há {(hoje - vencimento).days} dia(s)"
+            elif vencimento == hoje:
+                situacao = "VENCE HOJE"
+            else:
+                situacao = f"vence em {(vencimento - hoje).days} dia(s)"
+            linhas.append(
+                f"• {item['fornecedor']} — {item['empresa']} — "
+                f"{self.servico.data_br(vencimento.isoformat())} ({situacao})"
+            )
+        if len(pendentes) > 10:
+            linhas.append(f"• ... e mais {len(pendentes) - 10} fatura(s).")
+
+        if urgentes and self.servico.agenda.alarme_sonoro_ativo():
+            self._tocar_alarme_global()
+
+        mensagem = (
+            f"O FiscalPro encontrou {len(pendentes)} fatura(s) que exigem atenção:\n\n"
+            + "\n".join(linhas)
+        )
+        if urgentes:
+            mensagem += f"\n\n🔴 {len(urgentes)} fatura(s) vencida(s) ou vencendo hoje."
+
+        try:
+            messagebox.showwarning(
+                "⚠ Agenda de Faturas",
+                mensagem,
+                parent=self.winfo_toplevel(),
+            )
+        except Exception:
+            pass
+
+    def _verificacao_periodica_global(self) -> None:
+        """Repete a verificação a cada 5 minutos enquanto o FiscalPro estiver aberto."""
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        self._verificar_alertas_globais()
+        self._alarme_global_after_id = self.after(300000, self._verificacao_periodica_global)
 
     def _montar(self) -> None:
         cabecalho = Frame(
@@ -3075,8 +3188,6 @@ class JanelaAgendaFaturas:
         }
         self._montar()
         self.atualizar()
-        self._verificar_alertas()
-        self._agendar_verificacao_alertas()
 
     def _montar(self) -> None:
         topo = Frame(self.janela, bg=COR_CARD, highlightthickness=1, highlightbackground=COR_BORDA)
