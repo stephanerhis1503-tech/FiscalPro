@@ -15,7 +15,7 @@ VARIANTES_EMPRESAS: dict[str, tuple[str, ...]] = {
     "Mega Mix E-commerce": ("mega mix e-commerce", "mega mix ecommerce", "mega mix"),
     "Mega T.O. E-commerce": ("mega t.o. e-commerce", "mega to ecommerce", "mega t.o", "mega to"),
     "Mega Serviços": ("mega servicos", "mega serviços"),
-    "Mega Profissional": ("mega profissional",),
+    "Mega Profissional": ("mega profissional", "mega servicos profissionais", "mega serviços profissionais"),
 }
 
 PALAVRAS_GUIA = {

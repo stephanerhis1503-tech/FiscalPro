@@ -14,7 +14,7 @@ from .classificador import (
     identificar_empresa,
     normalizar_texto,
 )
-from .config import ConfiguracaoRoboEmail, TOKEN_PATH
+from .config import ConfiguracaoRoboEmail, MARCADORES_EMPRESAS, TOKEN_PATH
 from .gmail_auth import criar_servico_gmail
 from .gmail_client import GmailClient, MensagemGmail
 from .leitor_documentos import LeitorInteligenteDocumentos
@@ -42,6 +42,8 @@ class ResultadoProcessamento:
     links_pendentes: int = 0
     links_bloqueados: int = 0
     erros: int = 0
+    marcadores_aplicados: int = 0
+    mensagens_sem_classificacao: int = 0
 
 
 @dataclass(slots=True)
@@ -125,6 +127,93 @@ class RoboEmailService:
                     status="ERRO",
                     detalhe=str(erro),
                     links_verificados=False,
+                )
+
+        return resultado
+
+
+    def classificar_marcadores(self) -> ResultadoProcessamento:
+        """Classifica e-mails recentes aplicando somente marcadores de empresa.
+
+        Esta rotina não baixa anexos, não registra links, não arquiva mensagens,
+        não altera o estado lido/não lido e não remove marcadores existentes.
+        """
+        erros = self.configuracao.validar()
+        if erros:
+            raise ValueError("\n".join(erros))
+        if self.cliente is None:
+            self.conectar()
+        assert self.cliente is not None
+
+        consulta = self._montar_consulta()
+        self.log(f"Consulta Gmail para classificação: {consulta}")
+        ids = self.cliente.listar_ids(
+            consulta,
+            int(self.configuracao.limite_mensagens),
+        )
+        resultado = ResultadoProcessamento(mensagens_encontradas=len(ids))
+
+        rotulos = {
+            item.get("name", ""): item.get("id", "")
+            for item in self.cliente.listar_rotulos()
+            if item.get("name") and item.get("id")
+        }
+        faltantes = [
+            nome
+            for nome in MARCADORES_EMPRESAS.values()
+            if nome not in rotulos
+        ]
+        if faltantes:
+            raise ValueError(
+                "Marcador(es) esperado(s) não encontrado(s) no Gmail: "
+                + ", ".join(faltantes)
+            )
+
+        for indice, referencia in enumerate(ids, start=1):
+            mensagem_id = referencia.get("id", "")
+            if not mensagem_id:
+                continue
+            try:
+                mensagem = self.cliente.obter_mensagem(mensagem_id)
+                empresa = identificar_empresa(
+                    mensagem.destinatarios,
+                    mensagem.assunto,
+                    f"{mensagem.snippet} {mensagem.corpo_texto[:2000]}",
+                )
+                if not empresa:
+                    resultado.empresas_nao_identificadas += 1
+                    resultado.mensagens_sem_classificacao += 1
+                    self.log(
+                        f"[{indice}/{len(ids)}] Sem classificação segura: "
+                        f"{mensagem.assunto}"
+                    )
+                    continue
+
+                nome_rotulo = MARCADORES_EMPRESAS.get(empresa)
+                if not nome_rotulo:
+                    resultado.mensagens_sem_classificacao += 1
+                    self.log(
+                        f"[{indice}/{len(ids)}] Empresa sem marcador configurado: "
+                        f"{empresa}"
+                    )
+                    continue
+
+                rotulo_id = rotulos[nome_rotulo]
+                if rotulo_id in mensagem.label_ids:
+                    resultado.mensagens_ja_processadas += 1
+                    continue
+
+                self.cliente.aplicar_rotulo(mensagem.id, rotulo_id)
+                resultado.marcadores_aplicados += 1
+                resultado.mensagens_processadas += 1
+                self.log(
+                    f"[{indice}/{len(ids)}] Marcador aplicado: "
+                    f"{nome_rotulo} | {mensagem.assunto}"
+                )
+            except Exception as erro:
+                resultado.erros += 1
+                self.log(
+                    f"[{indice}/{len(ids)}] ERRO ao classificar marcador: {erro}"
                 )
 
         return resultado
