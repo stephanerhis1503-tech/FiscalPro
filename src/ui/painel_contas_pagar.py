@@ -10,7 +10,12 @@ import subprocess
 import threading
 import unicodedata
 import webbrowser
-from datetime import date, datetime
+try:
+    import winsound
+except ImportError:  # pragma: no cover - fallback para sistemas não Windows
+    winsound = None
+
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import (
     BOTH, END, LEFT, RIGHT, X, Y, BooleanVar, Canvas, Frame, Label, Listbox, StringVar, Text, Toplevel,
@@ -84,6 +89,8 @@ class PainelContasPagar(ttk.Frame):
         }
         self._montar()
         self.atualizar()
+        self._verificar_alertas()
+        self._agendar_verificacao_alertas()
 
     def _montar(self) -> None:
         cabecalho = Frame(
@@ -3059,6 +3066,9 @@ class JanelaAgendaFaturas:
         self.var_competencia = StringVar(value=date.today().strftime("%m/%Y"))
         self.var_status = StringVar(value="Pendentes")
         self.var_concluidos = BooleanVar(value=False)
+        self.var_alarme_sonoro = BooleanVar(value=self.servico.agenda.alarme_sonoro_ativo())
+        self._alertas_exibidos: set[tuple[str, int]] = set()
+        self._alarme_after_id = None
         self.vars_cards = {
             "baixar": StringVar(value="0"),
             "vencendo": StringVar(value="0"),
@@ -3113,7 +3123,18 @@ class JanelaAgendaFaturas:
         self.cbo_status.grid(row=0, column=5, padx=(5, 14), sticky="w")
         self.cbo_status.bind("<<ComboboxSelected>>", lambda _e: self.atualizar())
         ttk.Button(filtros, text="Atualizar", command=self.atualizar).grid(row=0, column=6, sticky="ew")
-        filtros.columnconfigure(7, weight=1)
+        ttk.Checkbutton(
+            filtros,
+            text="🔊 Alarme sonoro",
+            variable=self.var_alarme_sonoro,
+            command=self._salvar_preferencia_alarme,
+        ).grid(row=0, column=7, sticky="e", padx=(14, 6))
+        ttk.Button(
+            filtros,
+            text="Testar alarme",
+            command=self._testar_alarme,
+        ).grid(row=0, column=8, sticky="ew")
+        filtros.columnconfigure(9, weight=1)
 
         quadro = ttk.Frame(self.janela, padding=(10, 0, 10, 0))
         quadro.pack(fill=BOTH, expand=True)
@@ -3232,6 +3253,115 @@ class JanelaAgendaFaturas:
         self._atualizar_estado_botoes()
         if self.ao_atualizar:
             self.ao_atualizar()
+
+    def _salvar_preferencia_alarme(self) -> None:
+        self.servico.agenda.definir_alarme_sonoro(bool(self.var_alarme_sonoro.get()))
+
+    def _tocar_alarme(self) -> None:
+        """Toca um aviso curto sem depender de arquivo de áudio externo."""
+        try:
+            if winsound is not None:
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                self.janela.after(
+                    260,
+                    lambda: winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                    if self.janela.winfo_exists()
+                    else None,
+                )
+            else:
+                self.janela.bell()
+        except Exception:
+            try:
+                self.janela.bell()
+            except Exception:
+                pass
+
+    def _testar_alarme(self) -> None:
+        self._tocar_alarme()
+        messagebox.showinfo(
+            "Teste do alarme",
+            "O FiscalPro acabou de emitir o som de teste.\n\n"
+            "Se não ouviu, confira o volume do Windows e o dispositivo de saída de áudio.",
+            parent=self.janela,
+        )
+
+    def _verificar_alertas(self) -> None:
+        """Exibe aviso visual e som para faturas que exigem atenção."""
+        if not self.janela.winfo_exists():
+            return
+
+        hoje = date.today()
+        chave_dia = hoje.isoformat()
+        itens = self.servico.agenda.listar_itens(incluir_concluidos=False)
+        pendentes = []
+        urgentes = []
+
+        for item in itens:
+            if str(item["status"]) == STATUS_PAGA:
+                continue
+            try:
+                vencimento = date.fromisoformat(str(item["vencimento_previsto"]))
+                dias_alerta = int(item["dias_alerta"] or 0)
+            except (TypeError, ValueError):
+                continue
+
+            inicio_alerta = vencimento - timedelta(days=dias_alerta)
+            if hoje < inicio_alerta:
+                continue
+
+            chave = (chave_dia, int(item["id"]))
+            if chave in self._alertas_exibidos:
+                continue
+            self._alertas_exibidos.add(chave)
+            pendentes.append((item, vencimento))
+            if vencimento <= hoje:
+                urgentes.append((item, vencimento))
+
+        if not pendentes:
+            return
+
+        linhas = []
+        for item, vencimento in pendentes[:10]:
+            if vencimento < hoje:
+                situacao = f"VENCIDA há {(hoje - vencimento).days} dia(s)"
+            elif vencimento == hoje:
+                situacao = "VENCE HOJE"
+            else:
+                situacao = f"vence em {(vencimento - hoje).days} dia(s)"
+            linhas.append(
+                f"• {item['fornecedor']} — {item['empresa']} — "
+                f"{self.servico.data_br(vencimento.isoformat())} ({situacao})"
+            )
+        if len(pendentes) > 10:
+            linhas.append(f"• ... e mais {len(pendentes) - 10} fatura(s).")
+
+        if urgentes and self.var_alarme_sonoro.get():
+            self._tocar_alarme()
+
+        titulo = "⚠ Agenda de Faturas"
+        mensagem = (
+            f"O FiscalPro encontrou {len(pendentes)} fatura(s) que exigem atenção:\n\n"
+            + "\n".join(linhas)
+        )
+        if urgentes:
+            mensagem += (
+                f"\n\n🔴 {len(urgentes)} fatura(s) vencida(s) ou vencendo hoje."
+            )
+        messagebox.showwarning(titulo, mensagem, parent=self.janela)
+
+    def _agendar_verificacao_alertas(self) -> None:
+        if not self.janela.winfo_exists():
+            return
+        self._alarme_after_id = self.janela.after(
+            300000,  # a cada 5 minutos enquanto a Agenda estiver aberta
+            self._verificacao_periodica_alertas,
+        )
+
+    def _verificacao_periodica_alertas(self) -> None:
+        if not self.janela.winfo_exists():
+            return
+        self._verificar_alertas()
+        self._agendar_verificacao_alertas()
 
     def _atualizar_estado_botoes(self) -> None:
         """Habilita o lançamento somente para fatura ainda sem conta vinculada."""
