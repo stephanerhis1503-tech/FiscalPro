@@ -89,8 +89,6 @@ class PainelContasPagar(ttk.Frame):
         }
         self._montar()
         self.atualizar()
-        self._verificar_alertas()
-        self._agendar_verificacao_alertas()
 
     def _montar(self) -> None:
         cabecalho = Frame(
@@ -3077,6 +3075,8 @@ class JanelaAgendaFaturas:
         }
         self._montar()
         self.atualizar()
+        self._verificar_alertas()
+        self._agendar_verificacao_alertas()
 
     def _montar(self) -> None:
         topo = Frame(self.janela, bg=COR_CARD, highlightthickness=1, highlightbackground=COR_BORDA)
