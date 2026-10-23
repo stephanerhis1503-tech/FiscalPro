@@ -48,17 +48,17 @@ jobs:
           python -m pip install pytest
           python -m py_compile src/financeiro/agenda_faturas.py src/ui/painel_contas_pagar.py
           python -m pytest tests/test_agenda_faturas_17_8_9.py::test_alarme_sonoro_fica_ativo_por_padrao_e_persiste_preferencia -q
-          python - <<'PY'
+          @'
           from pathlib import Path
           texto = Path("src/ui/painel_contas_pagar.py").read_text(encoding="utf-8")
-          bloco_painel = texto.split("class PainelContasPagar",1)[1].split("class JanelaAgendaFaturas",1)[0]
+          bloco_painel = texto.split("class PainelContasPagar", 1)[1].split("class JanelaAgendaFaturas", 1)[0]
           assert "_verificar_alertas()" not in bloco_painel
           assert "_agendar_verificacao_alertas()" not in bloco_painel
-          bloco_agenda = texto.split("class JanelaAgendaFaturas",1)[1]
+          bloco_agenda = texto.split("class JanelaAgendaFaturas", 1)[1]
           assert "_verificar_alertas()" in bloco_agenda
           assert "_agendar_verificacao_alertas()" in bloco_agenda
           print("Posicionamento dos alertas OK")
-          PY
+          '@ | python -
 
       - name: Gerar instalador completo
         shell: pwsh
