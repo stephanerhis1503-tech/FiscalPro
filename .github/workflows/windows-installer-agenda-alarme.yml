@@ -1,0 +1,77 @@
+name: Windows - instalador teste Agenda alarme
+
+on:
+  push:
+    branches:
+      - feat/agenda-faturas-alarme-sonoro
+    paths:
+      - 'src/financeiro/agenda_faturas.py'
+      - 'src/ui/painel_contas_pagar.py'
+      - 'tests/test_agenda_faturas_17_8_9.py'
+      - 'build/windows/build_installer.ps1'
+      - 'instalador/FiscalPro.iss'
+      - 'requirements.txt'
+      - '.github/workflows/windows-installer-agenda-alarme.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-agenda-alarme-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Testes da Agenda de Faturas
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+          python -m pytest tests/test_agenda_faturas_17_8_9.py -q
+
+      - name: Gerar instalador completo
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "build/windows/build_installer.ps1"
+
+      - name: Testar instalacao silenciosa
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "instalador\saida\FiscalPro_Setup_*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $setup) { throw "Instalador nao encontrado" }
+          $dir = Join-Path $env:RUNNER_TEMP "FiscalPro_Agenda_Alarme"
+          & $setup.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="$dir"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Join-Path $dir "FiscalPro.exe"
+          if (-not (Test-Path $exe)) { throw "FiscalPro.exe instalado nao encontrado" }
+          $uninstall = Join-Path $dir "unins000.exe"
+          if (Test-Path $uninstall) {
+            & $uninstall /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          }
+
+      - name: Guardar instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: FiscalPro_Agenda_Alarme_Instalador
+          path: instalador/saida/FiscalPro_Setup_*.exe
+          retention-days: 7
+          if-no-files-found: error
