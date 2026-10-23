@@ -171,3 +171,15 @@ def test_edicao_do_lembrete_atualiza_datas_abertas(tmp_path):
     item = servico.agenda.obter_item(int(item["id"]))
     assert item["data_prevista"] == "2026-08-08"
     assert item["vencimento_previsto"] == "2026-08-20"
+
+
+def test_alarme_sonoro_fica_ativo_por_padrao_e_persiste_preferencia(tmp_path):
+    servico = criar_servico(tmp_path)
+
+    assert servico.agenda.alarme_sonoro_ativo() is True
+
+    servico.agenda.definir_alarme_sonoro(False)
+    assert servico.agenda.alarme_sonoro_ativo() is False
+
+    servico.agenda.definir_alarme_sonoro(True)
+    assert servico.agenda.alarme_sonoro_ativo() is True
