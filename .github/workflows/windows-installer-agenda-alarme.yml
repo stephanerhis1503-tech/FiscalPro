@@ -64,6 +64,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $exe = Join-Path $dir "FiscalPro.exe"
           if (-not (Test-Path $exe)) { throw "FiscalPro.exe instalado nao encontrado" }
+
+          $processo = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($processo.HasExited) {
+            throw "FiscalPro.exe encerrou durante o teste de inicializacao. ExitCode=$($processo.ExitCode)"
+          }
+          Stop-Process -Id $processo.Id -Force
+
           $uninstall = Join-Path $dir "unins000.exe"
           if (Test-Path $uninstall) {
             & $uninstall /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
