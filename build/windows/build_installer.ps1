@@ -132,6 +132,8 @@ $pyInstallerArgs = @(
     "--add-data", ((Join-Path $repoRoot "templates") + ";templates"),
     "--add-data", ((Join-Path $repoRoot "dados\bases_oficiais") + ";dados\bases_oficiais"),
     "--collect-all", "reportlab",
+    "--collect-all", "cryptography",
+    "--hidden-import", "cryptography.hazmat.bindings._rust",
     "--hidden-import", "googleapiclient.discovery",
     "--hidden-import", "googleapiclient.errors",
     "--hidden-import", "google.auth.transport.requests",
