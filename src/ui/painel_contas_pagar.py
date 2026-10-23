@@ -3258,30 +3258,37 @@ class JanelaAgendaFaturas:
         self.servico.agenda.definir_alarme_sonoro(bool(self.var_alarme_sonoro.get()))
 
     def _tocar_alarme(self) -> None:
-        """Toca um aviso curto sem depender de arquivo de áudio externo."""
-        try:
+        """Toca um alerta audível próprio, sem depender do tema de sons do Windows."""
+        def emitir() -> None:
             if winsound is not None:
-                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-                self.janela.after(
-                    260,
-                    lambda: winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-                    if self.janela.winfo_exists()
-                    else None,
-                )
-            else:
-                self.janela.bell()
-        except Exception:
+                try:
+                    # Sequência propositalmente mais perceptível que MessageBeep.
+                    for frequencia, duracao in ((880, 180), (1120, 180), (880, 300)):
+                        winsound.Beep(frequencia, duracao)
+                    return
+                except Exception:
+                    try:
+                        winsound.PlaySound(
+                            "SystemExclamation",
+                            winsound.SND_ALIAS | winsound.SND_ASYNC,
+                        )
+                        return
+                    except Exception:
+                        pass
             try:
-                self.janela.bell()
+                if self.janela.winfo_exists():
+                    self.janela.after(0, self.janela.bell)
             except Exception:
                 pass
+
+        threading.Thread(target=emitir, daemon=True).start()
 
     def _testar_alarme(self) -> None:
         self._tocar_alarme()
         messagebox.showinfo(
             "Teste do alarme",
-            "O FiscalPro acabou de emitir o som de teste.\n\n"
-            "Se não ouviu, confira o volume do Windows e o dispositivo de saída de áudio.",
+            "O FiscalPro emitiu três bipes de teste.\n\n"
+            "Se ainda não ouvir, confira o volume do Windows e o dispositivo de saída de áudio.",
             parent=self.janela,
         )
 
