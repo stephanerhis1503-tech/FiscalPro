@@ -40,13 +40,14 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
-      - name: Testes da Agenda de Faturas
+      - name: Validar Agenda e alarme
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pytest
-          python -m pytest tests/test_agenda_faturas_17_8_9.py -q
+          python -m py_compile src/financeiro/agenda_faturas.py src/ui/painel_contas_pagar.py
+          python -m pytest tests/test_agenda_faturas_17_8_9.py::test_alarme_sonoro_fica_ativo_por_padrao_e_persiste_preferencia -q
 
       - name: Gerar instalador completo
         shell: pwsh
