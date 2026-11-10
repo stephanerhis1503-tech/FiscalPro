@@ -182,6 +182,29 @@ class ServicoCBSOficial:
                 ).fetchall()
         return [dict(l) for l in linhas]
 
+    def recuperar_ultimo_tiquete(self, cnpj_completo: str, tipo: str) -> dict | None:
+        """Recupera uma consulta nao importada sem fazer nova chamada a Receita.
+
+        A busca fica limitada a raiz do CNPJ, tipo de API e solicitacoes
+        ainda pendentes ou concluidas. Nao muda situacao no banco.
+        """
+        if tipo not in TIPOS:
+            raise ValueError("Tipo de consulta invalido.")
+        base = self.cnpj_base(cnpj_completo)
+        with closing(self._conectar()) as con:
+            linha = con.execute(
+                """
+                SELECT ticket, cnpj_base, tipo, situacao, solicitado_em
+                FROM cbs_api_solicitacoes
+                WHERE cnpj_base = ? AND tipo = ?
+                  AND situacao IN ('PENDENTE', 'EM_PROCESSAMENTO', 'CONCLUIDA')
+                ORDER BY solicitado_em DESC, rowid DESC
+                LIMIT 1
+                """,
+                (base, tipo),
+            ).fetchone()
+        return dict(linha) if linha is not None else None
+
     def atualizar_tiquete(self, ticket: str, situacao: str, detalhe: str = ""):
         allowed = {"PENDENTE", "EM_PROCESSAMENTO", "CONCLUIDA", "ERRO", "EXPIRADA", "IMPORTADA"}
         if situacao not in allowed:
