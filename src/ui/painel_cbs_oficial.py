@@ -10,9 +10,11 @@ from pathlib import Path
 from tkinter import BOTH, END, LEFT, X, StringVar, ttk, Entry
 from tkinter import filedialog, messagebox
 import threading
+from time import monotonic
 
 from src.services.cbs_apuracao_oficial_service import ServicoCBSOficial
 from src.services.cbs_apuracao_api_client import ClienteCBSReceita
+from src.services.receita_integra_auth import AutenticadorReceitaIntegra
 from src.services.empresas_regimes_service import EmpresasRegimesService
 from src.ui.painel_apuracao_assistida_rtc import PainelApuracaoAssistidaRTC
 
@@ -28,7 +30,10 @@ class PainelCBSOficial(ttk.Frame):
         self.var_tipo = StringVar(value="Débitos")
         self.var_mes = StringVar(value=PainelApuracaoAssistidaRTC.MESES[date.today().month - 1])
         self.var_ano = StringVar(value=str(date.today().year))
-        self.var_token = StringVar()
+        self.var_client_id = StringVar()
+        self.var_client_secret = StringVar()
+        self._access_token: str | None = None
+        self._token_valido_ate = 0.0
         self.var_tiquete = StringVar()
         self.var_status = StringVar(value="Sem consulta oficial importada. Valores nao sao apuracao definitiva.")
         self.var_aviso = StringVar(value="Retornos oficiais sao incrementais; ausencia de nota nao prova ausencia na Receita.")
@@ -86,16 +91,25 @@ class PainelCBSOficial(ttk.Frame):
         )
         ttk.Label(filtros, textvariable=self.var_aviso, wraplength=1050).pack(anchor="w")
 
-        api = ttk.LabelFrame(self, text="Consulta API Receita | Requer autorizacao e token temporario", padding=8)
+        api = ttk.LabelFrame(self, text="Consulta API Receita | Credenciais e token automatico", padding=8)
         api.pack(fill=X, padx=9, pady=(0, 5))
         linha_api = ttk.Frame(api)
         linha_api.pack(fill=X)
-        ttk.Label(linha_api, text="Token OAuth2 (não é salvo)").pack(side=LEFT, padx=(0, 5))
-        self.token_entry = Entry(linha_api, textvariable=self.var_token, show="*", width=38)
-        self.token_entry.pack(side=LEFT, padx=(0, 6))
-        ttk.Label(linha_api, text="Tíquete").pack(side=LEFT)
-        ttk.Entry(linha_api, textvariable=self.var_tiquete, width=34).pack(
-            side=LEFT, padx=(4, 6)
+        ttk.Label(linha_api, text="Client ID").pack(side=LEFT, padx=(0, 5))
+        self.id_entry = Entry(linha_api, textvariable=self.var_client_id, width=26)
+        self.id_entry.pack(side=LEFT, padx=(0, 8))
+        ttk.Label(linha_api, text="Client Secret").pack(side=LEFT)
+        self.secret_entry = Entry(linha_api, textvariable=self.var_client_secret, show="*", width=28)
+        self.secret_entry.pack(side=LEFT, padx=(4, 8))
+        self.btn_autenticar = ttk.Button(
+            linha_api, text="Autenticar", command=self._autenticar
+        )
+        self.btn_autenticar.pack(side=LEFT, padx=(0, 8))
+        linha_ticket = ttk.Frame(api)
+        linha_ticket.pack(fill=X, pady=(6, 0))
+        ttk.Label(linha_ticket, text="Tíquete").pack(side=LEFT, padx=(0, 5))
+        ttk.Entry(linha_ticket, textvariable=self.var_tiquete, width=40).pack(
+            side=LEFT, padx=(0, 6)
         )
         linha_botoes = ttk.Frame(api)
         linha_botoes.pack(fill=X, pady=(6, 0))
@@ -113,7 +127,8 @@ class PainelCBSOficial(ttk.Frame):
         self.btn_baixar.pack(side=LEFT)
         ttk.Label(
             api, text=(
-                "Sem token? Use 'Importar JSON oficial'. Cada nova solicitacao "
+                "Credenciais sao usadas somente para gerar token temporario em memoria; "
+                "os campos sao limpos apos a autenticacao. Cada nova solicitacao "
                 "consome uma das 4 chamadas diarias permitidas por API."
             ),
             wraplength=1040,
@@ -235,7 +250,32 @@ class PainelCBSOficial(ttk.Frame):
         messagebox.showinfo("Histórico CBS oficial", texto, parent=self)
 
     def _cliente(self):
-        return ClienteCBSReceita(self.var_token.get(), self.servico)
+        if not self._access_token or monotonic() >= self._token_valido_ate:
+            self._access_token = None
+            self._token_valido_ate = 0.0
+            raise ValueError("Token ausente ou expirado. Informe Client ID e Client Secret "
+                             "e clique em Autenticar novamente.")
+        return ClienteCBSReceita(self._access_token, self.servico)
+
+    def _autenticar(self):
+        if self._em_rede:
+            messagebox.showwarning("CBS", "Ja existe uma requisicao em andamento.", parent=self)
+            return
+        client_id = self.var_client_id.get()
+        client_secret = self.var_client_secret.get()
+        # Secrets sao retirados dos campos antes do envio. Nada e persistido.
+        self.var_client_id.set("")
+        self.var_client_secret.set("")
+        def solicitar_token():
+            return AutenticadorReceitaIntegra().obter_token(client_id, client_secret)
+        def concluir(resultado):
+            self._access_token = resultado.valor
+            self._token_valido_ate = monotonic() + max(0, resultado.expira_em_segundos - 120)
+            self.var_status.set(
+                "Autenticacao aceita pela Receita. Token temporario em memoria. "
+                "Agora e possivel solicitar consultas de CBS."
+            )
+        self._executar_online(solicitar_token, concluir)
 
     def _executar_online(self, acao, ao_concluir):
         if self._em_rede:
@@ -243,7 +283,7 @@ class PainelCBSOficial(ttk.Frame):
             return
         self._em_rede = True
         self.var_status.set("Consultando a Receita (somente leitura)...")
-        for botao in (self.btn_solicitar, self.btn_situacao, self.btn_baixar):
+        for botao in (self.btn_autenticar, self.btn_solicitar, self.btn_situacao, self.btn_baixar):
             botao.configure(state="disabled")
 
         def tarefa():
@@ -257,7 +297,7 @@ class PainelCBSOficial(ttk.Frame):
 
         def terminar(resultado, erro):
             self._em_rede = False
-            for botao in (self.btn_solicitar, self.btn_situacao, self.btn_baixar):
+            for botao in (self.btn_autenticar, self.btn_solicitar, self.btn_situacao, self.btn_baixar):
                 botao.configure(state="normal")
             # Nunca exibir token ou URL assinada em mensagens.
             if erro:
@@ -285,7 +325,6 @@ class PainelCBSOficial(ttk.Frame):
         def concluir(ticket):
             self.var_tiquete.set(ticket)
             self.var_status.set("Solicitacao aceita. Use Verificar tiquete antes do download.")
-            self.var_token.set("")
         self._executar_online(lambda: cliente.solicitar(cnpj, tipo), concluir)
 
     def _situacao(self):
