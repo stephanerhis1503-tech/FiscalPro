@@ -178,3 +178,74 @@ def test_situacao_sem_credencial_em_log(servico):
 def test_token_exige_valor():
     with pytest.raises(ValueError):
         ClienteCBSReceita("")
+
+
+def test_oauth_receita_gera_token_com_basic_e_sem_persistencia():
+    from base64 import b64encode
+    from src.services.receita_integra_auth import AutenticadorReceitaIntegra, TOKEN_URL
+
+    chamadas = []
+    class Resposta:
+        status = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def read(self, _size):
+            return b'{"access_token":"abc.jwt.token","expires_in":3600,"token_type":"bearer"}'
+
+    class Abertura:
+        def open(self, req, timeout):
+            chamadas.append((req, timeout))
+            return Resposta()
+
+    token = AutenticadorReceitaIntegra(Abertura()).obter_token("cliente-teste", "segredo-ficticio")
+    assert token.valor == "abc.jwt.token"
+    assert token.expira_em_segundos == 3600
+    req, timeout = chamadas[0]
+    assert req.full_url == TOKEN_URL
+    assert req.get_method() == "POST"
+    assert req.data == b"grant_type=client_credentials"
+    esperado = b64encode(b"cliente-teste:segredo-ficticio").decode("ascii")
+    assert req.get_header("Authorization") == "Basic " + esperado
+    assert timeout == 30
+
+
+def test_oauth_receita_nao_retorna_segredo_em_erro_http():
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from src.services.receita_integra_auth import AutenticadorReceitaIntegra, ErroAutenticacaoReceita
+
+    class Abertura:
+        def open(self, req, timeout):
+            raise HTTPError(req.full_url, 401, "Unauthorized", {}, BytesIO(b"secret-vazado"))
+
+    with pytest.raises(ErroAutenticacaoReceita) as exc:
+        AutenticadorReceitaIntegra(Abertura()).obter_token("id-ficticio", "segredo-ficticio")
+    assert "segredo-ficticio" not in str(exc.value)
+    assert "secret-vazado" not in str(exc.value)
+
+
+def test_oauth_receita_rejeita_token_sem_validade():
+    from src.services.receita_integra_auth import AutenticadorReceitaIntegra, ErroAutenticacaoReceita
+
+    class Resposta:
+        status = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def read(self, _size):
+            return b'{"access_token":"token-teste","token_type":"bearer"}'
+    class Abertura:
+        def open(self, req, timeout):
+            return Resposta()
+
+    with pytest.raises(ErroAutenticacaoReceita):
+        AutenticadorReceitaIntegra(Abertura()).obter_token("id", "secret")
+
+
+def test_oauth_receita_nao_aceita_client_id_vazio():
+    from src.services.receita_integra_auth import AutenticadorReceitaIntegra
+    with pytest.raises(ValueError):
+        AutenticadorReceitaIntegra().obter_token("", "secret")
