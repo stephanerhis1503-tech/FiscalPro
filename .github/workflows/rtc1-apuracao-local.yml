@@ -1,4 +1,4 @@
-name: RTC 1 - Apuracao local IBS/CBS
+name: RTC 1+2 - Apuracao local e CBS oficial
 
 on:
   pull_request:
@@ -7,13 +7,17 @@ on:
       - "src/ui/painel_apuracao_assistida_rtc.py"
       - "src/ui/painel_documentos_fiscais.py"
       - "tests/test_rtc1_apuracao_local.py"
+      - "tests/test_rtc2_cbs_oficial.py"
+      - "src/services/cbs_apuracao_oficial_service.py"
+      - "src/services/cbs_apuracao_api_client.py"
+      - "src/ui/painel_cbs_oficial.py"
       - ".github/workflows/rtc1-apuracao-local.yml"
   push:
     branches:
       - "feature/rtc1-base-apuracao-assistida-20261110"
 
 jobs:
-  testar-rtc1:
+  testar-rtc1-rtc2:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +27,6 @@ jobs:
       - name: Instalar dependencias de teste
         run: python -m pip install pytest openpyxl
       - name: Validar sintaxe
-        run: python -m compileall -q src/services/apuracao_assistida_local_service.py src/ui/painel_apuracao_assistida_rtc.py src/ui/painel_documentos_fiscais.py tests/test_rtc1_apuracao_local.py
-      - name: Testes RTC 1
-        run: python -m pytest -q tests/test_rtc1_apuracao_local.py
+        run: python -m compileall -q src/services/apuracao_assistida_local_service.py src/services/cbs_apuracao_oficial_service.py src/services/cbs_apuracao_api_client.py src/ui/painel_apuracao_assistida_rtc.py src/ui/painel_cbs_oficial.py src/ui/painel_documentos_fiscais.py tests/test_rtc1_apuracao_local.py tests/test_rtc2_cbs_oficial.py
+      - name: Testes RTC 1 + 2
+        run: python -m pytest -q tests/test_rtc1_apuracao_local.py tests/test_rtc2_cbs_oficial.py
