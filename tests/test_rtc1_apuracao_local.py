@@ -195,3 +195,21 @@ def test_seletores_rejeitam_competencia_invalida(mes, ano):
     from src.ui.painel_apuracao_assistida_rtc import PainelApuracaoAssistidaRTC
     with pytest.raises(ValueError):
         PainelApuracaoAssistidaRTC._competencia_selecionada(mes, ano)
+
+
+def test_filtro_visual_entrada_saida_revisar_e_busca():
+    from src.ui.painel_apuracao_assistida_rtc import PainelApuracaoAssistidaRTC
+    docs = [
+        {"direcao": "SAIDA", "numero_nf": "121301", "chave_nfe": "31A", "status_conferencia": "CONFERIDO_XML"},
+        {"direcao": "ENTRADA", "numero_nf": "9876", "chave_nfe": "31B", "status_conferencia": "REVISAR"},
+        {"direcao": "SAIDA", "numero_nf": "121302", "chave_nfe": "31C", "status_conferencia": "REVISAR"},
+    ]
+    filtrar = PainelApuracaoAssistidaRTC._filtrar_documentos
+    assert len(filtrar(docs, "Todas")) == 3
+    assert [d["numero_nf"] for d in filtrar(docs, "Somente entradas")] == ["9876"]
+    assert len(filtrar(docs, "Somente saídas")) == 2
+    assert len(filtrar(docs, "Somente revisar")) == 2
+    assert [d["numero_nf"] for d in filtrar(docs, "Todas", "12130")] == ["121301", "121302"]
+    assert [d["numero_nf"] for d in filtrar(docs, "Somente entradas", "31B")] == ["9876"]
+    with pytest.raises(ValueError):
+        filtrar(docs, "tipo desconhecido")
