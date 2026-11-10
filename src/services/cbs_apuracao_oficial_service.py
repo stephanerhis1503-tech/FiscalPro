@@ -276,10 +276,28 @@ class ServicoCBSOficial:
             raise ValueError("Selecione Debitos ou Creditos.")
         base = self.cnpj_base(cnpj_completo)
         objeto = self._ler_payload(payload)
-        ni = str(objeto.get("ni") or "").strip()
+        if ticket:
+            retorno_ticket = objeto.get("tiqueteSolicitacao")
+            if not isinstance(retorno_ticket, str) or retorno_ticket != ticket:
+                raise ValueError(
+                    "O tiquete do JSON oficial nao corresponde a consulta concluida. "
+                    "Nenhum dado foi importado."
+                )
+        # Campo 'ni' representa a RAIZ da empresa consultada (8 digitos).
+        # 'niConsumidor' e a pessoa/empresa detentora da credencial e pode ser diferente.
+        ni = objeto.get("ni")
+        if not isinstance(ni, str) or not re.fullmatch(r"\d{8}", ni):
+            raise ValueError(
+                "Campo ni do retorno oficial ausente ou fora do formato esperado "
+                "(8 digitos). O niConsumidor nao deve ser usado para identificar "
+                "a empresa consultada. Nenhum dado foi importado."
+            )
         if ni != base:
             raise ValueError(
-                "CNPJ basico do arquivo oficial diferente do CNPJ da empresa selecionada. "
+                f"CNPJ basico divergente: empresa selecionada = {base}; "
+                f"retorno oficial (campo ni) = {ni}. "
+                "O campo niConsumidor identifica quem usa a credencial, nao "
+                "a empresa da apuracao. Confira a representacao e o tiquete. "
                 "Nenhum dado foi importado."
             )
         apuracoes = objeto.get("apuracao")
