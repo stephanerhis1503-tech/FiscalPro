@@ -12,6 +12,8 @@ from src.services.empresas_regimes_service import EmpresasRegimesService
 
 
 class PainelApuracaoAssistidaRTC(ttk.Frame):
+    FILTROS_TIPO = ("Todas", "Somente entradas", "Somente saídas", "Somente revisar")
+
     MESES = (
         "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
         "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
@@ -39,6 +41,10 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         self.var_ano = StringVar(value=str(hoje.year))
         self.var_status = StringVar(value="Selecione uma empresa e a competencia.")
         self.var_totais = StringVar(value="Nenhum documento carregado.")
+        self.var_tipo_lista = StringVar(value="Todas")
+        self.var_busca_nf = StringVar()
+        self.var_exibidos = StringVar(value="Nenhuma nota carregada.")
+        self.documentos: list[dict] = []
         self._montar()
         self._carregar_empresas()
 
@@ -98,6 +104,23 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
 
         corpo = ttk.LabelFrame(self, text="Notas fiscais importadas", padding=6)
         corpo.pack(fill=BOTH, expand=True, padx=10, pady=(4, 8))
+        barra_filtros = ttk.Frame(corpo)
+        barra_filtros.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ttk.Label(barra_filtros, text="Mostrar:").pack(side=LEFT, padx=(0, 5))
+        self.combo_tipo_lista = ttk.Combobox(
+            barra_filtros, textvariable=self.var_tipo_lista,
+            values=self.FILTROS_TIPO, width=20, state="readonly",
+        )
+        self.combo_tipo_lista.pack(side=LEFT, padx=(0, 12))
+        self.combo_tipo_lista.bind("<<ComboboxSelected>>", lambda _evento: self._atualizar_grade())
+        ttk.Label(barra_filtros, text="Buscar NF ou chave:").pack(side=LEFT, padx=(0, 5))
+        campo_busca = ttk.Entry(barra_filtros, textvariable=self.var_busca_nf, width=25)
+        campo_busca.pack(side=LEFT, padx=(0, 5))
+        campo_busca.bind("<Return>", lambda _evento: self._atualizar_grade())
+        ttk.Button(barra_filtros, text="Filtrar", command=self._atualizar_grade).pack(
+            side=LEFT, padx=(0, 10)
+        )
+        ttk.Label(barra_filtros, textvariable=self.var_exibidos).pack(side=LEFT)
         nomes = ("tipo", "nf", "emissao", "chave", "ibs", "cbs", "conferencia", "credito", "protocolo")
         titulos = (
             "Tipo", "NF", "Emissao", "Chave NF-e", "IBS XML", "CBS XML",
@@ -113,11 +136,11 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         sy = ttk.Scrollbar(corpo, orient="vertical", command=self.tabela.yview)
         sx = ttk.Scrollbar(corpo, orient="horizontal", command=self.tabela.xview)
         self.tabela.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
-        corpo.rowconfigure(0, weight=1)
+        corpo.rowconfigure(1, weight=1)
         corpo.columnconfigure(0, weight=1)
-        self.tabela.grid(row=0, column=0, sticky="nsew")
-        sy.grid(row=0, column=1, sticky="ns")
-        sx.grid(row=1, column=0, sticky="ew")
+        self.tabela.grid(row=1, column=0, sticky="nsew")
+        sy.grid(row=1, column=1, sticky="ns")
+        sx.grid(row=2, column=0, sticky="ew")
 
     @staticmethod
     def _opcoes_empresas(cadastros):
@@ -255,17 +278,37 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
                 parent=self,
             )
 
-    def _consultar(self):
-        try:
-            cnpj, competencia = self._filtros()
-            linhas = self.servico.listar(cnpj, competencia)
-            totais = self.servico.resumo(cnpj, competencia)
-        except (ValueError, OSError) as exc:
-            messagebox.showerror("RTC 1", str(exc), parent=self)
-            return
+    @classmethod
+    def _filtrar_documentos(cls, documentos: list[dict], tipo: str, busca: str = "") -> list[dict]:
+        """Filtro apenas visual; nao altera registros nem totais da competencia."""
+        if tipo not in cls.FILTROS_TIPO:
+            raise ValueError("Filtro de visualizacao invalido.")
+        termo = str(busca or "").strip().casefold()
+        retorno: list[dict] = []
+        for doc in documentos:
+            direcao = str(doc.get("direcao") or "").upper()
+            conferencia = str(doc.get("status_conferencia") or "").upper()
+            if tipo == "Somente entradas" and direcao != "ENTRADA":
+                continue
+            if tipo == "Somente saídas" and direcao != "SAIDA":
+                continue
+            if tipo == "Somente revisar" and conferencia != "REVISAR":
+                continue
+            if termo and not any(
+                termo in str(doc.get(chave) or "").casefold()
+                for chave in ("numero_nf", "chave_nfe")
+            ):
+                continue
+            retorno.append(doc)
+        return retorno
+
+    def _atualizar_grade(self):
+        documentos = self._filtrar_documentos(
+            self.documentos, self.var_tipo_lista.get(), self.var_busca_nf.get()
+        )
         for item in self.tabela.get_children():
             self.tabela.delete(item)
-        for doc in linhas:
+        for doc in documentos:
             self.tabela.insert(
                 "", END, values=(
                     doc["direcao"], doc["numero_nf"], doc["emissao"],
@@ -274,6 +317,20 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
                     doc["status_protocolo"],
                 )
             )
+        self.var_exibidos.set(
+            f"Exibindo {len(documentos)} de {len(self.documentos)} nota(s)"
+        )
+
+    def _consultar(self):
+        try:
+            cnpj, competencia = self._filtros()
+            linhas = self.servico.listar(cnpj, competencia)
+            totais = self.servico.resumo(cnpj, competencia)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("RTC 1", str(exc), parent=self)
+            return
+        self.documentos = linhas
+        self._atualizar_grade()
         self.var_totais.set(
             f"{totais['documentos']} notas ({totais['saidas']} saidas; "
             f"{totais['entradas']} entradas; {totais['revisar']} revisar).  "
