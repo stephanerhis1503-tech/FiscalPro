@@ -118,3 +118,17 @@ def test_nao_importa_documento_estranho(servico, tmp_path):
     arquivo = tmp_path / "evento.xml"
     arquivo.write_text("<procEventoNFe><evento/></procEventoNFe>", encoding="utf-8")
     assert servico.importar([arquivo], EMPRESA, "2026-11").ignorados == 1
+
+
+def test_opcoes_empresas_mostram_cnpj_pendente_sem_liberar_pf():
+    from src.ui.painel_apuracao_assistida_rtc import PainelApuracaoAssistidaRTC
+    cadastros = [
+        {"nome": "Mega Motos Trilha", "cnpj": "", "tipo_pessoa": "PJ", "ativa": 1},
+        {"nome": "Mega Mix", "cnpj": "12345678000199", "tipo_pessoa": "PJ", "ativa": 1},
+        {"nome": "Socio", "cnpj": "12345678901", "tipo_pessoa": "PF", "ativa": 1},
+        {"nome": "Antiga", "cnpj": "", "tipo_pessoa": "PJ", "ativa": 0},
+    ]
+    opcoes = PainelApuracaoAssistidaRTC._opcoes_empresas(cadastros)
+    assert len(opcoes) == 2
+    assert "Mega Motos Trilha | CNPJ pendente" in opcoes
+    assert "Mega Mix | 12345678000199" in opcoes
