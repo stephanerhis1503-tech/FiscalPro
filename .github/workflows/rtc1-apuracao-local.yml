@@ -1,0 +1,28 @@
+name: RTC 1 - Apuracao local IBS/CBS
+
+on:
+  pull_request:
+    paths:
+      - "src/services/apuracao_assistida_local_service.py"
+      - "src/ui/painel_apuracao_assistida_rtc.py"
+      - "src/ui/painel_documentos_fiscais.py"
+      - "tests/test_rtc1_apuracao_local.py"
+      - ".github/workflows/rtc1-apuracao-local.yml"
+  push:
+    branches:
+      - "feature/rtc1-base-apuracao-assistida-20261110"
+
+jobs:
+  testar-rtc1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar dependencias de teste
+        run: python -m pip install pytest openpyxl
+      - name: Validar sintaxe
+        run: python -m compileall -q src/services/apuracao_assistida_local_service.py src/ui/painel_apuracao_assistida_rtc.py src/ui/painel_documentos_fiscais.py tests/test_rtc1_apuracao_local.py
+      - name: Testes RTC 1
+        run: python -m pytest -q tests/test_rtc1_apuracao_local.py
