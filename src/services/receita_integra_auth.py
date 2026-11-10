@@ -13,6 +13,10 @@ from __future__ import annotations
 
 from base64 import b64encode
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from math import ceil
+from time import monotonic
 import json
 import ssl
 from urllib.error import HTTPError, URLError
@@ -28,7 +32,29 @@ LIMITE_RESPOSTA = 64 * 1024
 
 
 class ErroAutenticacaoReceita(RuntimeError):
-    """Falha de autenticacao com mensagem publica livre de credenciais."""
+    """Falha de autenticacao livre de credenciais, com espera quando indicada."""
+
+    def __init__(self, mensagem: str, retry_after_segundos: int | None = None):
+        super().__init__(mensagem)
+        self.retry_after_segundos = retry_after_segundos
+
+
+def _tempo_retry_after(valor: str | None) -> int | None:
+    """HTTP Retry-After aceita segundos inteiros ou data HTTP; nunca inferir prazo."""
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    if texto.isascii() and texto.isdigit():
+        segundos = int(texto) if len(texto) <= 10 else -1
+    else:
+        try:
+            destino = parsedate_to_datetime(texto)
+            if destino.tzinfo is None:
+                return None
+            segundos = ceil((destino - datetime.now(timezone.utc)).total_seconds())
+        except (ValueError, TypeError, IndexError, OverflowError):
+            return None
+    return segundos if 1 <= segundos <= 604800 else None
 
 
 @dataclass(frozen=True)
@@ -47,6 +73,9 @@ class _ProibirRedirecionamentos(HTTPRedirectHandler):
 class AutenticadorReceitaIntegra:
     """Troca credenciais por token no HTTPS oficial; nao faz consultas tributarias."""
 
+    # Somente bloqueio temporario em memoria (sem guardar credenciais nem token).
+    _bloqueado_ate: float = 0.0
+
     def __init__(self, opener=None):
         self._opener = opener or build_opener(
             HTTPSHandler(context=ssl.create_default_context()),
@@ -61,6 +90,13 @@ class AutenticadorReceitaIntegra:
         return valor
 
     def obter_token(self, client_id: str, client_secret: str) -> TokenTemporario:
+        if monotonic() < self._bloqueado_ate:
+            restante = ceil(self._bloqueado_ate - monotonic())
+            raise ErroAutenticacaoReceita(
+                f"HTTP 429: aguarde {restante} segundo(s) conforme orientacao "
+                "anterior da Receita antes de nova autenticacao.",
+                retry_after_segundos=restante,
+            )
         identificador = self._validar_credencial(client_id, "Client ID")
         segredo = self._validar_credencial(client_secret, "Client Secret")
         autenticacao = b64encode(f"{identificador}:{segredo}".encode("utf-8")).decode("ascii")
@@ -85,7 +121,24 @@ class AutenticadorReceitaIntegra:
                     raise ErroAutenticacaoReceita("Resposta de autenticacao acima do limite.")
                 obj = json.loads(dados)
         except HTTPError as exc:
-            # Nao incluir o corpo, headers, URL completa nem a credencial.
+            # Nao incluir corpo, headers integrais, URL completa nem credenciais.
+            if exc.code == 429:
+                espera = _tempo_retry_after(
+                    exc.headers.get("Retry-After") if exc.headers else None
+                )
+                if espera is not None:
+                    AutenticadorReceitaIntegra._bloqueado_ate = monotonic() + espera
+                    raise ErroAutenticacaoReceita(
+                        "HTTP 429: limite temporario de requisicoes de autenticacao "
+                        f"atingido. A Receita indicou aguardar {espera} segundo(s). "
+                        "Nao gere nova credencial nem tente repetidamente.",
+                        retry_after_segundos=espera,
+                    ) from None
+                raise ErroAutenticacaoReceita(
+                    "HTTP 429: a Receita limitou temporariamente as autenticacoes. "
+                    "Nao e indicacao de senha errada ou vencida. Aguarde antes "
+                    "de tentar novamente; o servidor nao informou prazo de liberacao."
+                ) from None
             if exc.code == 400:
                 raise ErroAutenticacaoReceita(
                     "HTTP 400 (requisicao recusada). Confira se o Client ID e o "
