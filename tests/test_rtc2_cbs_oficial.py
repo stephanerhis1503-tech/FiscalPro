@@ -249,3 +249,32 @@ def test_oauth_receita_nao_aceita_client_id_vazio():
     from src.services.receita_integra_auth import AutenticadorReceitaIntegra
     with pytest.raises(ValueError):
         AutenticadorReceitaIntegra().obter_token("", "secret")
+
+
+def test_retorno_ni_consumidor_diferente_mas_ni_empresa_correto(servico):
+    resposta = payload("debitos", [debito()])
+    resposta["niConsumidor"] = "99999999000100"
+    assert servico.importar(resposta, "debitos", EMPRESA).novos == 1
+
+
+def test_retorno_ni_incorreto_informa_ambas_raizes_sem_importar(servico):
+    resposta = payload("debitos", [debito()], ni="99999999")
+    with pytest.raises(ValueError, match="empresa selecionada = 12345678") as exc:
+        servico.importar(resposta, "debitos", EMPRESA)
+    assert "retorno oficial (campo ni) = 99999999" in str(exc.value)
+    assert servico.historico(EMPRESA) == []
+
+
+def test_retorno_tiquete_diferente_bloqueia_antes_de_importar(servico):
+    resposta = payload("debitos", [debito()], ticket="outro-ticket")
+    with pytest.raises(ValueError, match="tiquete"):
+        servico.importar(resposta, "debitos", EMPRESA, ticket="ticket-original")
+    assert servico.historico(EMPRESA) == []
+
+
+def test_retorno_sem_ni_valido_bloqueia_importacao(servico):
+    resposta = payload("debitos", [debito()])
+    resposta["ni"] = "12345678000199"
+    with pytest.raises(ValueError, match="Campo ni"):
+        servico.importar(resposta, "debitos", EMPRESA)
+    assert servico.historico(EMPRESA) == []
