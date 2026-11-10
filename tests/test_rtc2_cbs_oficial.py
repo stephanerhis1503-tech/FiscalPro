@@ -278,3 +278,28 @@ def test_retorno_sem_ni_valido_bloqueia_importacao(servico):
     with pytest.raises(ValueError, match="Campo ni"):
         servico.importar(resposta, "debitos", EMPRESA)
     assert servico.historico(EMPRESA) == []
+
+
+@pytest.mark.parametrize(
+    "status,esperado",
+    [
+        (400, "HTTP 400"),
+        (401, "HTTP 401"),
+        (403, "HTTP 403"),
+    ],
+)
+def test_autenticacao_distingue_codigo_e_nao_revela_segredo(status, esperado):
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from src.services.receita_integra_auth import AutenticadorReceitaIntegra, ErroAutenticacaoReceita
+
+    class Abertura:
+        def open(self, req, timeout):
+            raise HTTPError(req.full_url, status, "Denied", {}, BytesIO(b"secret-do-retorno"))
+
+    with pytest.raises(ErroAutenticacaoReceita) as erro:
+        AutenticadorReceitaIntegra(Abertura()).obter_token("id-ficticio", "segredo-ficticio")
+    assert esperado in str(erro.value)
+    assert "segredo-ficticio" not in str(erro.value)
+    assert "secret-do-retorno" not in str(erro.value)
+
