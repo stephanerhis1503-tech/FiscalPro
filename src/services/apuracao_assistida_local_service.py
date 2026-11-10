@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 from src.core.caminhos import BANCO_FISCAL
-from src.services.xml_ibscbs_service import ServicoXMLIBSCBS
+from src.services.xml_ibscbs_service import ServicoXMLIBSCBS, _Documento
 
 MAX_XML_BYTES = 10 * 1024 * 1024
 MAX_ZIP_BYTES = 256 * 1024 * 1024
@@ -187,7 +187,7 @@ class ServicoApuracaoLocalRTC:
         raiz = ET.fromstring(dados)
         if cls._nome_tag(raiz) not in {"NFe", "nfeProc"}:
             raise ValueError("Documento nao e uma NF-e (eventos e outros XMLs nao entram).")
-        resumo, _itens, _tags, auditorias = ServicoXMLIBSCBS.analisar_conteudo(nome, dados)
+        resumo, _itens, _tags, auditorias = ServicoXMLIBSCBS._analisar_documento(_Documento(nome, dados))
         if not re.fullmatch(r"\d{44}", resumo.chave):
             raise ValueError("Chave de NF-e ausente ou invalida.")
         if resumo.itens_xml == 0:
