@@ -303,3 +303,30 @@ def test_autenticacao_distingue_codigo_e_nao_revela_segredo(status, esperado):
     assert "segredo-ficticio" not in str(erro.value)
     assert "secret-do-retorno" not in str(erro.value)
 
+
+
+def test_recupera_tiquete_concluido_sem_nova_solicitacao(servico):
+    servico.registrar_tiquete(EMPRESA, "debitos", "ticket-concluido")
+    servico.atualizar_tiquete("ticket-concluido", "CONCLUIDA")
+    recuperado = servico.recuperar_ultimo_tiquete(EMPRESA, "debitos")
+    assert recuperado["ticket"] == "ticket-concluido"
+    assert recuperado["situacao"] == "CONCLUIDA"
+    assert servico.consultas_hoje(EMPRESA, "debitos") <= 1
+
+
+def test_recuperacao_respeita_raiz_e_tipo(servico):
+    servico.registrar_tiquete(EMPRESA, "debitos", "ticket-debito")
+    servico.registrar_tiquete(EMPRESA, "creditos", "ticket-credito")
+    servico.registrar_tiquete(OUTRA_RAIZ, "debitos", "ticket-outro")
+    assert servico.recuperar_ultimo_tiquete(EMPRESA, "debitos")["ticket"] == "ticket-debito"
+    assert servico.recuperar_ultimo_tiquete(EMPRESA, "creditos")["ticket"] == "ticket-credito"
+    assert servico.recuperar_ultimo_tiquete(OUTRA_RAIZ, "debitos")["ticket"] == "ticket-outro"
+
+
+def test_recupera_ultimo_tiquete_sem_repetir_ja_importado(servico):
+    servico.registrar_tiquete(EMPRESA, "debitos", "ticket-pendente")
+    servico.registrar_tiquete(EMPRESA, "debitos", "ticket-importado")
+    servico.atualizar_tiquete("ticket-importado", "IMPORTADA")
+    assert servico.recuperar_ultimo_tiquete(EMPRESA, "debitos")["ticket"] == "ticket-pendente"
+    servico.atualizar_tiquete("ticket-pendente", "EXPIRADA")
+    assert servico.recuperar_ultimo_tiquete(EMPRESA, "debitos") is None
