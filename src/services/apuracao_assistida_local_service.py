@@ -31,6 +31,7 @@ class ResultadoImportacaoRTC:
     lidos: int = 0
     importados: int = 0
     duplicados: int = 0
+    atualizados: int = 0
     conflitos: int = 0
     ignorados: int = 0
     avisos: list[str] = field(default_factory=list)
@@ -92,6 +93,21 @@ class ServicoApuracaoLocalRTC:
                     hash_xml TEXT NOT NULL,
                     importado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE (cnpj_empresa, chave_nfe)
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rtc_documentos_atualizacoes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    documento_id INTEGER NOT NULL,
+                    tipo TEXT NOT NULL,
+                    hash_anterior TEXT NOT NULL,
+                    hash_novo TEXT NOT NULL,
+                    status_anterior TEXT NOT NULL,
+                    status_novo TEXT NOT NULL,
+                    registrado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (documento_id) REFERENCES rtc_documentos_xml(id)
                 )
                 """
             )
@@ -257,6 +273,16 @@ class ServicoApuracaoLocalRTC:
             "hash_xml": sha256(dados).hexdigest(),
         }
 
+    @staticmethod
+    def _mesmo_conteudo_fiscal(anterior: sqlite3.Row, novo: dict) -> bool:
+        """Somente aceita promocao de XML sem protocolo se os dados fiscais conferirem."""
+        campos = (
+            "cnpj_empresa", "competencia", "chave_nfe", "numero_nf",
+            "emissao", "cnpj_emitente", "cnpj_destinatario", "direcao",
+            "base_ibs_cbs", "valor_ibs", "valor_cbs", "status_credito",
+        )
+        return all(str(anterior[campo]) == str(novo[campo]) for campo in campos)
+
     def importar(
         self, caminhos: list[str | Path], cnpj_empresa: str, competencia: str
     ) -> ResultadoImportacaoRTC:
@@ -271,17 +297,59 @@ class ServicoApuracaoLocalRTC:
                         try:
                             doc = self._extrair(nome, dados, cnpj, comp)
                             anterior = con.execute(
-                                "SELECT hash_xml FROM rtc_documentos_xml "
+                                "SELECT * FROM rtc_documentos_xml "
                                 "WHERE cnpj_empresa = ? AND chave_nfe = ?",
                                 (cnpj, doc["chave_nfe"]),
                             ).fetchone()
                             if anterior:
                                 if anterior["hash_xml"] == doc["hash_xml"]:
                                     resultado.duplicados += 1
+                                elif (
+                                    anterior["status_protocolo"] == "SEM_PROTOCOLO"
+                                    and doc["status_protocolo"] == "PROTOCOLO_100_150_XML"
+                                    and self._mesmo_conteudo_fiscal(anterior, doc)
+                                ):
+                                    # Apenas agrega autorizacao documental quando
+                                    # a identidade e TODOS os totais permanecem iguais.
+                                    # O historico registra o hash anterior.
+                                    with con:
+                                        con.execute(
+                                            """
+                                            INSERT INTO rtc_documentos_atualizacoes
+                                            (documento_id, tipo, hash_anterior, hash_novo,
+                                             status_anterior, status_novo)
+                                            VALUES (?, ?, ?, ?, ?, ?)
+                                            """,
+                                            (
+                                                anterior["id"], "COMPLEMENTO_PROTOCOLO",
+                                                anterior["hash_xml"], doc["hash_xml"],
+                                                anterior["status_conferencia"],
+                                                doc["status_conferencia"],
+                                            ),
+                                        )
+                                        con.execute(
+                                            """
+                                            UPDATE rtc_documentos_xml
+                                            SET status_conferencia = ?, status_protocolo = ?,
+                                                observacao = ?, arquivo_origem = ?,
+                                                hash_xml = ?
+                                            WHERE id = ? AND hash_xml = ?
+                                            """,
+                                            (
+                                                doc["status_conferencia"],
+                                                doc["status_protocolo"],
+                                                doc["observacao"], doc["arquivo_origem"],
+                                                doc["hash_xml"], anterior["id"],
+                                                anterior["hash_xml"],
+                                            ),
+                                        )
+                                    resultado.atualizados += 1
                                 else:
                                     resultado.conflitos += 1
                                     resultado.avisar(
-                                        f"{nome}: chave existente com conteudo diferente; nao sobrescrito."
+                                        f"{nome}: chave ja registrada, mas XML diverge "
+                                        "ou nao e complemento seguro de protocolo; "
+                                        "o registro existente foi preservado."
                                     )
                                 continue
                             campos = tuple(doc)
