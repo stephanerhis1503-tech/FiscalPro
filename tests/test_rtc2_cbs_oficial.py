@@ -330,3 +330,36 @@ def test_recupera_ultimo_tiquete_sem_repetir_ja_importado(servico):
     assert servico.recuperar_ultimo_tiquete(EMPRESA, "debitos")["ticket"] == "ticket-pendente"
     servico.atualizar_tiquete("ticket-pendente", "EXPIRADA")
     assert servico.recuperar_ultimo_tiquete(EMPRESA, "debitos") is None
+
+
+def test_ni_numerico_8_digitos_aceito_se_mesma_raiz(servico):
+    resposta = payload("debitos", [debito()])
+    resposta["ni"] = 12345678
+    assert servico.importar(resposta, "debitos", EMPRESA).novos == 1
+
+
+def test_ni_fora_formato_apresenta_diagnostico_sem_cnpj_consumidor(servico):
+    resposta = payload("debitos", [debito()])
+    resposta.pop("ni")
+    resposta["niConsumidor"] = "99999999000100"
+    with pytest.raises(ValueError, match="Campo ni do retorno oficial: ausente") as erro:
+        servico.importar(resposta, "debitos", EMPRESA)
+    assert "niConsumidor" in str(erro.value)
+    assert "99999999000100" not in str(erro.value)
+    assert servico.historico(EMPRESA) == []
+
+
+def test_ni_numerico_diferente_nao_mistura_empresas(servico):
+    resposta = payload("debitos", [debito()])
+    resposta["ni"] = 87654321
+    with pytest.raises(ValueError, match="CNPJ basico divergente"):
+        servico.importar(resposta, "debitos", EMPRESA)
+    assert servico.historico(EMPRESA) == []
+
+
+def test_ni_cnpj_completo_nao_e_convertido_automaticamente(servico):
+    resposta = payload("debitos", [debito()])
+    resposta["ni"] = "12345678000199"
+    with pytest.raises(ValueError, match="14 digitos"):
+        servico.importar(resposta, "debitos", EMPRESA)
+    assert servico.historico(EMPRESA) == []
