@@ -252,6 +252,54 @@ class ServicoCBSOficial:
         return obj
 
     @staticmethod
+    def _validar_ni_oficial(objeto: dict) -> str:
+        """Valida NI sem inferi-lo de niConsumidor ou de outros campos.
+
+        O contrato da Receita especifica string(8). Alguns serializadores
+        podem devolver JSON number para NI: aceita apenas int de 0 a 99999999,
+        normalizado a 8 digitos, sempre sujeito a comparacao exata com a raiz.
+        Na divergencia, descreve so estrutura do arquivo, nao seu conteudo.
+        """
+        ni = objeto.get("ni")
+        if isinstance(ni, str) and re.fullmatch(r"[0-9]{8}", ni):
+            return ni
+        if type(ni) is int and 0 <= ni <= 99999999:
+            return f"{ni:08d}"
+
+        if ni is None:
+            formato = "ausente"
+        elif isinstance(ni, bool):
+            formato = "booleano"
+        elif isinstance(ni, str):
+            if ni.isascii() and ni.isdigit():
+                formato = f"texto numerico com {len(ni)} digitos"
+            else:
+                formato = "texto nao numerico"
+        elif isinstance(ni, (float, int)):
+            formato = "numero fora do formato esperado"
+        elif isinstance(ni, dict):
+            formato = "objeto"
+        elif isinstance(ni, list):
+            formato = "lista"
+        else:
+            formato = "tipo nao previsto"
+
+        # Mostrar apenas NOMES de campos documentados, jamais valores do JSON.
+        diagnosticos = (
+            "tiqueteSolicitacao", "niConsumidor", "geradoEm", "apuracao",
+            "codigoErro", "mensagemErro", "data", "dados", "resultado",
+        )
+        encontrados = [campo for campo in diagnosticos if campo in objeto]
+        conhecidos = ", ".join(encontrados) if encontrados else "nenhum campo conhecido"
+        raise ValueError(
+            f"Campo ni do retorno oficial: {formato}. "
+            f"Campos reconhecidos no nivel principal: {conhecidos}. "
+            "O FiscalPro nao pode atribuir este retorno a empresa selecionada "
+            "sem identificar sua raiz com seguranca. "
+            "O niConsumidor nao substitui ni. Nenhum dado foi importado."
+        )
+
+    @staticmethod
     def _normalizar_linha(tipo, comp, linha):
         if not isinstance(linha, dict):
             raise ValueError("Registro oficial em formato invalido.")
@@ -308,13 +356,7 @@ class ServicoCBSOficial:
                 )
         # Campo 'ni' representa a RAIZ da empresa consultada (8 digitos).
         # 'niConsumidor' e a pessoa/empresa detentora da credencial e pode ser diferente.
-        ni = objeto.get("ni")
-        if not isinstance(ni, str) or not re.fullmatch(r"\d{8}", ni):
-            raise ValueError(
-                "Campo ni do retorno oficial ausente ou fora do formato esperado "
-                "(8 digitos). O niConsumidor nao deve ser usado para identificar "
-                "a empresa consultada. Nenhum dado foi importado."
-            )
+        ni = self._validar_ni_oficial(objeto)
         if ni != base:
             raise ValueError(
                 f"CNPJ basico divergente: empresa selecionada = {base}; "
