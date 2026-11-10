@@ -166,3 +166,32 @@ def test_protocolo_nao_atualiza_se_valor_diverge(servico, tmp_path):
     doc = servico.listar(EMPRESA, "2026-11")[0]
     assert doc["status_protocolo"] == "SEM_PROTOCOLO"
     assert doc["valor_cbs"] == "9.00"
+
+
+@pytest.mark.parametrize(
+    "mes, ano, esperado",
+    [
+        ("Janeiro", "2026", "2026-01"),
+        ("Outubro", "2026", "2026-10"),
+        ("Dezembro", "2027", "2027-12"),
+    ],
+)
+def test_competencia_por_seletores_mes_ano(mes, ano, esperado):
+    from src.ui.painel_apuracao_assistida_rtc import PainelApuracaoAssistidaRTC
+    assert PainelApuracaoAssistidaRTC._competencia_selecionada(mes, ano) == esperado
+
+
+@pytest.mark.parametrize(
+    "mes, ano",
+    [
+        ("", "2026"),
+        ("Mês desconhecido", "2026"),
+        ("Outubro", ""),
+        ("Outubro", "20x6"),
+        ("Outubro", "1999"),
+    ],
+)
+def test_seletores_rejeitam_competencia_invalida(mes, ano):
+    from src.ui.painel_apuracao_assistida_rtc import PainelApuracaoAssistidaRTC
+    with pytest.raises(ValueError):
+        PainelApuracaoAssistidaRTC._competencia_selecionada(mes, ano)
