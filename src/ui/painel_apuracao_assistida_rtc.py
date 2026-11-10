@@ -92,17 +92,28 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         sy.grid(row=0, column=1, sticky="ns")
         sx.grid(row=1, column=0, sticky="ew")
 
-    def _carregar_empresas(self):
-        selecionada = self.var_empresa.get()
-        self.empresas.clear()
-        for cadastro in EmpresasRegimesService.listar_cadastros():
+    @staticmethod
+    def _opcoes_empresas(cadastros):
+        """Exibe PJs mesmo sem CNPJ; nunca permite importar por um identificador vazio."""
+        opcoes = {}
+        for cadastro in cadastros:
             if str(cadastro.get("tipo_pessoa") or "PJ").upper() == "PF":
                 continue
-            cnpj = "".join(x for x in str(cadastro.get("cnpj") or "") if x.isdigit())
-            if len(cnpj) != 14:
+            if not int(cadastro.get("ativa", 1) or 0):
                 continue
-            rotulo = f"{cadastro['nome']} | {cnpj}"
-            self.empresas[rotulo] = cadastro
+            nome = str(cadastro.get("nome") or "").strip()
+            if not nome:
+                continue
+            cnpj = "".join(x for x in str(cadastro.get("cnpj") or "") if x.isdigit())
+            identificador = cnpj if len(cnpj) == 14 else "CNPJ pendente"
+            rotulo = f"{nome} | {identificador}"
+            opcoes[rotulo] = cadastro
+        return opcoes
+
+    def _carregar_empresas(self):
+        selecionada = self.var_empresa.get()
+        cadastros = EmpresasRegimesService.listar_cadastros()
+        self.empresas = self._opcoes_empresas(cadastros)
         self.combo_empresas.configure(values=tuple(self.empresas))
         if selecionada in self.empresas:
             self.var_empresa.set(selecionada)
@@ -110,13 +121,36 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
             self.var_empresa.set(next(iter(self.empresas)))
         else:
             self.var_empresa.set("")
-            self.var_status.set("Cadastre o CNPJ da empresa na aba Empresas.")
+            self.var_status.set(
+                "Nenhuma pessoa juridica ativa encontrada no Cadastro Central. "
+                "Confira a aba Empresas e clique em Atualizar empresas."
+            )
+            return
+        pendentes = sum(
+            1 for empresa in self.empresas.values()
+            if len("".join(c for c in str(empresa.get("cnpj") or "") if c.isdigit())) != 14
+        )
+        if pendentes:
+            self.var_status.set(
+                f"{pendentes} empresa(s) sem CNPJ. Para importar XMLs, abra a aba Empresas, "
+                "selecione a empresa, clique em Editar e informe o CNPJ. "
+                "Depois retorne aqui e clique em Atualizar empresas."
+            )
+        else:
+            self.var_status.set(f"{len(self.empresas)} empresa(s) carregada(s) do Cadastro Central.")
 
     def _filtros(self):
         empresa = self.empresas.get(self.var_empresa.get())
         if not empresa:
             raise ValueError("Selecione uma empresa valida no Cadastro Central.")
-        cnpj = self.servico.validar_cnpj(str(empresa["cnpj"]))
+        cnpj = "".join(x for x in str(empresa.get("cnpj") or "") if x.isdigit())
+        if len(cnpj) != 14:
+            raise ValueError(
+                "Esta empresa ainda nao tem CNPJ cadastrado. Abra a aba Empresas, "
+                "selecione a empresa, clique em Editar, salve o CNPJ e depois "
+                "clique em Atualizar empresas na aba RTC. "
+                "A importacao foi bloqueada para nao misturar dados de empresas."
+            )
         competencia = self.servico.validar_competencia(self.var_competencia.get())
         return cnpj, competencia
 
