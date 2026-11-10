@@ -46,7 +46,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         ttk.Entry(filtros, textvariable=self.var_competencia, width=10).pack(
             side=LEFT, padx=(6, 8)
         )
-        ttk.Button(filtros, text="Atualizar empresas", command=self._carregar_empresas).pack(
+        ttk.Button(filtros, text="Atualizar empresas", command=self._atualizar_empresas_com_aviso).pack(
             side=LEFT
         )
 
@@ -138,6 +138,46 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
             )
         else:
             self.var_status.set(f"{len(self.empresas)} empresa(s) carregada(s) do Cadastro Central.")
+
+    def _atualizar_empresas_com_aviso(self):
+        """Garante retorno visivel ao clicar em Atualizar empresas."""
+        try:
+            self._carregar_empresas()
+        except Exception as exc:
+            self.var_status.set("Falha ao consultar Cadastro Central.")
+            messagebox.showerror(
+                "RTC | Empresas",
+                "Nao foi possivel ler o Cadastro Central. "
+                f"Detalhes: {exc}",
+                parent=self,
+            )
+            return
+
+        total = len(self.empresas)
+        if not total:
+            messagebox.showwarning(
+                "RTC | Nenhuma empresa localizada",
+                "O FiscalPro desta execucao nao localizou empresas ativas no "
+                "Cadastro Central. Abra a aba Empresas e confira se os cadastros "
+                "aparecem la. Se aparecem no FiscalPro instalado, mas nao nesta "
+                "versao aberta pelo Python, os programas podem estar utilizando "
+                "pastas de dados diferentes. Nao crie cadastros duplicados.",
+                parent=self,
+            )
+            return
+
+        pendentes = sum(
+            1 for cadastro in self.empresas.values()
+            if len("".join(c for c in str(cadastro.get("cnpj") or "") if c.isdigit())) != 14
+        )
+        messagebox.showinfo(
+            "RTC | Empresas atualizadas",
+            f"{total} empresa(s) encontrada(s) no Cadastro Central. "
+            f"{pendentes} com CNPJ pendente.\n\n"
+            "Abra a lista Empresa / CNPJ para selecionar. "
+            "A importacao de XML permanece bloqueada para empresas sem CNPJ.",
+            parent=self,
+        )
 
     def _filtros(self):
         empresa = self.empresas.get(self.var_empresa.get())
