@@ -12,12 +12,31 @@ from src.services.empresas_regimes_service import EmpresasRegimesService
 
 
 class PainelApuracaoAssistidaRTC(ttk.Frame):
+    MESES = (
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+    )
+
+    @classmethod
+    def _competencia_selecionada(cls, mes: str, ano: str) -> str:
+        """Converte os seletores de mes e ano ao formato usado pelo banco."""
+        if mes not in cls.MESES:
+            raise ValueError("Selecione um mês válido.")
+        ano = str(ano or "").strip()
+        if not (len(ano) == 4 and ano.isascii() and ano.isdigit() and 2000 <= int(ano) <= 2100):
+            raise ValueError("Selecione um ano válido.")
+        return ServicoApuracaoLocalRTC.validar_competencia(
+            f"{ano}-{cls.MESES.index(mes) + 1:02d}"
+        )
+
     def __init__(self, master):
         super().__init__(master, style="Page.TFrame")
         self.servico = ServicoApuracaoLocalRTC()
         self.empresas: dict[str, dict] = {}
         self.var_empresa = StringVar()
-        self.var_competencia = StringVar(value=date.today().strftime("%Y-%m"))
+        hoje = date.today()
+        self.var_mes = StringVar(value=self.MESES[hoje.month - 1])
+        self.var_ano = StringVar(value=str(hoje.year))
         self.var_status = StringVar(value="Selecione uma empresa e a competencia.")
         self.var_totais = StringVar(value="Nenhum documento carregado.")
         self._montar()
@@ -42,10 +61,18 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
             filtros, textvariable=self.var_empresa, state="readonly", width=52
         )
         self.combo_empresas.pack(side=LEFT, padx=(6, 14))
-        ttk.Label(filtros, text="Competencia (AAAA-MM)").pack(side=LEFT)
-        ttk.Entry(filtros, textvariable=self.var_competencia, width=10).pack(
-            side=LEFT, padx=(6, 8)
+        ttk.Label(filtros, text="Competência").pack(side=LEFT)
+        self.combo_mes = ttk.Combobox(
+            filtros, textvariable=self.var_mes, state="readonly",
+            values=self.MESES, width=12,
         )
+        self.combo_mes.pack(side=LEFT, padx=(6, 4))
+        self.combo_ano = ttk.Combobox(
+            filtros, textvariable=self.var_ano, state="readonly",
+            values=tuple(str(ano) for ano in range(date.today().year + 5, 2019, -1)),
+            width=7,
+        )
+        self.combo_ano.pack(side=LEFT, padx=(0, 8))
         ttk.Button(filtros, text="Atualizar empresas", command=self._atualizar_empresas_com_aviso).pack(
             side=LEFT
         )
@@ -191,7 +218,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
                 "clique em Atualizar empresas na aba RTC. "
                 "A importacao foi bloqueada para nao misturar dados de empresas."
             )
-        competencia = self.servico.validar_competencia(self.var_competencia.get())
+        competencia = self._competencia_selecionada(self.var_mes.get(), self.var_ano.get())
         return cnpj, competencia
 
     def _importar_arquivos(self):
