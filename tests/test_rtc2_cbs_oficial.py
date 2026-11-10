@@ -1,0 +1,180 @@
+"""RTC 2 - respostas oficiais incrementais e seguranca do cliente CBS."""
+
+import json
+from decimal import Decimal
+
+import pytest
+
+from src.services.cbs_apuracao_oficial_service import ServicoCBSOficial, ResultadoOficial
+from src.services.cbs_apuracao_api_client import ClienteCBSReceita, ErroConsultaCBS
+
+EMPRESA = "12345678000199"
+FILIAL = "12345678000270"
+OUTRA_RAIZ = "99999999000100"
+CHAVE = "31261112345678000199550010000000011000000012"
+
+
+def debito(chave=CHAVE, apurado=9.0, atualizado="2026-11-10T12:00:00Z", saldo=4.0):
+    return {
+        "origem": 0,
+        "documento": 55,
+        "chave": chave,
+        "emissao": "2026-11-10T10:00:00Z",
+        "registro": "2026-11-10T10:01:00Z",
+        "atualizacao": atualizado,
+        "cbs": {
+            "apurado": apurado,
+            "extinto": apurado - saldo,
+            "saldoDevedor": saldo,
+        },
+    }
+
+
+def credito(chave=CHAVE, apurado=9.0, apropriado=5.0):
+    return {
+        "origem": 0,
+        "documento": 55,
+        "chave": chave,
+        "emissao": "2026-11-10T10:00:00Z",
+        "registro": "2026-11-10T10:01:00Z",
+        "atualizacao": "2026-11-10T12:00:00Z",
+        "cbs": {
+            "apurado": apurado,
+            "apropriacao": {
+                "aApropriar": apurado - apropriado,
+                "apropriado": apropriado,
+                "utilizacao": {"naoUtilizado": {"saldoCredor": apropriado}},
+            },
+        },
+    }
+
+
+def payload(tipo, registros, ni="12345678", ticket="abc.001"):
+    return {
+        "tiqueteSolicitacao": ticket,
+        "ni": ni,
+        "niConsumidor": "12345678000199",
+        "geradoEm": "2026-11-10T13:00:00Z",
+        "apuracao": [{"pa": "11/2026", tipo: registros}],
+    }
+
+
+@pytest.fixture
+def servico(tmp_path):
+    return ServicoCBSOficial(tmp_path / "rtc2.sqlite3")
+
+
+def test_debito_importacao_json_documentado(servico):
+    retorno = servico.importar(json.dumps(payload("debitos", [debito()])).encode(), "debitos", EMPRESA)
+    assert retorno.novos == 1
+    assert retorno.periodos == ("2026-11",)
+    assert servico.importar(payload("debitos", [debito()]), "debitos", EMPRESA).duplicado
+    assert len(servico.historico(EMPRESA)) == 1
+
+
+def test_credito_apropriado_nao_confundido_com_potencial(servico):
+    retorno = servico.importar(payload("creditos", [credito()]), "creditos", EMPRESA)
+    assert retorno.novos == 1
+    com_chave = servico.filtrar_conciliacao(
+        [{
+            "direcao": "ENTRADA", "numero_nf": "1", "chave_nfe": CHAVE,
+            "valor_cbs": "9.00",
+        }],
+        [{
+            "origem": 0, "modelo": 55, "chave": CHAVE,
+            "apurado": "9.00", "apropriado": "5.00", "a_apropriar": "4.00",
+            "saldo_devedor": "0.00",
+        }],
+        "creditos",
+    )
+    assert com_chave[0]["status"] == "CONFERE"
+    assert com_chave[0]["apropriado_oficial"] == "5.00"
+    assert com_chave[0]["a_apropriar_oficial"] == "4.00"
+
+
+def test_consulta_por_raiz_rejeita_ni_incorreto(servico):
+    with pytest.raises(ValueError, match="CNPJ basico"):
+        servico.importar(payload("debitos", [debito()], ni="99999999"), "debitos", EMPRESA)
+    assert not servico.historico(EMPRESA)
+
+
+def test_arquivo_oficial_incremental_vazio_nao_prova_falta_de_debito(servico):
+    resultado = servico.importar(
+        {"ni": "12345678", "geradoEm": "2026-11-10T13:00:00Z", "apuracao": []},
+        "debitos", EMPRESA,
+    )
+    assert resultado.novos == 0
+    local = [{"direcao": "SAIDA", "numero_nf": "123", "chave_nfe": CHAVE, "valor_cbs": "9.00"}]
+    linhas = servico.filtrar_conciliacao(local, [], "debitos")
+    assert linhas[0]["status"] == "SEM_DADO_NESTE_RETORNO"
+
+
+def test_versao_atualizada_substitui_saldo_sem_somar_debito(servico):
+    assert servico.importar(payload("debitos", [debito()]), "debitos", EMPRESA).novos == 1
+    revisado = payload("debitos", [debito(atualizado="2026-11-11T11:00:00Z", saldo=2.0)])
+    resultado = servico.importar(revisado, "debitos", EMPRESA)
+    assert resultado.atualizados == 1
+    with servico._conectar() as con:
+        linhas = con.execute(
+            "SELECT saldo_devedor FROM cbs_oficial_registros WHERE cnpj_base='12345678'"
+        ).fetchall()
+    assert [x[0] for x in linhas] == ["2.00"]
+
+
+def test_resposta_antiga_nao_sobrescreve_atualizada(servico):
+    mais_novo = payload("debitos", [debito(atualizado="2026-11-12T12:00:00Z", saldo=2.0)])
+    mais_antigo = payload("debitos", [debito(atualizado="2026-11-10T12:00:00Z", saldo=4.0)])
+    assert servico.importar(mais_novo, "debitos", EMPRESA).novos == 1
+    assert servico.importar(mais_antigo, "debitos", EMPRESA).ignorados_antigos == 1
+
+
+def test_filiares_compartilham_raiz_mas_xml_estritamente_separado(servico):
+    assert servico.cnpj_base(EMPRESA) == servico.cnpj_base(FILIAL)
+    assert servico.cnpj_base(OUTRA_RAIZ) != servico.cnpj_base(EMPRESA)
+
+
+def test_conciliacao_nao_duplicar_registros_oficiais_mesma_chave(servico):
+    local = [{"direcao": "SAIDA", "numero_nf": "1", "chave_nfe": CHAVE, "valor_cbs": "9.00"}]
+    oficial = [
+        {"origem": 0, "modelo": 55, "chave": CHAVE, "apurado": "9.00", "saldo_devedor": "1.00"},
+        {"origem": 0, "modelo": 55, "chave": CHAVE, "apurado": "9.00", "saldo_devedor": "0.00"},
+    ]
+    assert servico.filtrar_conciliacao(local, oficial, "debitos")[0]["status"] == "MULTIPLOS_OFICIAIS_REVISAR"
+
+
+def test_tipo_e_json_invalidos_nao_alteram_banco(servico):
+    with pytest.raises(ValueError):
+        servico.importar(payload("debitos", [debito()]), "creditos", EMPRESA)
+    with pytest.raises(ValueError):
+        servico.importar(b'{"ni":', "debitos", EMPRESA)
+    assert servico.historico(EMPRESA) == []
+
+
+def test_abertura_cliente_usa_cnpj_base_e_sem_webhook(servico):
+    cliente = ClienteCBSReceita("token-de-teste", servico)
+    requisicoes = []
+    cliente._json = lambda metodo, url, corpo=None: (
+        requisicoes.append((metodo, url, corpo)) or
+        {"tiqueteSolicitacao": "abc.001"}
+    )
+    ticket = cliente.solicitar(EMPRESA, "debitos")
+    assert ticket == "abc.001"
+    assert requisicoes == [
+        ("POST", "https://api.receitafederal.gov.br/apuracao-cbs/v2/debitos/12345678", {"urlRetorno": ""})
+    ]
+    assert len(servico.listar_tiquetes(EMPRESA)) == 1
+    with pytest.raises(ErroConsultaCBS, match="pendente"):
+        cliente.solicitar(FILIAL, "debitos")
+
+
+def test_situacao_sem_credencial_em_log(servico):
+    cliente = ClienteCBSReceita("token-teste", servico)
+    servico.registrar_tiquete(EMPRESA, "debitos", "abc.001")
+    cliente._json = lambda *_args, **_kw: {"situacao": "CONCLUIDA"}
+    assert cliente.situacao("abc.001") == "CONCLUIDA"
+    assert servico.listar_tiquetes(EMPRESA)[0]["situacao"] == "CONCLUIDA"
+
+
+def test_token_exige_valor():
+    with pytest.raises(ValueError):
+        ClienteCBSReceita("")
