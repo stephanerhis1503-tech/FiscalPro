@@ -86,10 +86,22 @@ class AutenticadorReceitaIntegra:
                 obj = json.loads(dados)
         except HTTPError as exc:
             # Nao incluir o corpo, headers, URL completa nem a credencial.
-            if exc.code in {400, 401, 403}:
+            if exc.code == 400:
                 raise ErroAutenticacaoReceita(
-                    "Credencial nao aceita (HTTP 400/401/403). Verifique a autorizacao "
-                    "da empresa e os dados copiados do portal."
+                    "HTTP 400 (requisicao recusada). Confira se o Client ID e o "
+                    "Client Secret foram copiados completos da mesma credencial; "
+                    "uma troca de caracteres por leitura de imagem pode causar falha."
+                ) from None
+            if exc.code == 401:
+                raise ErroAutenticacaoReceita(
+                    "HTTP 401 (autenticacao recusada). Confira a validade e os "
+                    "dados da credencial no portal da Receita. Nao envie as chaves "
+                    "em mensagens ou capturas de tela."
+                ) from None
+            if exc.code == 403:
+                raise ErroAutenticacaoReceita(
+                    "HTTP 403 (acesso negado). Verifique no portal se a credencial "
+                    "esta ativa e autorizada a acessar o servico de Apuracao CBS."
                 ) from None
             raise ErroAutenticacaoReceita(
                 f"Receita nao concluiu autenticacao: HTTP {exc.code}."
