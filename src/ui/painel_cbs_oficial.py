@@ -336,7 +336,6 @@ class PainelCBSOficial(ttk.Frame):
             return
         def concluir(situacao):
             self.var_status.set(f"Situacao oficial do tiquete: {situacao}")
-            self.var_token.set("")
         self._executar_online(lambda: cliente.situacao(ticket), concluir)
 
     def _baixar(self):
@@ -348,7 +347,6 @@ class PainelCBSOficial(ttk.Frame):
             messagebox.showerror("CBS", str(exc), parent=self)
             return
         def concluir(resultado):
-            self.var_token.set("")
             self.var_status.set(
                 f"JSON oficial recebido: {resultado.novos} novo(s), "
                 f"{resultado.atualizados} atualizados; retorno duplicado: {resultado.duplicado}."
