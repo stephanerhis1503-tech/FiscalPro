@@ -363,3 +363,47 @@ def test_ni_cnpj_completo_nao_e_convertido_automaticamente(servico):
     with pytest.raises(ValueError, match="14 digitos"):
         servico.importar(resposta, "debitos", EMPRESA)
     assert servico.historico(EMPRESA) == []
+
+
+def test_oauth_http_429_retry_after_indica_espera_e_nao_expõe_chaves():
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from src.services.receita_integra_auth import AutenticadorReceitaIntegra, ErroAutenticacaoReceita
+    class Opener:
+        def __init__(self):
+            self.chamadas = 0
+        def open(self, req, timeout):
+            self.chamadas += 1
+            raise HTTPError(
+                req.full_url, 429, "Too Many Requests",
+                {"Retry-After": "90"}, BytesIO(b"segredo-privado"),
+            )
+    opener = Opener()
+    AutenticadorReceitaIntegra._bloqueado_ate = 0.0
+    try:
+        auth = AutenticadorReceitaIntegra(opener)
+        with pytest.raises(ErroAutenticacaoReceita) as exc:
+            auth.obter_token("id-ficticio", "chave-confidencial")
+        assert exc.value.retry_after_segundos == 90
+        assert "HTTP 429" in str(exc.value)
+        assert "chave-confidencial" not in str(exc.value)
+        assert "segredo-privado" not in str(exc.value)
+        with pytest.raises(ErroAutenticacaoReceita, match="aguarde"):
+            auth.obter_token("id-ficticio", "chave-confidencial")
+        assert opener.chamadas == 1
+    finally:
+        AutenticadorReceitaIntegra._bloqueado_ate = 0.0
+
+
+def test_oauth_http_429_sem_retry_after_nao_inventa_prazo():
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from src.services.receita_integra_auth import AutenticadorReceitaIntegra, ErroAutenticacaoReceita
+    class Opener:
+        def open(self, req, timeout):
+            raise HTTPError(req.full_url, 429, "Too Many Requests", {}, BytesIO(b""))
+    AutenticadorReceitaIntegra._bloqueado_ate = 0.0
+    with pytest.raises(ErroAutenticacaoReceita) as exc:
+        AutenticadorReceitaIntegra(Opener()).obter_token("id", "secret")
+    assert exc.value.retry_after_segundos is None
+    assert "servidor nao informou prazo" in str(exc.value)
