@@ -132,3 +132,37 @@ def test_opcoes_empresas_mostram_cnpj_pendente_sem_liberar_pf():
     assert len(opcoes) == 2
     assert "Mega Motos Trilha | CNPJ pendente" in opcoes
     assert "Mega Mix | 12345678000199" in opcoes
+
+
+def test_complementa_protocolo_sem_duplicar_e_preserva_rastro(servico, tmp_path):
+    import sqlite3
+    arquivo = tmp_path / "nfe.xml"
+    arquivo.write_bytes(xml_nfe(protocolo=False))
+    assert servico.importar([arquivo], EMPRESA, "2026-11").importados == 1
+    arquivo.write_bytes(xml_nfe(protocolo=True))
+    retorno = servico.importar([arquivo], EMPRESA, "2026-11")
+    assert retorno.atualizados == 1
+    assert retorno.importados == 0
+    assert retorno.conflitos == 0
+    docs = servico.listar(EMPRESA, "2026-11")
+    assert len(docs) == 1
+    assert docs[0]["status_protocolo"] == "PROTOCOLO_100_150_XML"
+    assert docs[0]["valor_cbs"] == "9.00"
+    with sqlite3.connect(servico.banco) as con:
+        assert con.execute(
+            "SELECT COUNT(*) FROM rtc_documentos_atualizacoes"
+        ).fetchone()[0] == 1
+    assert servico.importar([arquivo], EMPRESA, "2026-11").duplicados == 1
+
+
+def test_protocolo_nao_atualiza_se_valor_diverge(servico, tmp_path):
+    arquivo = tmp_path / "nfe.xml"
+    arquivo.write_bytes(xml_nfe(protocolo=False))
+    assert servico.importar([arquivo], EMPRESA, "2026-11").importados == 1
+    arquivo.write_bytes(xml_nfe(protocolo=True, cbs="8.00"))
+    retorno = servico.importar([arquivo], EMPRESA, "2026-11")
+    assert retorno.conflitos == 1
+    assert retorno.atualizados == 0
+    doc = servico.listar(EMPRESA, "2026-11")[0]
+    assert doc["status_protocolo"] == "SEM_PROTOCOLO"
+    assert doc["valor_cbs"] == "9.00"
