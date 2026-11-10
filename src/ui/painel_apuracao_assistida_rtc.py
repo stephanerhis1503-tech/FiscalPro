@@ -8,6 +8,7 @@ from tkinter import BOTH, END, LEFT, X, StringVar, ttk
 from tkinter import filedialog, messagebox
 
 from src.services.apuracao_assistida_local_service import ServicoApuracaoLocalRTC
+from src.services.rtc_relatorio_local_excel_service import ServicoRelatorioApuracaoLocalRTC
 from src.services.empresas_regimes_service import EmpresasRegimesService
 
 
@@ -93,6 +94,9 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         ).pack(side=LEFT, padx=(0, 5))
         ttk.Button(
             botoes, text="Consultar base local", command=self._consultar
+        ).pack(side=LEFT, padx=(0, 6))
+        ttk.Button(
+            botoes, text="Exportar apuração local (Excel)", command=self._exportar_excel
         ).pack(side=LEFT)
         ttk.Label(cab, textvariable=self.var_status, wraplength=1020).pack(
             anchor="w", pady=(8, 0)
@@ -277,6 +281,42 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
                 "Importacao RTC 1", texto + "\n\n" + "\n".join(resultado.avisos),
                 parent=self,
             )
+
+    def _exportar_excel(self):
+        """Relatorio de toda a competencia, sem limitar pelo filtro visual."""
+        try:
+            cnpj, competencia = self._filtros()
+        except ValueError as exc:
+            messagebox.showerror("RTC | Exportacao Excel", str(exc), parent=self)
+            return
+        empresa = self.empresas.get(self.var_empresa.get()) or {}
+        destino = filedialog.asksaveasfilename(
+            parent=self,
+            title="Salvar conferencia local IBS/CBS",
+            defaultextension=".xlsx",
+            initialfile=f"FiscalPro_RTC_Local_{cnpj}_{competencia}.xlsx",
+            filetypes=(("Planilha Excel", "*.xlsx"),),
+        )
+        if not destino:
+            return
+        try:
+            arquivo = ServicoRelatorioApuracaoLocalRTC(self.servico).gerar(
+                cnpj, competencia, destino, str(empresa.get("nome") or ""),
+            )
+        except (ValueError, OSError, PermissionError) as exc:
+            messagebox.showerror("RTC | Exportacao Excel", str(exc), parent=self)
+            return
+        self.var_status.set(
+            "Relatorio local exportado. Nao representa apuracao oficial ou credito apropriado."
+        )
+        messagebox.showinfo(
+            "RTC | Exportacao Excel",
+            "Relatorio salvo com as abas Resumo, Entradas, Saidas e Revisar.\n\n"
+            f"Arquivo: {arquivo}\n\n"
+            "Inclui TODAS as notas desta empresa e competencia, "
+            "independentemente do filtro visual selecionado.",
+            parent=self,
+        )
 
     @classmethod
     def _filtrar_documentos(cls, documentos: list[dict], tipo: str, busca: str = "") -> list[dict]:
