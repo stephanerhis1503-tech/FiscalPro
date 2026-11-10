@@ -111,6 +111,10 @@ class PainelCBSOficial(ttk.Frame):
         ttk.Entry(linha_ticket, textvariable=self.var_tiquete, width=40).pack(
             side=LEFT, padx=(0, 6)
         )
+        ttk.Button(
+            linha_ticket, text="Recuperar último tíquete",
+            command=self._recuperar_tiquete,
+        ).pack(side=LEFT, padx=(0, 6))
         linha_botoes = ttk.Frame(api)
         linha_botoes.pack(fill=X, pady=(6, 0))
         self.btn_solicitar = ttk.Button(
@@ -326,6 +330,32 @@ class PainelCBSOficial(ttk.Frame):
             self.var_tiquete.set(ticket)
             self.var_status.set("Solicitacao aceita. Use Verificar tiquete antes do download.")
         self._executar_online(lambda: cliente.solicitar(cnpj, tipo), concluir)
+
+    def _recuperar_tiquete(self):
+        try:
+            cnpj, _, _, tipo = self._filtros()
+            registro = self.servico.recuperar_ultimo_tiquete(cnpj, tipo)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("CBS oficial", str(exc), parent=self)
+            return
+        if registro is None:
+            self.var_status.set(
+                "Nenhuma solicitacao pendente ou concluida foi encontrada "
+                "para esta empresa e este tipo de retorno."
+            )
+            messagebox.showinfo(
+                "CBS oficial", "Nao foi localizado tiquete reutilizavel no banco local. "
+                "Confira a empresa e o tipo de retorno. Nao faca outra consulta "
+                "antes de verificar a origem do registro.",
+                parent=self,
+            )
+            return
+        self.var_tiquete.set(registro["ticket"])
+        self.var_status.set(
+            "Tiquete recuperado do banco local. "
+            f"Situacao registrada: {registro['situacao']}. "
+            "Use Verificar tiquete para confirmar a situacao atual na Receita."
+        )
 
     def _situacao(self):
         try:
