@@ -265,6 +265,12 @@ class PainelCBSOficial(ttk.Frame):
         if self._em_rede:
             messagebox.showwarning("CBS", "Ja existe uma requisicao em andamento.", parent=self)
             return
+        if self._access_token and monotonic() < self._token_valido_ate:
+            self.var_status.set(
+                "Token de acesso ainda valido nesta sessao. Nao e necessario "
+                "autenticar novamente. Utilize o tiquete ja salvo."
+            )
+            return
         client_id = self.var_client_id.get()
         client_secret = self.var_client_secret.get()
         # Secrets sao retirados dos campos antes do envio. Nada e persistido.
