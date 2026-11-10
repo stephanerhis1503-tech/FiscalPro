@@ -65,9 +65,9 @@ def test_exporta_4_abas_com_creditos_apenas_potenciais(tmp_path):
     assert resumo["B11"].value == 1
     assert resumo["B13"].value == pytest.approx(0.13)
     assert resumo["B14"].value == pytest.approx(1.17)
-    assert resumo["B16"].value == pytest.approx(100)
-    assert resumo["B17"].value == pytest.approx(0.20)
-    assert resumo["B18"].value == pytest.approx(1.80)
+    assert resumo["B15"].value == pytest.approx(100)
+    assert resumo["B16"].value == pytest.approx(0.20)
+    assert resumo["B17"].value == pytest.approx(1.80)
     assert "NAO OFICIAL" in resumo["A3"].value
     assert "NAO representa" not in resumo["A1"].value
     assert wb["Entradas"]["D7"].value == "2" * 44
@@ -85,7 +85,7 @@ def test_protege_de_formula_em_campos_texto(tmp_path):
     ServicoRelatorioApuracaoLocalRTC(FalsoServico([documento])).gerar(
         EMPRESA, "2026-10", destino, "Mega"
     )
-    aba = load_workbook(destino).get_sheet_by_name("Entradas")
+    aba = load_workbook(destino)["Entradas"]
     assert aba["N7"].data_type != "f"
     assert aba["M7"].data_type != "f"
 
