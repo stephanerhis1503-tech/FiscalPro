@@ -217,7 +217,8 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
             return
         texto = (
             f"{resultado.lidos} lidos | {resultado.importados} novos | "
-            f"{resultado.duplicados} duplicados | {resultado.conflitos} conflitos | "
+            f"{resultado.duplicados} duplicados | {resultado.atualizados} complementados | "
+            f"{resultado.conflitos} conflitos | "
             f"{resultado.ignorados} ignorados."
         )
         self.var_status.set(texto)
