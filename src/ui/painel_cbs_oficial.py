@@ -88,6 +88,9 @@ class PainelCBSOficial(ttk.Frame):
         ).pack(side=LEFT, padx=(0, 6))
         ttk.Button(
             acoes, text="Ver competências oficiais", command=self._ver_competencias
+        ).pack(side=LEFT, padx=(0, 6))
+        ttk.Button(
+            acoes, text="Ver documentos oficiais", command=self._ver_documentos_oficiais
         ).pack(side=LEFT)
         ttk.Label(filtros, textvariable=self.var_status, wraplength=1050).pack(
             anchor="w", pady=(8, 2)
@@ -274,6 +277,76 @@ class PainelCBSOficial(ttk.Frame):
             + "\n\nAs contagens nao comprovam que o mes esteja completo.",
             parent=self,
         )
+
+    def _ver_documentos_oficiais(self):
+        """Exibe dados ja importados da Receita mesmo sem XML local equivalente."""
+        try:
+            cnpj, raiz, competencia, tipo = self._filtros()
+            registros = self.servico.listar_registros_oficiais(
+                cnpj, competencia, tipo,
+            )
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("CBS | Documentos oficiais", str(exc), parent=self)
+            return
+        if not registros:
+            messagebox.showinfo(
+                "CBS | Documentos oficiais",
+                f"Nenhum registro oficial armazenado para {competencia}, "
+                f"tipo {tipo}, raiz {raiz}. Isso nao prova ausencia de dados "
+                "na Receita: as consultas sao incrementais.",
+                parent=self,
+            )
+            return
+        janela = self.winfo_toplevel()
+        popup = __import__("tkinter").Toplevel(janela)
+        popup.title(f"CBS oficial | {competencia} | {tipo} | raiz {raiz}")
+        popup.geometry("1140x540")
+        popup.minsize(780, 320)
+        caixa = ttk.Frame(popup, padding=10)
+        caixa.pack(fill=BOTH, expand=True)
+        ttk.Label(
+            caixa,
+            text=(
+                f"{len(registros)} registro(s) oficiais armazenados para "
+                f"{competencia}. Limite de 5.000 por visualizacao. "
+                "A consulta e por raiz CNPJ; dados podem incluir filiais. "
+                "Retorno incremental, NAO apuracao mensal completa."
+            ),
+            wraplength=1100,
+        ).pack(anchor="w", pady=(0, 8))
+        grade_frame = ttk.Frame(caixa)
+        grade_frame.pack(fill=BOTH, expand=True)
+        colunas = (
+            "chave", "origem", "modelo", "emissao", "cbs",
+            "extinto", "saldo", "apropriado", "a_apropriar",
+        )
+        titulos = (
+            "Chave do documento", "Origem", "Modelo", "Emissao",
+            "CBS apurada", "CBS extinta", "Saldo devedor",
+            "Credito apropriado", "A apropriar",
+        )
+        grade = ttk.Treeview(
+            grade_frame, columns=colunas, show="headings", selectmode="browse",
+        )
+        for coluna, titulo in zip(colunas, titulos):
+            grade.heading(coluna, text=titulo)
+            grade.column(coluna, width=335 if coluna == "chave" else 132, anchor="w")
+        for item in registros:
+            grade.insert(
+                "", END, values=(
+                    item["chave"], item["origem"], item["modelo"],
+                    item["emissao"], item["apurado"], item["extinto"],
+                    item["saldo_devedor"], item["apropriado"], item["a_apropriar"],
+                ),
+            )
+        sb_v = ttk.Scrollbar(grade_frame, orient="vertical", command=grade.yview)
+        sb_h = ttk.Scrollbar(grade_frame, orient="horizontal", command=grade.xview)
+        grade.configure(yscrollcommand=sb_v.set, xscrollcommand=sb_h.set)
+        grade_frame.rowconfigure(0, weight=1)
+        grade_frame.columnconfigure(0, weight=1)
+        grade.grid(row=0, column=0, sticky="nsew")
+        sb_v.grid(row=0, column=1, sticky="ns")
+        sb_h.grid(row=1, column=0, sticky="ew")
 
     def _historico(self):
         try:
