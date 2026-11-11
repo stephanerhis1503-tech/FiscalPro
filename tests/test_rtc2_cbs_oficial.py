@@ -357,10 +357,30 @@ def test_ni_numerico_diferente_nao_mistura_empresas(servico):
     assert servico.historico(EMPRESA) == []
 
 
-def test_ni_cnpj_completo_nao_e_convertido_automaticamente(servico):
+def test_ni_cnpj_completo_mesma_raiz_e_aceito(servico):
     resposta = payload("debitos", [debito()])
     resposta["ni"] = "12345678000199"
-    with pytest.raises(ValueError, match="14 digitos"):
+    assert servico.importar(resposta, "debitos", EMPRESA).novos == 1
+
+
+def test_ni_cnpj_filial_da_mesma_raiz_e_aceito(servico):
+    resposta = payload("debitos", [debito()])
+    resposta["ni"] = "12345678000270"
+    assert servico.importar(resposta, "debitos", EMPRESA).novos == 1
+
+
+def test_ni_cnpj_completo_outra_raiz_e_rejeitado(servico):
+    resposta = payload("debitos", [debito()])
+    resposta["ni"] = "99999999000100"
+    with pytest.raises(ValueError, match="CNPJ basico divergente"):
+        servico.importar(resposta, "debitos", EMPRESA)
+    assert servico.historico(EMPRESA) == []
+
+
+def test_ni_com_14_digitos_malformados_e_rejeitado(servico):
+    resposta = payload("debitos", [debito()])
+    resposta["ni"] = "12345678AB0199"
+    with pytest.raises(ValueError, match="Campo ni"):
         servico.importar(resposta, "debitos", EMPRESA)
     assert servico.historico(EMPRESA) == []
 
