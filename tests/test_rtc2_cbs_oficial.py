@@ -427,3 +427,25 @@ def test_oauth_http_429_sem_retry_after_nao_inventa_prazo():
         AutenticadorReceitaIntegra(Opener()).obter_token("id", "secret")
     assert exc.value.retry_after_segundos is None
     assert "servidor nao informou prazo" in str(exc.value)
+
+
+def test_resumo_competencias_oficiais_sem_chamadas_externas(servico):
+    oficial = payload("debitos", [debito()])
+    assert servico.importar(oficial, "debitos", EMPRESA).novos == 1
+    dados = servico.resumo_competencias(EMPRESA, "debitos")
+    assert dados == [{
+        "competencia": "2026-11",
+        "registros": 1,
+        "candidatos_xml": 1,
+    }]
+    assert servico.resumo_competencias(EMPRESA, "creditos") == []
+
+
+def test_resumo_competencias_nao_conta_origens_sem_chave_comparavel(servico):
+    oficial = payload("debitos", [debito()])
+    oficial["apuracao"][0]["debitos"][0]["origem"] = 8
+    oficial["apuracao"][0]["debitos"][0]["documento"] = 99
+    assert servico.importar(oficial, "debitos", EMPRESA).novos == 1
+    dados = servico.resumo_competencias(EMPRESA, "debitos")
+    assert dados[0]["registros"] == 1
+    assert dados[0]["candidatos_xml"] == 0
