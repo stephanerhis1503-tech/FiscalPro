@@ -5,6 +5,8 @@ from tkinter import ttk
 
 from .painel_manifestacao_nfe import PainelManifestacaoNFe
 from .painel_ibscbs_xml import PainelIBSCBSXML
+from .painel_apuracao_assistida_rtc import PainelApuracaoAssistidaRTC
+from .painel_cbs_oficial import PainelCBSOficial
 from .painel_nfse_nacional import PainelNFSeNacional
 
 
@@ -20,6 +22,10 @@ class PainelDocumentosFiscais(ttk.Frame):
         notebook.add(aba_nfse, text="  NFS-e Nacional  ")
         notebook.add(aba_nfe, text="  NF-e • Manifestação  ")
         notebook.add(aba_ibscbs, text="  IBS/CBS • XML  ")
+        aba_rtc = ttk.Frame(notebook, style="Page.TFrame")
+        notebook.add(aba_rtc, text="  RTC • Apuracao local  ")
+        aba_cbs_oficial = ttk.Frame(notebook, style="Page.TFrame")
+        notebook.add(aba_cbs_oficial, text="  CBS • Oficial (RTC 2)  ")
 
         # A classe original permanece intacta: apenas é hospedada nesta central.
         self.painel_nfse = PainelNFSeNacional(aba_nfse)
@@ -30,3 +36,9 @@ class PainelDocumentosFiscais(ttk.Frame):
 
         self.painel_ibscbs = PainelIBSCBSXML(aba_ibscbs)
         self.painel_ibscbs.pack(fill=BOTH, expand=True)
+
+        self.painel_rtc = PainelApuracaoAssistidaRTC(aba_rtc)
+        self.painel_rtc.pack(fill=BOTH, expand=True)
+
+        self.painel_cbs_oficial = PainelCBSOficial(aba_cbs_oficial)
+        self.painel_cbs_oficial.pack(fill=BOTH, expand=True)
