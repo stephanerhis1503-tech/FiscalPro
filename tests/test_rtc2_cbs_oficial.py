@@ -449,3 +449,24 @@ def test_resumo_competencias_nao_conta_origens_sem_chave_comparavel(servico):
     dados = servico.resumo_competencias(EMPRESA, "debitos")
     assert dados[0]["registros"] == 1
     assert dados[0]["candidatos_xml"] == 0
+
+
+def test_visualiza_documentos_oficiais_sem_xml_local(servico):
+    retorno = payload("debitos", [debito()])
+    assert servico.importar(retorno, "debitos", EMPRESA).novos == 1
+    lista = servico.listar_registros_oficiais(EMPRESA, "2026-11", "debitos")
+    assert len(lista) == 1
+    assert lista[0]["chave"] == CHAVE
+    assert lista[0]["apurado"] == "9.00"
+    assert lista[0]["saldo_devedor"] == "4.00"
+    assert servico.listar_registros_oficiais(EMPRESA, "2026-10", "debitos") == []
+    assert servico.listar_registros_oficiais(EMPRESA, "2026-11", "creditos") == []
+
+
+def test_lista_oficial_isola_outras_raizes_e_exige_tipo_valido(servico):
+    assert servico.importar(payload("debitos", [debito()]), "debitos", EMPRESA).novos == 1
+    assert servico.listar_registros_oficiais(OUTRA_RAIZ, "2026-11", "debitos") == []
+    with pytest.raises(ValueError, match="Tipo"):
+        servico.listar_registros_oficiais(EMPRESA, "2026-11", "desconhecido")
+    with pytest.raises(ValueError, match="Limite"):
+        servico.listar_registros_oficiais(EMPRESA, "2026-11", "debitos", limite=10000)
