@@ -274,7 +274,7 @@ def test_retorno_tiquete_diferente_bloqueia_antes_de_importar(servico):
 
 def test_retorno_sem_ni_valido_bloqueia_importacao(servico):
     resposta = payload("debitos", [debito()])
-    resposta["ni"] = "12345678000199"
+    resposta["ni"] = "1234567800019X"
     with pytest.raises(ValueError, match="Campo ni"):
         servico.importar(resposta, "debitos", EMPRESA)
     assert servico.historico(EMPRESA) == []
