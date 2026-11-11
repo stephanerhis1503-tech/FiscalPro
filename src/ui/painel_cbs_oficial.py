@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, X, StringVar, ttk, Entry
+from tkinter import BOTH, END, LEFT, X, StringVar, Toplevel, ttk, Entry
 from tkinter import filedialog, messagebox
 import threading
 from time import monotonic
@@ -298,7 +298,7 @@ class PainelCBSOficial(ttk.Frame):
             )
             return
         janela = self.winfo_toplevel()
-        popup = __import__("tkinter").Toplevel(janela)
+        popup = Toplevel(janela)
         popup.title(f"CBS oficial | {competencia} | {tipo} | raiz {raiz}")
         popup.geometry("1140x540")
         popup.minsize(780, 320)
