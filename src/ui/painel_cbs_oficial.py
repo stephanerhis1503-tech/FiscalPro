@@ -85,6 +85,9 @@ class PainelCBSOficial(ttk.Frame):
         ).pack(side=LEFT, padx=(0, 6))
         ttk.Button(
             acoes, text="Histórico dos retornos", command=self._historico
+        ).pack(side=LEFT, padx=(0, 6))
+        ttk.Button(
+            acoes, text="Ver competências oficiais", command=self._ver_competencias
         ).pack(side=LEFT)
         ttk.Label(filtros, textvariable=self.var_status, wraplength=1050).pack(
             anchor="w", pady=(8, 2)
@@ -231,10 +234,45 @@ class PainelCBSOficial(ttk.Frame):
                 doc["a_apropriar_oficial"], doc["status"], doc["chave"],
             ))
         contagem = ", ".join(f"{k}: {v}" for k, v in estatisticas.items())
+        periodos = self.servico.resumo_competencias(cnpj, tipo)
+        atual = next((p for p in periodos if p["competencia"] == comp), None)
+        num_oficiais = atual["registros"] if atual else 0
+        num_comparaveis = atual["candidatos_xml"] if atual else 0
         self.var_aviso.set(
-            f"{len(resultado)} XML(s) da operacao selecionada. "
+            f"{len(resultado)} XML(s) da operacao selecionada; "
+            f"{num_oficiais} registro(s) oficiais armazenados em {comp} "
+            f"({num_comparaveis} potencialmente comparaveis por chave). "
             f"{contagem}. A consulta por raiz {base} devolve atualizacoes "
             "incrementais; notas ausentes NAO significam que a Receita as desconhece."
+        )
+
+    def _ver_competencias(self):
+        """Mostra a distribuicao dos dados ja importados, sem consulta online."""
+        try:
+            cnpj, _, _, tipo = self._filtros()
+            periodos = self.servico.resumo_competencias(cnpj, tipo)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("CBS | Competencias", str(exc), parent=self)
+            return
+        if not periodos:
+            messagebox.showinfo(
+                "CBS | Competencias",
+                "Ainda nao existem registros oficiais armazenados para esse "
+                "tipo de retorno e essa raiz de CNPJ.",
+                parent=self,
+            )
+            return
+        linhas = [
+            f"{p['competencia']}: {p['registros']} registro(s), "
+            f"{p['candidatos_xml']} candidato(s) a confronto por chave"
+            for p in periodos
+        ]
+        messagebox.showinfo(
+            "CBS | Competencias dos registros oficiais",
+            "Distribuicao dos retornos incrementais ja importados:\n\n"
+            + "\n".join(linhas)
+            + "\n\nAs contagens nao comprovam que o mes esteja completo.",
+            parent=self,
         )
 
     def _historico(self):
