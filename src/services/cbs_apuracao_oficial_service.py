@@ -505,6 +505,36 @@ class ServicoCBSOficial:
             ]
         return self.filtrar_conciliacao(local, oficial, tipo)
 
+    def listar_registros_oficiais(
+        self, cnpj_completo: str, competencia: str, tipo: str, limite: int = 5000
+    ) -> list[dict]:
+        """Lista apenas dados oficiais JA SALVOS, sem acessar a Receita.
+
+        A consulta oficial e por RAIZ do CNPJ; nao se conclui daqui o
+        estabelecimento responsavel sem conferir a chave e os dados fiscais.
+        Retornos da API sao incrementais e nao garantem cobertura completa.
+        """
+        if tipo not in TIPOS:
+            raise ValueError("Tipo de retorno invalido.")
+        comp = ServicoApuracaoLocalRTC.validar_competencia(competencia)
+        base = self.cnpj_base(cnpj_completo)
+        if type(limite) is not int or not 1 <= limite <= 5000:
+            raise ValueError("Limite de exibicao invalido.")
+        with closing(self._conectar()) as con:
+            itens = con.execute(
+                """
+                SELECT competencia, tipo, origem, modelo, chave, emissao,
+                       registro, atualizado_em, apurado, saldo_devedor,
+                       extinto, apropriado, a_apropriar
+                FROM cbs_oficial_registros
+                WHERE cnpj_base = ? AND competencia = ? AND tipo = ?
+                ORDER BY emissao, chave, id
+                LIMIT ?
+                """,
+                (base, comp, tipo, limite),
+            ).fetchall()
+        return [dict(item) for item in itens]
+
     def resumo_competencias(self, cnpj_completo: str, tipo: str) -> list[dict]:
         """Contagem por periodo na BASE OFICIAL ja importada; sem chamada de API.
 
