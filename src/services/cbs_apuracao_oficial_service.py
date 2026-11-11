@@ -505,6 +505,37 @@ class ServicoCBSOficial:
             ]
         return self.filtrar_conciliacao(local, oficial, tipo)
 
+    def resumo_competencias(self, cnpj_completo: str, tipo: str) -> list[dict]:
+        """Contagem por periodo na BASE OFICIAL ja importada; sem chamada de API.
+
+        A contagem considera os registros incrementais guardados no banco,
+        nao equivale a uma cobertura completa da apuracao daquela competencia.
+        """
+        if tipo not in TIPOS:
+            raise ValueError("Tipo oficial invalido.")
+        raiz = self.cnpj_base(cnpj_completo)
+        with closing(self._conectar()) as con:
+            linhas = con.execute(
+                """
+                SELECT competencia, COUNT(*) AS registros,
+                    SUM(CASE WHEN origem=0 AND modelo IN (55, 65)
+                         AND length(chave)=44 THEN 1 ELSE 0 END) AS candidatos_xml
+                FROM cbs_oficial_registros
+                WHERE cnpj_base=? AND tipo=?
+                GROUP BY competencia
+                ORDER BY competencia DESC
+                """,
+                (raiz, tipo),
+            ).fetchall()
+        return [
+            {
+                "competencia": linha["competencia"],
+                "registros": int(linha["registros"]),
+                "candidatos_xml": int(linha["candidatos_xml"] or 0),
+            }
+            for linha in linhas
+        ]
+
     def historico(self, cnpj_completo: str, tipo: str | None = None):
         base = self.cnpj_base(cnpj_completo)
         with closing(self._conectar()) as con:
