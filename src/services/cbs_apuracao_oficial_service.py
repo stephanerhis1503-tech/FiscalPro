@@ -255,14 +255,19 @@ class ServicoCBSOficial:
     def _validar_ni_oficial(objeto: dict) -> str:
         """Valida NI sem inferi-lo de niConsumidor ou de outros campos.
 
-        O contrato da Receita especifica string(8). Alguns serializadores
-        podem devolver JSON number para NI: aceita apenas int de 0 a 99999999,
-        normalizado a 8 digitos, sempre sujeito a comparacao exata com a raiz.
-        Na divergencia, descreve so estrutura do arquivo, nao seu conteudo.
+        A documentacao oficial descreve NI base em 8 digitos, mas o retorno
+        real da API CBS v2 tambem pode trazer CNPJ completo em 14 digitos.
+        Nessa variacao, usa-se SOMENTE a raiz de ni, e ela e comparada com a
+        raiz consultada antes de qualquer importacao. Nao utilizar niConsumidor,
+        pois identifica o titular das credenciais (eventual procurador).
+        Um numero JSON de ate 8 digitos pode representar uma raiz com zeros.
         """
         ni = objeto.get("ni")
-        if isinstance(ni, str) and re.fullmatch(r"[0-9]{8}", ni):
-            return ni
+        if isinstance(ni, str):
+            if re.fullmatch(r"[0-9]{8}", ni):
+                return ni
+            if re.fullmatch(r"[0-9]{14}", ni):
+                return ni[:8]
         if type(ni) is int and 0 <= ni <= 99999999:
             return f"{ni:08d}"
 
@@ -354,8 +359,9 @@ class ServicoCBSOficial:
                     "O tiquete do JSON oficial nao corresponde a consulta concluida. "
                     "Nenhum dado foi importado."
                 )
-        # Campo 'ni' representa a RAIZ da empresa consultada (8 digitos).
-        # 'niConsumidor' e a pessoa/empresa detentora da credencial e pode ser diferente.
+        # O retorno em ni pode ser raiz (8) ou CNPJ completo (14);
+        # normalizamos sempre para a raiz antes da comparacao com a consulta.
+        # niConsumidor indica a pessoa/empresa que acessou a API (pode diferir).
         ni = self._validar_ni_oficial(objeto)
         if ni != base:
             raise ValueError(
