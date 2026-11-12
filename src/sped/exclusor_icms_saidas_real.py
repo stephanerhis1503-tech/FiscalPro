@@ -207,7 +207,7 @@ class ExclusorICMSSaidasLucroReal:
                     f"SPED Fiscal: chave duplicada {chave[-12:]}."
                 )
                 continue
-            icms = _num(["", str(fd.get("icms_c100") or "")], 1)
+            icms = fd.get("icms_c100")
             # Campo total do C100 pode vir vazio. Usa apenas C190/C170 como
             # evidencia da existencia de ICMS tributavel sem correspondencia.
             if icms is None or icms == ZERO:
