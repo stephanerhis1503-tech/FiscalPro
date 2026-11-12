@@ -1,15 +1,17 @@
-name: ICMS saidas Lucro Presumido regression
+name: ICMS saidas Real e Presumido regression
 
 on:
   pull_request:
     paths:
       - "src/sped/exclusor_icms_saidas_presumido.py"
+      - "src/sped/exclusor_icms_saidas_real.py"
       - "src/ui/janela_sped_inteligente.py"
       - "tests/test_icms_saidas_lucro_presumido_20261112.py"
+      - "tests/test_icms_saidas_lucro_real_20261112.py"
       - ".github/workflows/icms-saidas-presumido.yml"
 
 jobs:
-  icms-presumido:
+  icms-saidas:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -22,6 +24,6 @@ jobs:
       - name: Dependencies
         run: python -m pip install --upgrade pip pytest openpyxl
       - name: Syntax
-        run: python -m py_compile src/sped/exclusor_icms_saidas_presumido.py src/ui/janela_sped_inteligente.py
+        run: python -m py_compile src/sped/exclusor_icms_saidas_presumido.py src/sped/exclusor_icms_saidas_real.py src/ui/janela_sped_inteligente.py
       - name: Regressions
-        run: python -m pytest -q tests/test_icms_saidas_lucro_presumido_20261112.py
+        run: python -m pytest -q tests/test_icms_saidas_lucro_presumido_20261112.py tests/test_icms_saidas_lucro_real_20261112.py
