@@ -6,6 +6,8 @@ from pathlib import Path
 from tkinter import BOTH, END, LEFT, RIGHT, X, Y, Frame, Label, StringVar, Text, Toplevel, filedialog, messagebox, simpledialog, ttk
 
 from src.sped import MotorSPED
+from src.sped.exclusor_icms_saidas_presumido import ExclusorICMSSaidasLucroPresumido
+from src.sped.exclusor_icms_saidas_real import ExclusorICMSSaidasLucroReal
 from src.services.cte_sped_sem_credito_service import process as processar_cte_sem_credito
 from .estilos import COR_CARD, COR_FUNDO, COR_PRIMARIA, COR_TEXTO, FONTE_NORMAL, FONTE_TITULO
 from .layout_responsivo import dimensionar_janela, vincular_wraplength
@@ -303,6 +305,42 @@ class JanelaSPEDInteligente(Toplevel):
         )
         self.lbl_icms_piscofins.grid(
             row=2, column=3, columnspan=5, sticky="ew", padx=(8, 0), pady=(6, 0)
+        )
+        ttk.Label(aba_comandos_excel, text="Saídas LP", font=("Segoe UI", 8, "bold")).grid(
+            row=3, column=0, sticky="w", pady=(6, 0)
+        )
+        self.btn_icms_saidas_presumido = ttk.Button(
+            aba_comandos_excel, text="🧾 Excluir ICMS das saídas — Presumido",
+            command=self.excluir_icms_saidas_presumido, state="disabled",
+        )
+        self.btn_icms_saidas_presumido.grid(
+            row=3, column=1, columnspan=3, sticky="ew", padx=(7, 0), pady=(6, 0)
+        )
+        self.lbl_icms_saidas_presumido = Label(
+            aba_comandos_excel,
+            text="Lucro Presumido: cruza o Fiscal por estabelecimento; F500 e divergências ficam em REVISAR.",
+            bg=COR_FUNDO, fg=COR_TEXTO, font=("Segoe UI", 8), anchor="w", justify="left",
+        )
+        self.lbl_icms_saidas_presumido.grid(
+            row=3, column=4, columnspan=4, sticky="ew", padx=(8, 0), pady=(6, 0)
+        )
+        ttk.Label(aba_comandos_excel, text="Saídas LR", font=("Segoe UI", 8, "bold")).grid(
+            row=4, column=0, sticky="w", pady=(6, 0)
+        )
+        self.btn_icms_saidas_real = ttk.Button(
+            aba_comandos_excel, text="🧾 Excluir ICMS das saídas — Lucro Real",
+            command=self.excluir_icms_saidas_real, state="disabled",
+        )
+        self.btn_icms_saidas_real.grid(
+            row=4, column=1, columnspan=3, sticky="ew", padx=(7, 0), pady=(6, 0)
+        )
+        self.lbl_icms_saidas_real = Label(
+            aba_comandos_excel,
+            text="Lucro Real: CST 01, ICMS próprio das vendas; créditos das entradas preservados.",
+            bg=COR_FUNDO, fg=COR_TEXTO, font=("Segoe UI", 8), anchor="w", justify="left",
+        )
+        self.lbl_icms_saidas_real.grid(
+            row=4, column=4, columnspan=4, sticky="ew", padx=(8, 0), pady=(6, 0)
         )
         for coluna in range(1, 8):
             aba_comandos_excel.grid_columnconfigure(coluna, weight=1)
@@ -1349,6 +1387,12 @@ class JanelaSPEDInteligente(Toplevel):
             self.btn_excluir_icms_piscofins.configure(
                 state="normal" if eh_contribuicoes else "disabled"
             )
+            self.btn_icms_saidas_presumido.configure(
+                state="normal" if eh_contribuicoes else "disabled"
+            )
+            self.btn_icms_saidas_real.configure(
+                state="normal" if eh_contribuicoes else "disabled"
+            )
             self.lbl_icms_piscofins.config(
                 text=(
                     "Selecione o SPED Fiscal corrigido para excluir o ICMS próprio das bases de crédito."
@@ -1369,6 +1413,147 @@ class JanelaSPEDInteligente(Toplevel):
         except Exception as erro:
             messagebox.showerror("FiscalPro", str(erro), parent=self)
             self.lbl_status.config(text="Falha ao carregar o arquivo.")
+
+    def excluir_icms_saidas_real(self):
+        """Exclusao do ICMS proprio das SAIDAS, exclusivamente nao cumulativa."""
+        if self.resultado is None or self.resultado.estatisticas.tipo_sped != "EFD Contribuições":
+            messagebox.showwarning(
+                "FiscalPro", "Abra a EFD Contribuições do Lucro Real.", parent=self
+            )
+            return
+        fiscal = filedialog.askopenfilename(
+            title="Selecione o SPED Fiscal das SAÍDAS (mesma competência)",
+            filetypes=[("Arquivo SPED Fiscal", "*.txt"), ("Todos os arquivos", "*.*")],
+            parent=self,
+        )
+        if not fiscal:
+            return
+        try:
+            motor = ExclusorICMSSaidasLucroReal()
+            analise = motor.analisar(
+                self.resultado.linhas,
+                self.resultado.estatisticas.tipo_sped,
+                fiscal,
+            )
+            self.lbl_icms_saidas_real.configure(
+                text=f"ICMS: {self._fmt_moeda(analise.icms)} | "
+                     f"REVISAR: {len(analise.revisar)} | "
+                     f"Ajustes: {len(analise.ajustes)}"
+            )
+            if analise.revisar or analise.ja_excluidos or not analise.ajustes:
+                caminho_relatorio = filedialog.asksaveasfilename(
+                    title="Salvar memória da auditoria do Lucro Real",
+                    defaultextension=".txt",
+                    initialfile="FiscalPro_ICMS_Saidas_Real_REVISAR.txt",
+                    filetypes=[("Relatório TXT", "*.txt")],
+                    parent=self,
+                )
+                if caminho_relatorio:
+                    motor.salvar_relatorio(analise, caminho_relatorio)
+                if not analise.pode_gerar:
+                    messagebox.showwarning(
+                        "FiscalPro — Saídas Lucro Real",
+                        "Auditoria concluída, mas há pendências ou nenhuma "
+                        "alteração segura. Nenhum SPED foi alterado.\\n\\n"
+                        + analise.resumo(),
+                        parent=self,
+                    )
+                    return
+            if not messagebox.askyesno(
+                "FiscalPro — Saídas Lucro Real",
+                "Confirme os valores antes de gerar uma CÓPIA para validar no PGE:\\n\\n"
+                + analise.resumo() + "\\n\\nDeseja gerar?",
+                parent=self,
+            ):
+                return
+            destino = filedialog.asksaveasfilename(
+                title="Salvar cópia da EFD Contribuições — Lucro Real",
+                defaultextension=".txt",
+                initialfile=self.resultado.caminho.stem + "_SAIDAS_ICMS_FORA_LR.txt",
+                filetypes=[("SPED TXT", "*.txt")],
+                parent=self,
+            )
+            if not destino:
+                return
+            gerado = motor.gerar(
+                self.resultado.linhas, self.resultado.encoding,
+                self.resultado.estatisticas.tipo_sped, analise, destino,
+            )
+            messagebox.showinfo(
+                "FiscalPro — Saídas Lucro Real",
+                f"Cópia gerada: {gerado.caminho_sped}\\n"
+                f"Memória: {gerado.caminho_relatorio}\\n\\n"
+                "Valide no PGE e confira a apuração antes de transmitir.",
+                parent=self,
+            )
+        except Exception as erro:
+            messagebox.showerror(
+                "FiscalPro — Saídas Lucro Real", str(erro), parent=self
+            )
+
+    def excluir_icms_saidas_presumido(self):
+        """Nova rota independente; preserva o motor de CREDITOS do Lucro Real."""
+        if self.resultado is None or self.resultado.estatisticas.tipo_sped != "EFD Contribuições":
+            messagebox.showwarning("FiscalPro", "Abra a EFD Contribuições do Lucro Presumido.", parent=self)
+            return
+        fiscal = filedialog.askopenfilename(
+            title="Selecione o SPED Fiscal das SAÍDAS (mesma competência)",
+            filetypes=[("Arquivo SPED Fiscal", "*.txt"), ("Todos os arquivos", "*.*")],
+            parent=self,
+        )
+        if not fiscal:
+            return
+        try:
+            motor = ExclusorICMSSaidasLucroPresumido()
+            analise = motor.analisar(self.resultado.linhas,
+                                    self.resultado.estatisticas.tipo_sped, fiscal)
+            self.lbl_icms_saidas_presumido.configure(
+                text=f"ICMS: {self._fmt_moeda(analise.icms)} | "
+                     f"REVISAR: {len(analise.revisar)} | "
+                     f"Ajustes: {len(analise.ajustes)}"
+            )
+            if analise.revisar or analise.ja_excluidos or not analise.ajustes:
+                caminho_relatorio = filedialog.asksaveasfilename(
+                    title="Salvar a memória de auditoria (sem modificar o SPED)",
+                    defaultextension=".txt", initialfile="FiscalPro_ICMS_Saidas_REVISAR.txt",
+                    filetypes=[("Relatório TXT", "*.txt")], parent=self,
+                )
+                if caminho_relatorio:
+                    motor.salvar_relatorio(analise, caminho_relatorio)
+                if not analise.pode_gerar:
+                    messagebox.showwarning(
+                        "FiscalPro — Saídas Lucro Presumido",
+                        "Auditoria concluída, mas existem pendências ou nenhuma alteração segura. "
+                        "Nenhum SPED foi alterado.\\n\\n" + analise.resumo(),
+                        parent=self,
+                    )
+                    return
+            if not messagebox.askyesno(
+                "FiscalPro — Saídas Lucro Presumido",
+                "Confirme os valores e gere apenas uma CÓPIA para validar no PGE:\\n\\n"
+                + analise.resumo() + "\\n\\nDeseja gerar?",
+                parent=self,
+            ):
+                return
+            destino = filedialog.asksaveasfilename(
+                title="Salvar cópia da EFD Contribuições ajustada",
+                defaultextension=".txt",
+                initialfile=self.resultado.caminho.stem + "_SAIDAS_ICMS_FORA_LP.txt",
+                filetypes=[("SPED TXT", "*.txt")], parent=self,
+            )
+            if not destino:
+                return
+            gerado = motor.gerar(self.resultado.linhas, self.resultado.encoding,
+                                self.resultado.estatisticas.tipo_sped, analise, destino)
+            messagebox.showinfo(
+                "FiscalPro — Saídas Lucro Presumido",
+                f"Cópia gerada: {gerado.caminho_sped}\\n"
+                f"Memória: {gerado.caminho_relatorio}\\n\\n"
+                "Valide no PGE e confira a apuração antes de transmitir.",
+                parent=self,
+            )
+        except Exception as erro:
+            messagebox.showerror("FiscalPro — Saídas Lucro Presumido", str(erro), parent=self)
 
     def excluir_icms_bases_piscofins(self):
         if self.resultado is None:
