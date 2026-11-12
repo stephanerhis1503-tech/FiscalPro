@@ -114,3 +114,54 @@ def test_geracao_bloqueada_com_pendencia(tmp_path):
             linhas, "utf-8", "EFD Contribuições", r, tmp_path / "saida.txt"
         )
     assert not (tmp_path / "saida.txt").exists()
+
+
+def test_gera_copia_f550_e_bloco_m_sem_alterar_receita_bruta(tmp_path):
+    from types import SimpleNamespace
+
+    linhas = contrib()
+    m210 = ["M210", "51", "100,00", "100,00", "0,00", "0,00",
+            "100,00", "0,6500", "", "", "0,65", "0,00",
+            "0,00", "0,00", "0,00", "0,65"]
+    m610 = ["M610", "51", "100,00", "100,00", "0,00", "0,00",
+            "100,00", "3,0000", "", "", "3,00", "0,00",
+            "0,00", "0,00", "0,00", "3,00"]
+    m200 = ["M200", "0,00", "0,00", "0,00", "0,00", "0,00", "0,00",
+            "0,00", "0,65", "0,00", "0,00", "0,65", "0,65"]
+    m600 = ["M600", "0,00", "0,00", "0,00", "0,00", "0,00", "0,00",
+            "0,00", "3,00", "0,00", "0,00", "3,00", "3,00"]
+    linhas.extend([
+        reg(m200), reg(m210), reg(["M205", "12", "810902", "0,65"]),
+        reg(m600), reg(m610), reg(["M605", "12", "217201", "3,00"]),
+    ])
+    origem = list(linhas)
+    analise = analisar(tmp_path, linhas)
+    assert analise.pode_gerar
+    motor = ExclusorICMSSaidasLucroPresumido()
+    motor.pre_validador = type(
+        "SemAlertas", (), {"validar": lambda self, *a: SimpleNamespace(erros=[])}
+    )()
+    destino = tmp_path / "ajustado.txt"
+    gerado = motor.gerar(linhas, "utf-8", "EFD Contribuições", analise, destino)
+    assert gerado.caminho_sped.exists()
+    assert gerado.caminho_relatorio.exists()
+    saida = destino.read_text(encoding="utf-8").splitlines()
+    reg_saida = {linha.split("|")[1]: linha.split("|")[2:-1] for linha in saida}
+    assert reg_saida["F550"][0] == "100,00"  # VL_REC_COMP preservada
+    assert reg_saida["F550"][2] == "18,00"   # VL_DESC_PIS
+    assert reg_saida["F550"][3] == "82,00"
+    assert reg_saida["F550"][5] == "0,53"
+    assert reg_saida["F550"][7] == "18,00"   # VL_DESC_COFINS
+    assert reg_saida["F550"][8] == "82,00"
+    assert reg_saida["F550"][10] == "2,46"
+    assert reg_saida["M210"][1] == "100,00"  # VL_REC_BRT preservada
+    assert reg_saida["M210"][2] == "82,00"
+    assert reg_saida["M210"][9] == "0,53"
+    assert reg_saida["M200"][7] == "0,53"
+    assert reg_saida["M610"][1] == "100,00"
+    assert reg_saida["M610"][9] == "2,46"
+    assert reg_saida["M600"][7] == "2,46"
+    assert linhas == origem
+
+    with pytest.raises(FileExistsError):
+        motor.gerar(linhas, "utf-8", "EFD Contribuições", analise, destino)
