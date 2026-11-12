@@ -130,6 +130,7 @@ class AnaliseSaidasPresumido:
     revisar: list[str] = field(default_factory=list)
     ja_excluidos: list[str] = field(default_factory=list)
     ignorados: int = 0
+    _originais: list[str] = field(default_factory=list, repr=False)
 
     @property
     def pode_gerar(self) -> bool:
@@ -316,7 +317,7 @@ class ExclusorICMSSaidasLucroPresumido:
             if fonte["modelo"] != _campo(doc["campos"], 4):
                 res.revisar.append(f"NF {chave[-12:]}: modelo diferente nos arquivos.")
                 continue
-            # O PVA pode escrit urar multiplos grupos de PIS no mesmo CFOP.
+            # O PVA pode escriturar multiplos grupos de PIS no mesmo CFOP.
             por_cfop: dict[str, list[tuple[int, list[str]]]] = defaultdict(list)
             for item in doc["filhos"]:
                 c = item[1]
@@ -510,11 +511,15 @@ class ExclusorICMSSaidasLucroPresumido:
             elif a.registro == "C175":
                 bp, bc, vp, vc = 5, 11, 9, 15
                 c[3] = _fmt((_num(c, 3) or ZERO) + a.icms)
+                if len(c) < 18:
+                    raise RuntimeError("C175 incompleto; REVISAR.")
                 c[17] = (_campo(c, 17) + " " + MARCADOR + "=" + _fmt(a.icms)).strip()
             else:
                 bp, bc, vp, vc = 4, 9, 6, 11
                 c[3] = _fmt((_num(c, 3) or ZERO) + a.icms)
                 c[8] = _fmt((_num(c, 8) or ZERO) + a.icms)
+                if len(c) < 16:
+                    raise RuntimeError("F550 incompleto; REVISAR.")
                 c[15] = (_campo(c, 15) + " " + MARCADOR + "=" + _fmt(a.icms)).strip()
             c[bp], c[bc] = _fmt(a.base_pis - a.icms), _fmt(a.base_cofins - a.icms)
             c[vp], c[vc] = _fmt(a.pis_novo), _fmt(a.cofins_novo)
@@ -573,24 +578,23 @@ class ExclusorICMSSaidasLucroPresumido:
         # Guarda a origem somente durante o procedimento de retotalizacao.
         analise._originais = originais
         novas = list(originais)
-        try:
-            self._aplicar_documentos(novas, analise)
-            self._reapurar_cumulativo(novas, analise)
-            antes = self.pre_validador.validar(originais, tipo_sped)
-            depois = self.pre_validador.validar(novas, tipo_sped)
-            chave = lambda e: (e.registro, e.campo, e.mensagem)
-            novos_erros = Counter(map(chave, depois.erros)) - Counter(map(chave, antes.erros))
-            if novos_erros:
-                raise RuntimeError(
-                    "Pre-PGE detectou novas pendencias. Nenhum arquivo gerado: "
-                    + "; ".join(f"{x[0]}/{x[1]}" for x in list(novos_erros)[:5])
-                )
-        finally:
-            delattr(analise, "_originais")
+        self._aplicar_documentos(novas, analise)
+        self._reapurar_cumulativo(novas, analise)
+        antes = self.pre_validador.validar(originais, tipo_sped)
+        depois = self.pre_validador.validar(novas, tipo_sped)
+        chave = lambda e: (e.registro, e.campo, e.mensagem)
+        novos_erros = Counter(map(chave, depois.erros)) - Counter(map(chave, antes.erros))
+        if novos_erros:
+            raise RuntimeError(
+                "Pre-PGE detectou novas pendencias. Nenhum arquivo gerado: "
+                + "; ".join(f"{x[0]}/{x[1]}" for x in list(novos_erros)[:5])
+            )
 
         caminho.parent.mkdir(parents=True, exist_ok=True)
-        if caminho.exists():
-            raise FileExistsError("Arquivo de saida ja existe; selecione outro nome.")
+        if caminho.exists() or caminho.with_name(caminho.stem + "_MEMORIA.txt").exists():
+            raise FileExistsError("Arquivo de saida ou memoria ja existe; selecione outro nome.")
+        if caminho.resolve() == analise.fiscal.resolve():
+            raise RuntimeError("Arquivo Fiscal de origem nao pode ser sobrescrito.")
         # Grava exclusivamente uma COPIA; jamais altera arquivos de entrada.
         with caminho.open("x", encoding=encoding, newline="") as arq:
             arq.writelines(novas)
