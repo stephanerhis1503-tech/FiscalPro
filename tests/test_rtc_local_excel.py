@@ -102,3 +102,30 @@ def test_relatorio_exige_xlsx(tmp_path):
         ServicoRelatorioApuracaoLocalRTC(FalsoServico([])).gerar(
             EMPRESA, "2026-10", tmp_path / "rtc.csv", "Mega"
         )
+
+
+def test_exportacao_real_inclui_auditoria_detalhada_e_revisar_itens(tmp_path):
+    from src.services.apuracao_assistida_local_service import ServicoApuracaoLocalRTC
+    from tests.test_rtc1_apuracao_local import xml_nfe
+
+    servico = ServicoApuracaoLocalRTC(tmp_path / "rtc.sqlite3")
+    xml = tmp_path / "nota.xml"
+    xml.write_bytes(xml_nfe(emitente="12345678000199"))
+    assert servico.importar([xml], "12345678000199", "2026-11").importados == 1
+
+    destino = tmp_path / "auditoria.xlsx"
+    ServicoRelatorioApuracaoLocalRTC(servico).gerar(
+        "12345678000199", "2026-11", destino, "Mega"
+    )
+    livro = load_workbook(destino)
+    assert livro.sheetnames == [
+        "Resumo", "Entradas", "Saidas", "Revisar",
+        "Itens IBS CBS", "Revisar Itens",
+    ]
+    itens = livro["Itens IBS CBS"]
+    assert itens["I7"].value == "5102"
+    assert itens["J7"].value == "000"
+    assert itens["K7"].value == "000001"
+    assert itens["N7"].value == 9
+    assert itens["O7"].value == "REVISAR"
+    assert livro["Revisar Itens"]["I7"].value == "5102"
