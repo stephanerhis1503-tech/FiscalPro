@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, X, StringVar, ttk
+from tkinter import BOTH, END, LEFT, X, StringVar, Toplevel, ttk
 from tkinter import filedialog, messagebox
 
 from src.services.apuracao_assistida_local_service import ServicoApuracaoLocalRTC
@@ -97,6 +97,9 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         ).pack(side=LEFT, padx=(0, 6))
         ttk.Button(
             botoes, text="Exportar apuração local (Excel)", command=self._exportar_excel
+        ).pack(side=LEFT, padx=(0, 6))
+        ttk.Button(
+            botoes, text="Auditoria por item", command=self._auditoria_por_item
         ).pack(side=LEFT)
         ttk.Label(cab, textvariable=self.var_status, wraplength=1020).pack(
             anchor="w", pady=(8, 0)
@@ -282,6 +285,72 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
                 parent=self,
             )
 
+    def _auditoria_por_item(self):
+        """Visualiza amostra local; exportacao Excel inclui todos os itens."""
+        try:
+            cnpj, competencia = self._filtros()
+            total = self.servico.contar_itens(cnpj, competencia)
+            itens = self.servico.listar_itens(cnpj, competencia, limite=5000)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("RTC | Auditoria por item", str(exc), parent=self)
+            return
+        if not total:
+            messagebox.showinfo(
+                "RTC | Auditoria por item",
+                "Ainda nao existem itens detalhados armazenados para este periodo. "
+                "Se os XMLs ja foram importados antes dessa atualizacao, "
+                "importe-os novamente: o FiscalPro complementara os itens "
+                "sem duplicar as notas.",
+                parent=self,
+            )
+            return
+        popup = Toplevel(self.winfo_toplevel())
+        popup.title(f"RTC | Auditoria por item | {competencia}")
+        popup.geometry("1190x580")
+        popup.minsize(800, 350)
+        frame = ttk.Frame(popup, padding=10)
+        frame.pack(fill=BOTH, expand=True)
+        revisar = sum(item["status_auditoria"] != "OK" for item in itens)
+        ttk.Label(
+            frame, wraplength=1100,
+            text=(
+                f"{total} item(ns) na base; exibindo {len(itens)} "
+                f"(limite visual: 5.000). Pendencias nesta amostra: {revisar}. "
+                "Auditoria apenas dos XMLs locais. REVISAR/REGRA ESPECIAL "
+                "exigem analise tributaria; nao alteram impostos nem creditos."
+            ),
+        ).pack(anchor="w", pady=(0, 8))
+        area = ttk.Frame(frame)
+        area.pack(fill=BOTH, expand=True)
+        colunas = (
+            "nf", "item", "descricao", "ncm", "cfop",
+            "cst", "cclass", "ibs", "cbs", "status", "motivos",
+        )
+        rotulos = (
+            "NF", "Item", "Descricao", "NCM", "CFOP",
+            "CST IBS/CBS", "cClassTrib", "IBS XML", "CBS XML",
+            "Situacao", "Motivos",
+        )
+        grade = ttk.Treeview(area, columns=colunas, show="headings")
+        for chave, rotulo in zip(colunas, rotulos):
+            grade.heading(chave, text=rotulo)
+            grade.column(chave, width=250 if chave in ("descricao", "motivos") else 110)
+        for item in itens:
+            grade.insert("", END, values=(
+                item["numero_nf"], item["numero_item"], item["descricao"],
+                item["ncm"], item["cfop"], item["cst_ibscbs"],
+                item["cclass_trib"], item["valor_ibs"], item["valor_cbs"],
+                item["status_auditoria"], item["motivos"],
+            ))
+        area.rowconfigure(0, weight=1)
+        area.columnconfigure(0, weight=1)
+        grade.grid(row=0, column=0, sticky="nsew")
+        scroll_y = ttk.Scrollbar(area, orient="vertical", command=grade.yview)
+        scroll_x = ttk.Scrollbar(area, orient="horizontal", command=grade.xview)
+        grade.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+        scroll_y.grid(row=0, column=1, sticky="ns")
+        scroll_x.grid(row=1, column=0, sticky="ew")
+
     def _exportar_excel(self):
         """Relatorio de toda a competencia, sem limitar pelo filtro visual."""
         try:
@@ -311,7 +380,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         )
         messagebox.showinfo(
             "RTC | Exportacao Excel",
-            "Relatorio salvo com as abas Resumo, Entradas, Saidas e Revisar.\n\n"
+            "Relatorio salvo com Resumo, Entradas, Saidas, Revisar e auditoria de itens.\n\n"
             f"Arquivo: {arquivo}\n\n"
             "Inclui TODAS as notas desta empresa e competencia, "
             "independentemente do filtro visual selecionado.",
