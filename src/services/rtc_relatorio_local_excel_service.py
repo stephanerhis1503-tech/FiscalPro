@@ -121,6 +121,73 @@ def _tabela(ws, documentos: list[dict], cnpj: str, periodo: str, nome_empresa: s
     ws.print_title_rows = "1:6"
 
 
+ITENS_CABECALHOS = (
+    "Tipo", "NF", "Emissao", "Chave NF-e", "Item",
+    "Codigo produto", "Descricao", "NCM", "CFOP", "CST IBS/CBS",
+    "cClassTrib", "Base item (XML)", "IBS item (XML)", "CBS item (XML)",
+    "Situacao", "Perfil", "Regra de auditoria", "Motivos", "Protocolo XML",
+)
+
+
+def _tabela_itens(ws, itens: list[dict], cnpj: str, periodo: str, nome_empresa: str):
+    ws.sheet_view.showGridLines = False
+    ws.merge_cells("A1:S1")
+    ws["A1"] = "FiscalPro | Auditoria IBS/CBS por item"
+    ws["A1"].font = Font(bold=True, color="FFFFFF", size=15)
+    ws["A1"].fill = PatternFill("solid", fgColor=AZUL)
+    ws.row_dimensions[1].height = 30
+    ws.merge_cells("A2:S2")
+    ws["A2"] = f"Empresa: {_texto_seguro(nome_empresa)} | CNPJ: {cnpj} | Competencia: {periodo}"
+    ws.merge_cells("A3:S4")
+    ws["A3"] = (
+        "AUDITORIA PRELIMINAR DOS XMLs - NAO OFICIAL. "
+        "CFOP e tributacao especifica exigem analise da operacao. "
+        "REVISAR e REGRA ESPECIAL nao alteram XML nem reconhecem credito. "
+        "Itens de XMLs antigos podem precisar ser reimportados."
+    )
+    ws["A3"].font = Font(bold=True, color=VERMELHO)
+    ws["A3"].fill = PatternFill("solid", fgColor=AMARELO)
+    ws["A3"].alignment = Alignment(wrap_text=True)
+    ws.row_dimensions[3].height = 24
+    ws.row_dimensions[4].height = 24
+    for coluna, titulo in enumerate(ITENS_CABECALHOS, 1):
+        celula = ws.cell(row=6, column=coluna, value=titulo)
+        celula.fill = PatternFill("solid", fgColor=AZUL)
+        celula.font = Font(color="FFFFFF", bold=True)
+        celula.alignment = Alignment(wrap_text=True)
+    ws.row_dimensions[6].height = 35
+    campos = (
+        "direcao", "numero_nf", "emissao", "chave_nfe", "numero_item",
+        "codigo_produto", "descricao", "ncm", "cfop", "cst_ibscbs",
+        "cclass_trib", "base_ibs_cbs", "valor_ibs", "valor_cbs",
+        "status_auditoria", "perfil", "regra", "motivos", "status_protocolo",
+    )
+    for idx, item in enumerate(itens, 7):
+        for coluna, campo in enumerate(campos, 1):
+            bruto = item.get(campo)
+            if coluna in (12, 13, 14):
+                valor = _valor(bruto) if str(bruto or "").strip() else None
+            else:
+                valor = _texto_seguro(bruto)
+            celula = ws.cell(row=idx, column=coluna, value=valor)
+            if coluna in (12, 13, 14):
+                celula.number_format = FORMATO_DINHEIRO
+            if coluna in (4, 6, 8, 9, 10, 11):
+                celula.number_format = "@"
+            if idx % 2 == 0:
+                celula.fill = PatternFill("solid", fgColor="F6F9FC")
+            if coluna == 15 and item.get("status_auditoria") != "OK":
+                celula.fill = PatternFill("solid", fgColor=AMARELO)
+                celula.font = Font(bold=True, color=VERMELHO)
+    larguras = (
+        11, 14, 14, 48, 9, 18, 43, 15, 13, 15, 17, 18, 17, 17,
+        19, 22, 56, 72, 27,
+    )
+    for coluna, largura in enumerate(larguras, 1):
+        ws.column_dimensions[get_column_letter(coluna)].width = largura
+    ws.freeze_panes = "H7"
+    ws.auto_filter.ref = f"A6:S{max(6, len(itens) + 6)}"
+
 class ServicoRelatorioApuracaoLocalRTC:
     def __init__(self, servico: ServicoApuracaoLocalRTC | None = None):
         self.servico = servico or ServicoApuracaoLocalRTC()
@@ -195,6 +262,19 @@ class ServicoRelatorioApuracaoLocalRTC:
         ):
             aba = wb.create_sheet(nome)
             _tabela(aba, registros, cnpj, competencia, nome_empresa)
+
+        # Planilhas existentes seguem intactas. Itens sao um detalhamento
+        # independente sem recalculo dos totais dos documentos.
+        if hasattr(self.servico, "listar_itens"):
+            itens = self.servico.listar_itens(cnpj, competencia)
+            aba_itens = wb.create_sheet("Itens IBS CBS")
+            _tabela_itens(aba_itens, itens, cnpj, competencia, nome_empresa)
+            aba_pendentes = wb.create_sheet("Revisar Itens")
+            _tabela_itens(
+                aba_pendentes,
+                [item for item in itens if item["status_auditoria"] != "OK"],
+                cnpj, competencia, nome_empresa,
+            )
         wb.properties.title = f"FiscalPro - conferencia local IBS CBS {competencia}"
         wb.properties.subject = "Auditoria local de XMLs, sem homologacao tributaria"
         wb.properties.creator = "FiscalPro"
