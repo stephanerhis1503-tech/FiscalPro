@@ -115,6 +115,34 @@ class ServicoApuracaoLocalRTC:
                 "CREATE INDEX IF NOT EXISTS idx_rtc_empresa_comp "
                 "ON rtc_documentos_xml (cnpj_empresa, competencia)"
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rtc_documentos_itens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    documento_id INTEGER NOT NULL,
+                    numero_item TEXT NOT NULL,
+                    codigo_produto TEXT NOT NULL DEFAULT '',
+                    descricao TEXT NOT NULL DEFAULT '',
+                    ncm TEXT NOT NULL DEFAULT '',
+                    cfop TEXT NOT NULL DEFAULT '',
+                    cst_ibscbs TEXT NOT NULL DEFAULT '',
+                    cclass_trib TEXT NOT NULL DEFAULT '',
+                    base_ibs_cbs TEXT NOT NULL DEFAULT '',
+                    valor_ibs TEXT NOT NULL DEFAULT '',
+                    valor_cbs TEXT NOT NULL DEFAULT '',
+                    status_auditoria TEXT NOT NULL,
+                    perfil TEXT NOT NULL DEFAULT '',
+                    regra TEXT NOT NULL DEFAULT '',
+                    motivos TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY (documento_id) REFERENCES rtc_documentos_xml(id),
+                    UNIQUE (documento_id, numero_item)
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_rtc_itens_documento "
+                "ON rtc_documentos_itens (documento_id)"
+            )
 
     @staticmethod
     def _nome_tag(elemento: ET.Element) -> str:
@@ -197,7 +225,10 @@ class ServicoApuracaoLocalRTC:
         return "PROTOCOLO_NAO_AUTORIZADO"
 
     @classmethod
-    def _extrair(cls, nome: str, dados: bytes, cnpj: str, competencia: str) -> dict:
+    def _extrair(
+        cls, nome: str, dados: bytes, cnpj: str, competencia: str,
+        itens_auditoria: list[dict] | None = None,
+    ) -> dict:
         if len(dados) > MAX_XML_BYTES or b"<!DOCTYPE" in dados.upper():
             raise ValueError("XML excede limite ou contem DTD nao permitida.")
         raiz = ET.fromstring(dados)
@@ -249,6 +280,43 @@ class ServicoApuracaoLocalRTC:
             and protocolo != "SEM_PROTOCOLO"
             else "REVISAR"
         )
+        # Captura todos os itens, inclusive os sem grupo IBS/CBS, para
+        # revisao estrutural. O CFOP e conferido apenas em formato; seu
+        # enquadramento legal depende da operacao e deve ser validado por pessoa.
+        if itens_auditoria is not None:
+            for posicao, item in enumerate(auditorias, 1):
+                cfop = str(item.cfop or "").strip()
+                motivos = str(item.motivos or "")
+                status = item.status
+                if not re.fullmatch(r"[0-9]{4}", cfop) or cfop[0] not in "123567":
+                    status = "REVISAR"
+                    motivos = "; ".join(
+                        x for x in (motivos, "CFOP ausente ou fora do formato esperado")
+                        if x
+                    )
+                numero = str(item.item or "").strip()
+                if not numero:
+                    status = "REVISAR"
+                    numero = str(posicao)
+                    motivos = "; ".join(
+                        x for x in (motivos, "nItem ausente no XML") if x
+                    )
+                itens_auditoria.append({
+                    "numero_item": numero,
+                    "codigo_produto": str(item.codigo_produto or "")[:250],
+                    "descricao": str(item.descricao or "")[:1000],
+                    "ncm": str(item.ncm or ""),
+                    "cfop": cfop,
+                    "cst_ibscbs": str(item.cst_encontrado or ""),
+                    "cclass_trib": str(item.cclass_encontrado or ""),
+                    "base_ibs_cbs": str(item.vbc or ""),
+                    "valor_ibs": str(item.v_ibs_encontrado or ""),
+                    "valor_cbs": str(item.v_cbs_encontrado or ""),
+                    "status_auditoria": status,
+                    "perfil": str(item.perfil or "")[:250],
+                    "regra": str(item.regra or "")[:1000],
+                    "motivos": motivos[:1500],
+                })
         # Entradas NAO constituem credito apropriado: so potencial contabilizavel
         # apos validacoes legais e confronto com a apuracao oficial.
         return {
@@ -283,6 +351,29 @@ class ServicoApuracaoLocalRTC:
         )
         return all(str(anterior[campo]) == str(novo[campo]) for campo in campos)
 
+    @staticmethod
+    def _gravar_itens_se_ausentes(
+        con: sqlite3.Connection, documento_id: int, itens: list[dict]
+    ) -> int:
+        """Backfill conservador; nunca sobrepoe item anteriormente salvo."""
+        existente = con.execute(
+            "SELECT 1 FROM rtc_documentos_itens WHERE documento_id=? LIMIT 1",
+            (documento_id,),
+        ).fetchone()
+        if existente or not itens:
+            return 0
+        gravados = 0
+        for item in itens:
+            colunas = ("documento_id", *item.keys())
+            cursor = con.execute(
+                f"INSERT OR IGNORE INTO rtc_documentos_itens "
+                f"({', '.join(colunas)}) "
+                f"VALUES ({', '.join('?' for _ in colunas)})",
+                (documento_id, *item.values()),
+            )
+            gravados += cursor.rowcount
+        return gravados
+
     def importar(
         self, caminhos: list[str | Path], cnpj_empresa: str, competencia: str
     ) -> ResultadoImportacaoRTC:
@@ -295,7 +386,11 @@ class ServicoApuracaoLocalRTC:
                     for nome, dados in self._ler_documentos(caminho):
                         resultado.lidos += 1
                         try:
-                            doc = self._extrair(nome, dados, cnpj, comp)
+                            itens_detalhados: list[dict] = []
+                            doc = self._extrair(
+                                nome, dados, cnpj, comp,
+                                itens_auditoria=itens_detalhados,
+                            )
                             anterior = con.execute(
                                 "SELECT * FROM rtc_documentos_xml "
                                 "WHERE cnpj_empresa = ? AND chave_nfe = ?",
@@ -303,6 +398,10 @@ class ServicoApuracaoLocalRTC:
                             ).fetchone()
                             if anterior:
                                 if anterior["hash_xml"] == doc["hash_xml"]:
+                                    with con:
+                                        self._gravar_itens_se_ausentes(
+                                            con, anterior["id"], itens_detalhados,
+                                        )
                                     resultado.duplicados += 1
                                 elif (
                                     anterior["status_protocolo"] == "SEM_PROTOCOLO"
@@ -343,6 +442,10 @@ class ServicoApuracaoLocalRTC:
                                                 anterior["hash_xml"],
                                             ),
                                         )
+                                    with con:
+                                        self._gravar_itens_se_ausentes(
+                                            con, anterior["id"], itens_detalhados,
+                                        )
                                     resultado.atualizados += 1
                                 else:
                                     resultado.conflitos += 1
@@ -354,10 +457,13 @@ class ServicoApuracaoLocalRTC:
                                 continue
                             campos = tuple(doc)
                             with con:
-                                con.execute(
+                                cursor = con.execute(
                                     f"INSERT INTO rtc_documentos_xml ({', '.join(campos)}) "
                                     f"VALUES ({', '.join('?' for _ in campos)})",
                                     tuple(doc.values()),
+                                )
+                                self._gravar_itens_se_ausentes(
+                                    con, cursor.lastrowid, itens_detalhados,
                                 )
                             resultado.importados += 1
                         except (ValueError, ET.ParseError, sqlite3.Error) as exc:
@@ -379,6 +485,50 @@ class ServicoApuracaoLocalRTC:
                 (cnpj, comp),
             ).fetchall()
         return [dict(linha) for linha in linhas]
+
+    def listar_itens(
+        self, cnpj_empresa: str, competencia: str, *, limite: int | None = None,
+        revisar_apenas: bool = False,
+    ) -> list[dict]:
+        """Auditoria de itens extraidos dos XMLs locais (sem consulta externa)."""
+        cnpj = self.validar_cnpj(cnpj_empresa)
+        comp = self.validar_competencia(competencia)
+        if limite is not None and (type(limite) is not int or not 1 <= limite <= 10000):
+            raise ValueError("Limite de itens invalido.")
+        sql = """
+            SELECT d.cnpj_empresa, d.competencia, d.chave_nfe, d.numero_nf,
+                   d.emissao, d.direcao, d.status_protocolo,
+                   i.numero_item, i.codigo_produto, i.descricao,
+                   i.ncm, i.cfop, i.cst_ibscbs, i.cclass_trib,
+                   i.base_ibs_cbs, i.valor_ibs, i.valor_cbs,
+                   i.status_auditoria, i.perfil, i.regra, i.motivos
+            FROM rtc_documentos_itens AS i
+            INNER JOIN rtc_documentos_xml AS d ON d.id=i.documento_id
+            WHERE d.cnpj_empresa=? AND d.competencia=?
+        """
+        if revisar_apenas:
+            sql += " AND i.status_auditoria != 'OK'"
+        sql += " ORDER BY d.emissao, d.numero_nf, d.chave_nfe, i.id"
+        parametros: tuple = (cnpj, comp)
+        if limite is not None:
+            sql += " LIMIT ?"
+            parametros += (limite,)
+        with closing(self._conectar()) as con:
+            linhas = con.execute(sql, parametros).fetchall()
+        return [dict(linha) for linha in linhas]
+
+    def contar_itens(self, cnpj_empresa: str, competencia: str) -> int:
+        cnpj = self.validar_cnpj(cnpj_empresa)
+        comp = self.validar_competencia(competencia)
+        with closing(self._conectar()) as con:
+            return int(con.execute(
+                """
+                SELECT COUNT(*) FROM rtc_documentos_itens AS i
+                JOIN rtc_documentos_xml AS d ON d.id=i.documento_id
+                WHERE d.cnpj_empresa=? AND d.competencia=?
+                """,
+                (cnpj, comp),
+            ).fetchone()[0])
 
     def resumo(self, cnpj_empresa: str, competencia: str) -> dict:
         linhas = self.listar(cnpj_empresa, competencia)
