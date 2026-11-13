@@ -213,3 +213,70 @@ def test_filtro_visual_entrada_saida_revisar_e_busca():
     assert [d["numero_nf"] for d in filtrar(docs, "Somente entradas", "31B")] == ["9876"]
     with pytest.raises(ValueError):
         filtrar(docs, "tipo desconhecido")
+
+
+def test_auditoria_por_item_persiste_cfop_cst_cclass_e_valores(servico, tmp_path):
+    caminho = tmp_path / "nota.xml"
+    caminho.write_bytes(xml_nfe())
+    resultado = servico.importar([caminho], EMPRESA, "2026-11")
+    assert resultado.importados == 1
+    itens = servico.listar_itens(EMPRESA, "2026-11")
+    assert len(itens) == 1
+    assert itens[0]["numero_item"] == "1"
+    assert itens[0]["codigo_produto"] == "A"
+    assert itens[0]["ncm"] == "87141000"
+    assert itens[0]["cfop"] == "5102"
+    assert itens[0]["cst_ibscbs"] == "000"
+    assert itens[0]["cclass_trib"] == "000001"
+    assert itens[0]["base_ibs_cbs"] == "100.00"
+    assert itens[0]["valor_ibs"] == "0.10"
+    assert itens[0]["status_auditoria"] == "REVISAR"
+    assert servico.contar_itens(EMPRESA, "2026-11") == 1
+
+
+def test_reimportar_xml_antigo_completa_itens_sem_duplicar_notas(servico, tmp_path):
+    arquivo = tmp_path / "nota.xml"
+    arquivo.write_bytes(xml_nfe())
+    assert servico.importar([arquivo], EMPRESA, "2026-11").importados == 1
+    import sqlite3
+    with sqlite3.connect(servico.banco) as con:
+        con.execute("DELETE FROM rtc_documentos_itens")
+    assert servico.contar_itens(EMPRESA, "2026-11") == 0
+    resultado = servico.importar([arquivo], EMPRESA, "2026-11")
+    assert resultado.duplicados == 1
+    assert resultado.importados == 0
+    assert servico.contar_itens(EMPRESA, "2026-11") == 1
+    assert len(servico.listar(EMPRESA, "2026-11")) == 1
+    assert servico.resumo(EMPRESA, "2026-11")["cbs_debito_xml"] == Decimal("9.00")
+
+
+def test_auditoria_pendente_filtra_itens_nao_ok(servico, tmp_path):
+    arquivo = tmp_path / "nota.xml"
+    arquivo.write_bytes(xml_nfe())
+    assert servico.importar([arquivo], EMPRESA, "2026-11").importados == 1
+    todos = servico.listar_itens(EMPRESA, "2026-11")
+    pendentes = servico.listar_itens(EMPRESA, "2026-11", revisar_apenas=True)
+    assert len(todos) == 1
+    assert len(pendentes) == 1
+    assert pendentes[0]["chave_nfe"] == CHAVE
+    assert servico.listar_itens(FORNECEDOR, "2026-11") == []
+
+
+def test_duplicado_com_dados_divergentes_nao_sobrescreve_itens(servico, tmp_path):
+    arquivo = tmp_path / "nota.xml"
+    arquivo.write_bytes(xml_nfe(cbs="9.00"))
+    assert servico.importar([arquivo], EMPRESA, "2026-11").importados == 1
+    base = servico.listar_itens(EMPRESA, "2026-11")
+    arquivo.write_bytes(xml_nfe(cbs="8.00"))
+    resultado = servico.importar([arquivo], EMPRESA, "2026-11")
+    assert resultado.conflitos == 1
+    assert servico.listar_itens(EMPRESA, "2026-11") == base
+
+
+def test_auditoria_por_item_erro_cfop_e_identificado(servico, tmp_path):
+    arquivo = tmp_path / "nota.xml"
+    arquivo.write_bytes(xml_nfe().replace(b"<CFOP>5102</CFOP>", b"<CFOP>ABCD</CFOP>"))
+    assert servico.importar([arquivo], EMPRESA, "2026-11").importados == 1
+    linha = servico.listar_itens(EMPRESA, "2026-11")[0]
+    assert linha["status_auditoria"] == "REVISAR"
+    assert "CFOP" in linha["motivos"]
