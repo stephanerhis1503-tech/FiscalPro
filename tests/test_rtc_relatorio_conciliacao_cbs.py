@@ -149,3 +149,29 @@ def test_nao_aceita_extensao_incorreta_ou_competencia_sem_xml(relatorio, tmp_pat
         relatorio.gerar_excel(
             EMPRESA, "2026-10", "debitos", tmp_path / "vazio.xlsx",
         )
+
+
+def test_pdf_anexo_paginas_completas_sem_linhas_sob_rodape(relatorio, tmp_path):
+    """Evita regressao em que 4 ultimas linhas de cada pagina eram cortadas."""
+    original = relatorio.oficial.conciliar
+
+    def conciliacao_longa(cnpj, competencia, tipo):
+        molde = original(cnpj, competencia, tipo)[0]
+        return [
+            {**molde, "nf": f"{n:06d}", "chave": f"{n:044d}"}
+            for n in range(1, 58)
+        ]
+
+    relatorio.oficial.conciliar = conciliacao_longa
+    destino = relatorio.gerar_pdf(
+        EMPRESA, "2026-11", "debitos", tmp_path / "muitas_notas.pdf", "Mega"
+    )
+    paginas = PdfReader(destino).pages
+    assert len(paginas) == 4  # capa + 28 + 28 + 1 documentos
+    textos = [pagina.extract_text() for pagina in paginas[1:]]
+    assert "1-28 de 57" in textos[0]
+    assert "29-56 de 57" in textos[1]
+    assert "57-57 de 57" in textos[2]
+    for n in range(1, 58):
+        assert sum(f"{n:06d}" in conteudo for conteudo in textos) == 1
+    assert all("Pagina " in conteudo for conteudo in textos)
