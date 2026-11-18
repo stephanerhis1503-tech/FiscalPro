@@ -101,7 +101,7 @@ def test_exportacao_st_mantem_primeira_aba_e_acrescenta_simples(tmp_path):
     assert novo.worksheets[0]["A1"].value == "ST ORIGINAL"
     assert novo.worksheets[1]["F9"].value == "SIMULACAO CONDICIONAL"
     assert novo.worksheets[1]["M9"].value == 7.32
-    assert novo.worksheets[1]["M12"].value == "=SUM(M9:M9)"
+    assert novo.worksheets[1]["M11"].value == "=SUM(M9:M9)"
     assert dados["status"]["SIMULACAO CONDICIONAL"] == 1
 
 
