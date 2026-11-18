@@ -25,6 +25,9 @@ AZUL_CLARO = "EAF2F9"
 AMARELO = "FFF1C7"
 VERMELHO = "C23732"
 VERDE = "E0F3E7"
+ROXO_CLARO = "EAE7F8"
+CINZA_CLARO = "F0F2F5"
+CLASSES_REVISAR = frozenset({"ALERTA XML", "REVISAR OPERACAO"})
 MONEY_FMT = '#,##0.00;[Red](#,##0.00);-'
 PCT_FMT = '0.00"%"'
 COLUNAS = (
@@ -51,6 +54,8 @@ COLUNAS = (
     ("Auditoria original XML", 24),
     ("Motivos no XML", 63),
     ("Observacao fiscal da simulacao", 110),
+    ("Classificacao da triagem", 25),
+    ("Proxima acao", 78),
 )
 
 
@@ -120,6 +125,40 @@ class ServicoRelatorioLoteRTC2027:
                 grupo = "VENDA COMUM"
             else:
                 grupo = "REVISAR OUTROS"
+            # Triagem: um CFOP 5405 simulado NAO equivale a um
+            # problema no XML. Alertas do XML sempre tem prioridade e
+            # so se contam uma vez, mesmo que o item esteja na aba CFOP 5405.
+            alerta_xml = str(item.get("status_auditoria") or "").strip().upper() != "OK"
+            if alerta_xml:
+                classificacao = "ALERTA XML"
+                acao = (
+                    "Conferir motivos da auditoria XML e confirmar o tratamento "
+                    "tributario. Alerta nao comprova erro fiscal."
+                )
+            elif grupo == "VENDA ICMS-ST 5405" and status == STATUS_CONDICIONAL:
+                classificacao = "ST CONDICIONAL"
+                acao = (
+                    "Projecao opcional. Confirmar natureza da venda, CST, "
+                    "cClassTrib e base de 2027 antes de qualquer uso fiscal."
+                )
+            elif grupo == "VENDA ICMS-ST 5405" and status == "REVISAR_CFOP_ST":
+                classificacao = "ST SEM CENARIO"
+                acao = (
+                    "CFOP 5405 segregado. Opcao de simulacao condicional "
+                    "desativada; nao confundir ICMS-ST com isencao IBS/CBS."
+                )
+            elif status in STATUS_COMUM:
+                classificacao = "PROJECAO COMUM"
+                acao = (
+                    "Conferir enquadramento e base de 2027. "
+                    "Projecao nao e debito fiscal."
+                )
+            else:
+                classificacao = "REVISAR OPERACAO"
+                acao = (
+                    "Analisar operacao, CFOP, CST, cClassTrib e regime; "
+                    "nao aplicar aliquota geral automaticamente."
+                )
             chaves.add(str(item.get("chave_nfe") or ""))
             agrupamentos[grupo] += 1
             situacoes[status] += 1
@@ -129,7 +168,10 @@ class ServicoRelatorioLoteRTC2027:
                 "status": status,
                 "base": _base_xml(item.get("base_ibs_cbs")),
                 "simulacao": simulacao,
-                "revisar": status not in STATUS_COMUM,
+                "alerta_xml": alerta_xml,
+                "classificacao": classificacao,
+                "acao": acao,
+                "revisar": classificacao in CLASSES_REVISAR,
             })
 
         if len(linhas) != sum(agrupamentos.values()):
@@ -148,6 +190,16 @@ class ServicoRelatorioLoteRTC2027:
             "grupos": agrupamentos,
             "situacoes": situacoes,
             "revisar": sum(linha["revisar"] for linha in linhas),
+            "alertas_xml": sum(linha["alerta_xml"] for linha in linhas),
+            "outras_revisoes": sum(
+                linha["classificacao"] == "REVISAR OPERACAO" for linha in linhas
+            ),
+            "st_condicionais": sum(
+                linha["classificacao"] == "ST CONDICIONAL" for linha in linhas
+            ),
+            "st_sem_cenario": sum(
+                linha["classificacao"] == "ST SEM CENARIO" for linha in linhas
+            ),
         }
 
     @staticmethod
@@ -156,21 +208,21 @@ class ServicoRelatorioLoteRTC2027:
         from openpyxl.utils import get_column_letter
 
         ws.sheet_view.showGridLines = False
-        ws.merge_cells("A1:W2")
+        ws.merge_cells("A1:Y2")
         ws["A1"] = "FiscalPro | " + titulo
         ws["A1"].fill = PatternFill("solid", fgColor=AZUL)
         ws["A1"].font = Font(bold=True, color="FFFFFF", size=15)
         ws["A1"].alignment = Alignment(vertical="center")
         ws.row_dimensions[1].height = 28
         ws.row_dimensions[2].height = 17
-        ws.merge_cells("A3:W3")
+        ws.merge_cells("A3:Y3")
         ws["A3"] = (
             f"Empresa: {_texto(dados['empresa'])} | CNPJ: {dados['cnpj']} | "
             f"Origem: {dados['competencia']} | Projecao: 2027 | "
             f"Regime: {dados['regime']} | Itens nesta aba: {len(linhas)}"
         )
         ws["A3"].font = Font(color=AZUL, bold=True)
-        ws.merge_cells("A4:W5")
+        ws.merge_cells("A4:Y5")
         ws["A4"] = (
             "NAO E APURACAO OFICIAL NEM ALIQUOTA DEFINITIVA. Bases e CST/cClassTrib "
             "extraidos de XMLs historicos nao comprovam tratamento fiscal de 2027. "
@@ -220,6 +272,8 @@ class ServicoRelatorioLoteRTC2027:
                 _texto(item.get("status_auditoria")),
                 _texto(item.get("motivos")),
                 _texto(sim.get("observacao")),
+                linha["classificacao"],
+                linha["acao"],
             ]
             for col, valor in enumerate(valores, 1):
                 cel = ws.cell(idx, col, valor)
@@ -234,15 +288,23 @@ class ServicoRelatorioLoteRTC2027:
                 if idx % 2 == 0 and col in (1, 2, 3, 9, 10, 11, 20):
                     cel.fill = PatternFill("solid", fgColor=AZUL_CLARO)
             resultado = ws.cell(idx, 20)
-            if linha["revisar"]:
-                resultado.fill = PatternFill("solid", fgColor=AMARELO)
-                resultado.font = Font(bold=True, color=VERMELHO)
+            categoria = ws.cell(idx, 24)
+            if linha["alerta_xml"]:
+                cor_fundo, cor_texto = "FCE5E3", VERMELHO
+            elif linha["classificacao"] == "ST CONDICIONAL":
+                cor_fundo, cor_texto = ROXO_CLARO, "59469C"
+            elif linha["classificacao"] == "ST SEM CENARIO":
+                cor_fundo, cor_texto = CINZA_CLARO, "5B6671"
+            elif linha["revisar"]:
+                cor_fundo, cor_texto = AMARELO, "8A5A08"
             else:
-                resultado.fill = PatternFill("solid", fgColor=VERDE)
-                resultado.font = Font(bold=True, color="157347")
+                cor_fundo, cor_texto = VERDE, "157347"
+            for cel in (resultado, categoria):
+                cel.fill = PatternFill("solid", fgColor=cor_fundo)
+                cel.font = Font(bold=True, color=cor_texto)
 
         ws.freeze_panes = "L8"
-        ws.auto_filter.ref = f"A7:W{max(7, len(linhas) + 7)}"
+        ws.auto_filter.ref = f"A7:Y{max(7, len(linhas) + 7)}"
         ws.print_title_rows = "1:7"
         ws.page_setup.orientation = "landscape"
         ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -286,7 +348,7 @@ class ServicoRelatorioLoteRTC2027:
             ("Vendas comuns (possiveis projecoes)", dados["grupos"]["VENDA COMUM"]),
             ("Vendas CFOP 5405 (ICMS-ST)", dados["grupos"]["VENDA ICMS-ST 5405"]),
             ("Outras operacoes / classificacoes", dados["grupos"]["REVISAR OUTROS"]),
-            ("Itens que exigem revisao", dados["revisar"]),
+            ("Revisar (sem ST condicional)", dados["revisar"]),
         ]
         ws["A11"] = "Indicador"
         ws["B11"] = "Quantidade"
@@ -299,6 +361,23 @@ class ServicoRelatorioLoteRTC2027:
             if row % 2:
                 for col in (1, 2):
                     ws.cell(row, col).fill = PatternFill("solid", fgColor=AZUL_CLARO)
+
+        ws["D11"] = "Triagem separada"
+        ws["E11"] = "Quantidade"
+        for col in (4, 5):
+            ws.cell(11, col).fill = PatternFill("solid", fgColor=AZUL)
+            ws.cell(11, col).font = Font(bold=True, color="FFFFFF")
+        metricas_triagem = (
+            ("Alertas registrados nos XMLs", dados["alertas_xml"]),
+            ("Outras operacoes a revisar", dados["outras_revisoes"]),
+            ("CFOP 5405 - condicional simulado", dados["st_condicionais"]),
+            ("CFOP 5405 - cenario desativado", dados["st_sem_cenario"]),
+        )
+        for indice, (titulo, valor) in enumerate(metricas_triagem, 12):
+            ws.cell(indice, 4, titulo).font = Font(bold=True, color=AZUL)
+            ws.cell(indice, 5, valor).font = Font(bold=True)
+        ws.column_dimensions["D"].width = 37
+        ws.column_dimensions["E"].width = 18
 
         ws["A20"] = "Valores apenas simulados"
         ws["A20"].font = Font(bold=True, size=12, color=AZUL)
@@ -324,8 +403,10 @@ class ServicoRelatorioLoteRTC2027:
             "Sem marcacao explicita, seus valores de projecao permanecem vazios. "
             "Mesmo com a hipotese habilitada, requer revisao fiscal. "
             "Entradas nao geram credito automaticamente. "
-            "Um item pode aparecer em 'CFOP 5405' e tambem em 'Revisar'; "
-            "os totais sao contados uma unica vez em 'Todos os itens'."
+            "Simulacoes ST ficam na aba CFOP 5405, fora da fila de revisao "
+            "salvo quando o proprio XML apresenta alerta. Os alertas XML "
+            "ficam destacados; operacoes nao simulaveis ficam em Outras operacoes. "
+            "Os totais contam cada item apenas em Todos os itens."
         )
         ws["A26"].alignment = Alignment(wrap_text=True, vertical="center")
         ws["A26"].fill = PatternFill("solid", fgColor=AZUL_CLARO)
@@ -351,7 +432,7 @@ class ServicoRelatorioLoteRTC2027:
         ws["A39"].font = Font(bold=True, color=AZUL)
         ws.column_dimensions["A"].width = 46
         ws.column_dimensions["B"].width = 24
-        for letra in "CDEFGH":
+        for letra in "CFGH":
             ws.column_dimensions[letra].width = 13
         ws.freeze_panes = "A11"
 
@@ -378,11 +459,17 @@ class ServicoRelatorioLoteRTC2027:
         resumo.title = "Resumo"
         self._montar_resumo(resumo, dados)
         todos = dados["linhas"]
+        # As abas de revisao nao confundem cenario ST com erro tributario.
+        alertas = [l for l in todos if l["alerta_xml"]]
+        outras = [l for l in todos if l["classificacao"] == "REVISAR OPERACAO"]
         categorias = (
             ("Todos os itens", todos),
             ("Vendas comuns", [l for l in todos if l["grupo"] == "VENDA COMUM"]),
             ("CFOP 5405", [l for l in todos if l["grupo"] == "VENDA ICMS-ST 5405"]),
-            ("Revisar", [l for l in todos if l["revisar"]]),
+            ("Alertas XML", alertas),
+            ("Outras operacoes", outras),
+            # Prioriza os alertas originais; nao duplica a mesma linha.
+            ("Revisar", alertas + outras),
         )
         for nome, linhas in categorias:
             ws = wb.create_sheet(nome)
