@@ -44,11 +44,18 @@ def test_17812_backup_preserva_legado_sem_apresentar_robo_como_ativo():
     assert "dados históricos dos módulos desativados" in fonte
 
 
-def test_17812_relatorios_nao_cita_robo_fiscal_ativo():
+def test_layout_sem_abas_descontinuadas_e_sem_perda_dos_servicos():
     fonte = _fonte_principal()
-    bloco = fonte.split("def criar_painel_relatorios", 1)[1].split("def criar_painel_financeiro", 1)[0]
-    assert "Robô Fiscal" not in bloco
-    assert "SPED Inteligente" in bloco
+    bloco = fonte.split("def criar_abas", 1)[1].split("def _cabecalho_pagina", 1)[0]
+    for aba in ("aba_correcoes", "aba_entregas", "aba_relatorios"):
+        assert aba not in bloco
+    for titulo in ('  Correções  ', '  Relatórios  ', '  Controle de Entregas  '):
+        assert titulo not in bloco
+    for titulo in ('  SPED  ', '  Contas a Pagar  ', '  Tributação  '):
+        assert titulo in bloco
+    assert "criar_painel_entregas" not in fonte
+    assert "PainelEntregas" not in fonte
+    assert 'text="SPED Inteligente"' in fonte
 
 
 def test_versao_cumulativa_apos_17_8_12():
