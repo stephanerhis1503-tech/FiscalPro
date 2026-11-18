@@ -349,6 +349,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         opcoes = ttk.Frame(frame)
         opcoes.pack(fill=X, pady=(8, 0))
         cenario_tcu = BooleanVar(value=False)
+        hipotese_st = BooleanVar(value=False)
         ttk.Label(
             opcoes, text="Projecao 2027: somente item selecionado, "
                          "sem alterar XMLs ou apuracao.",
@@ -358,11 +359,17 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
             text="Incluir cenario CBS TCU (11,2%, NAO oficial)",
             variable=cenario_tcu,
         ).pack(side=LEFT, padx=(0, 8))
+        ttk.Checkbutton(
+            opcoes,
+            text="CFOP 5405: hipotese de venda tributada (REVISAR)",
+            variable=hipotese_st,
+        ).pack(side=LEFT, padx=(0, 8))
         ttk.Button(
             opcoes,
             text="Simular item em 2027",
             command=lambda: self._simular_item_auditoria_2027(
                 grade, itens_por_linha, cenario_tcu.get(), popup,
+                permitir_venda_icms_st=hipotese_st.get(),
             ),
         ).pack(side=LEFT)
         area.rowconfigure(0, weight=1)
@@ -376,6 +383,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
 
     def _simular_item_auditoria_2027(
         self, grade, itens_por_linha: dict, usar_cenario_tcu: bool, parent,
+        *, permitir_venda_icms_st: bool = False,
     ):
         """Somente uma projecao informativa, sem alterar status do XML."""
         selecionados = grade.selection()
@@ -400,6 +408,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         regime = mapa.get(regime_original, "Nao informado")
         resultado = ServicoAliquotasRTC.simular_item_2027(
             item, regime=regime, usar_cenario_tcu=usar_cenario_tcu,
+            permitir_venda_icms_st=permitir_venda_icms_st,
         )
         contexto = (
             f"NF {item.get('numero_nf')} / item {item.get('numero_item')}\n"
