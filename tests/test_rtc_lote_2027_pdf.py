@@ -81,7 +81,14 @@ def test_pdf_resumido_gera_sem_credito_ou_cbs_tcu(servico, tmp_path):
     assert "As demais 2 linhas" in " ".join(texto.split())
     assert "3. Demais itens - anexo completo" not in texto
     assert "R$ 1,00" in texto  # 2 itens x 0,50 no IBS UF
-    assert len(leitor.pages) >= 2
+    assert len(leitor.pages) >= 3
+    from reportlab.lib.pagesizes import A4, landscape
+    assert abs(float(leitor.pages[0].mediabox.width) - A4[0]) < 1
+    assert abs(float(leitor.pages[0].mediabox.height) - A4[1]) < 1
+    assert abs(float(leitor.pages[1].mediabox.width) - landscape(A4)[0]) < 1
+    assert abs(float(leitor.pages[1].mediabox.height) - landscape(A4)[1]) < 1
+    # Pagina de capa e anexo possuem identidade no cabecalho.
+    assert "FiscalPro | Stephane Rhis + ChatGPT" in texto
 
 
 def test_pdf_cenario_tcu_apenas_com_optin_e_cruzamento_efd(servico, tmp_path):
