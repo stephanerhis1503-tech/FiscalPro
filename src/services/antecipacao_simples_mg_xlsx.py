@@ -63,7 +63,7 @@ def adicionar_aba_antecipacao(
     ws["A6"] = (
         "Metodologia: excluir ICMS interestadual da operacao; recompor base "
         "pela aliquota interna; ICMS interno menos ICMS interestadual. "
-        "Nao somar aos valores ST; revisar inclusao de IPI."
+        "A fórmula padrão exige tributação normal no XML e conferência da tributação em MG."
     )
     ws["A6"].alignment = Alignment(wrap_text=True)
     ws.row_dimensions[6].height = 32

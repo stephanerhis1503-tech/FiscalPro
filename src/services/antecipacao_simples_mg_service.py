@@ -92,6 +92,19 @@ def calcular_item(
             "Há enquadramento, cálculo condicional ou indício de ST no XML. Confira a incidência."
         )
 
+    cst = str(item.get("cst_icms") or "").strip()
+    csosn = str(item.get("csosn") or "").strip()
+    tributacao_normal_xml = (
+        (cst == "00" and not csosn) or (not cst and csosn in {"101", "102"})
+    )
+    if not tributacao_normal_xml:
+        codigo = f"CST {cst}" if cst else f"CSOSN {csosn}" if csosn else "CST/CSOSN ausente"
+        return _revisar(
+            "REVISAR TRIBUTAÇÃO",
+            f"{codigo}. Confira a tributação na origem e em MG, incluindo eventual "
+            "isenção, redução ou suspensão. A fórmula padrão não foi aplicada."
+        )
+
     st_pendente = bool(st.get("exige_revisao"))
     simulacao_com_pendencia = (
         simular_st_nao_localizada and st_pendente

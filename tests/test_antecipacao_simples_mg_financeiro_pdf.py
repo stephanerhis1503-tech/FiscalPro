@@ -21,7 +21,7 @@ def item(**kw):
         "valor_produtos": 100, "desconto": 0, "frete": 0,
         "seguro": 0, "outros": 0, "ipi": 0,
         "icms_st_xml": 0, "icms_st_retido_xml": 0,
-        "base_st_retida_xml": 0, **kw
+        "base_st_retida_xml": 0, "cst_icms": "00", "csosn": "", **kw
     }
 
 
@@ -272,3 +272,27 @@ def test_antecipacao_st_pendente_exige_opcao_e_sem_indicios_de_st(
     assert r["antecipacao_estimada"] == (
         Decimal("7.32") if status == "SIMULACAO — ST PENDENTE" else None
     )
+
+
+@pytest.mark.parametrize("cst,csosn,calcula", [
+    ("00", "", True),
+    ("", "101", True),
+    ("", "102", True),
+    ("20", "", False),
+    ("40", "", False),
+    ("41", "", False),
+    ("50", "", False),
+    ("51", "", False),
+    ("", "103", False),
+    ("", "300", False),
+    ("", "400", False),
+    ("", "", False),
+])
+def test_antecipacao_padrao_somente_tributacao_normal(cst, csosn, calcula):
+    r = calcular_item(
+        item(cst_icms=cst, csosn=csosn), {"st_oficial": {"encontrado": False}},
+        uf_origem="RJ", uf_destino="MG", destinatario_simples=True,
+        finalidade="REVENDA", aliquota_interna=18, aliquota_interestadual=12,
+    )
+    assert r["status"] == ("SIMULACAO CONDICIONAL" if calcula else "REVISAR TRIBUTAÇÃO")
+    assert r["antecipacao_estimada"] == (Decimal("7.32") if calcula else None)
