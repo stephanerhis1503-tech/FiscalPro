@@ -294,6 +294,40 @@ class GeradorRelatorioContasPagas:
             emp.auto_filter.ref = f"A3:I{max(3, last)}"
 
         wb.save(caminho)
+
+        # Mesmo modelo aprovado de capa azul com logo + anexo paisagem.
+        # A data de referencia continua a ser a do pagamento, nunca vencimento.
+        from src.financeiro.pdf_identidade_fiscalpro import gerar_pdf_tabela
+        pagamentos = []
+        for dados_linha in det.iter_rows(min_row=4, max_row=ultima_dados, values_only=True):
+            if not dados_linha or dados_linha[0] is None:
+                continue
+            def data_br(v):
+                if isinstance(v, datetime):
+                    return v.strftime("%d/%m/%Y")
+                return str(v or "")
+            dinheiro = f"R$ {float(dados_linha[6] or 0):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+            pagamentos.append((
+                data_br(dados_linha[0]), data_br(dados_linha[1]),
+                dados_linha[2], dados_linha[3], dados_linha[4],
+                dados_linha[5], dinheiro, dados_linha[7], dados_linha[11],
+            ))
+        total_br = f"R$ {total_geral:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+        gerar_pdf_tabela(
+            caminho.with_suffix(".pdf"),
+            titulo="Contas pagas do mes - Relatorio a Contabilidade",
+            periodo=f"{mes}/{ano} (data efetiva do pagamento)",
+            registros=pagamentos,
+            colunas=(
+                ("Pagamento", 11), ("Vencimento", 11),
+                ("Fornecedor", 17), ("CNPJ do fornecedor", 15),
+                ("Documento", 11), ("Empresa", 15),
+                ("Valor pago", 11), ("Descricao", 18), ("Anexo", 6),
+            ),
+            resumo="CNPJ vinculado ao DOCUMENTO pago; nao substituir pelo CNPJ padrao do cadastro.",
+            empresa=" / ".join(grupos.keys())[:150],
+            total=total_br,
+        )
         return ResultadoRelatorioContasPagas(
             caminho=caminho,
             quantidade_contas=len(contas),
