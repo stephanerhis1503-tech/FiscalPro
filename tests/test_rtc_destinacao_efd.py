@@ -106,6 +106,31 @@ def test_excel_destinacao_apenas_com_sped_fiscal_correspondente(tmp_path):
     assert ws["Z8"].value == "1556"
     assert ws["AA8"].value == "USO E CONSUMO (CFOP EFD)"
     assert ws["AB8"].value == "CHAVE + ITEM CONFERIDOS NO SPED"
-    assert wb["Resumo"]["E21"].value == 1
-    assert wb["Resumo"]["E24"].value == 1
+    assert wb["Resumo"]["E45"].value == 1
+    assert wb["Resumo"]["E52"].value == 1
     assert wb["Resumo"]["B34"].value == "sped_fiscal.txt"
+    assert wb["Resumo"]["E47"].value == 1
+
+
+
+def test_cfops_st_e_combustivel_sao_classificados_sem_creditos(tmp_path):
+    caminho = criar_efd(tmp_path)
+    texto = caminho.read_text(encoding="utf-8")
+    texto = texto.replace(
+        "|C170|1|PROD01|Produto|1|UN|10|0|0|060|1556|",
+        "|C170|1|PROD01|Produto|1|UN|10|0|0|060|1407|",
+    ).replace(
+        "|C170|2|PROD02|Produto|1|UN|20|0|0|060|2556|",
+        "|C170|2|PROD02|Produto|1|UN|20|0|0|060|1403|",
+    ).replace(
+        "|C170|1|PROD03|Produto|1|UN|30|0|0|060|1102|",
+        "|C170|1|PROD03|Produto|1|UN|30|0|0|060|1653|",
+    )
+    caminho.write_text(texto, encoding="utf-8")
+    mapa = ler_efd_icms_ipi(
+        caminho, cnpj_esperado=CNPJ, competencia_esperada="2026-10"
+    )
+    assert mapa.localizar(item(CHAVE_A, 1))["destinacao"] == "USO E CONSUMO COM ST (CFOP EFD)"
+    assert mapa.localizar(item(CHAVE_A, 2))["destinacao"] == "REVENDA COM ST (CFOP EFD)"
+    assert mapa.localizar(item(CHAVE_B, 1))["destinacao"] == "COMBUSTIVEL USUARIO FINAL (CFOP EFD)"
+    assert mapa.localizar(item(CHAVE_B, 1))["cfop_entrada"] == "1653"
