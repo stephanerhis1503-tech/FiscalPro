@@ -15,6 +15,7 @@ import re
 from xml.sax.saxutils import escape
 
 from src.services.rtc_relatorio_lote_2027_service import ServicoRelatorioLoteRTC2027
+from src.services.rtc_pdf_identidade_2027 import capa_conciliacao_visual, cabecalho_anexo
 
 
 AZUL = "#143A5F"
@@ -427,32 +428,35 @@ class ServicoRelatorioLoteRTC2027PDF:
         ))
 
         def pagina_pdf(canvas, doc):
-            canvas.saveState()
-            w, h = pagina
-            canvas.setStrokeColor(colors.HexColor("#D7E0E8"))
-            canvas.setLineWidth(0.5)
-            canvas.line(17 * mm, h - 13 * mm, w - 17 * mm, h - 13 * mm)
-            canvas.setFont("Helvetica-Bold", 8)
-            canvas.setFillColor(colors.HexColor(AZUL))
-            canvas.drawString(17 * mm, h - 10 * mm, "FISCALPRO  |  RTC 2027")
-            canvas.setFont("Helvetica", 7.2)
-            canvas.setFillColor(colors.HexColor(CINZA))
-            canvas.drawString(
-                17 * mm, 10 * mm,
-                "SIMULACAO / SEM EFEITO FISCAL  -  " +
-                str(dados["competencia"]) + "  |  " + str(dados["cnpj"])
-            )
-            canvas.drawRightString(w - 17 * mm, 10 * mm, f"Pagina {doc.page}")
-            canvas.restoreState()
+            cabecalho_anexo(canvas, doc, dados)
 
-        # O PDF so deve ser substituido depois de um build completo.
-        # ReportLab escreve diretamente no destino temporario.
+        # A capa segue o PDF de Conciliacao CBS Oficial ja aprovado:
+        # A4 retrato, logo branca, indicadores e conclusao.
+        # O detalhamento continua em A4 paisagem, com logo em cada pagina.
+        # O PDF preexistente so e substituido depois de tudo concluido.
+        from pypdf import PdfReader, PdfWriter
+
         destino.parent.mkdir(parents=True, exist_ok=True)
         provisoria = destino.with_name(destino.stem + ".gerando.pdf")
+        anexo = destino.with_name(destino.stem + ".anexo-gerando.pdf")
         try:
-            documento.filename = str(provisoria)
+            documento.filename = str(anexo)
+            documento.topMargin = 31 * mm
+            documento.bottomMargin = 20 * mm
             documento.build(story, onFirstPage=pagina_pdf, onLaterPages=pagina_pdf)
+            capa = capa_conciliacao_visual(dados, completo=incluir_todos_itens)
+            juntar = PdfWriter()
+            juntar.append(PdfReader(capa))
+            juntar.append(PdfReader(str(anexo)))
+            juntar.add_metadata({
+                "/Title": "FiscalPro - Auditoria IBS/CBS em lote - Simulacao 2027",
+                "/Author": "FiscalPro | Stephane Rhis + ChatGPT",
+                "/Subject": "Projecao demonstrativa com dados de XML e EFD; sem efeito fiscal",
+            })
+            with provisoria.open("wb") as arquivo_final:
+                juntar.write(arquivo_final)
             provisoria.replace(destino)
         finally:
+            anexo.unlink(missing_ok=True)
             provisoria.unlink(missing_ok=True)
         return destino
