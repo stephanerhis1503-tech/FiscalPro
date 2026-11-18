@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, X, StringVar, Toplevel, ttk
+from tkinter import BOTH, END, LEFT, X, BooleanVar, StringVar, Toplevel, ttk
 from tkinter import filedialog, messagebox
 
 from src.services.apuracao_assistida_local_service import ServicoApuracaoLocalRTC
 from src.services.rtc_relatorio_local_excel_service import ServicoRelatorioApuracaoLocalRTC
 from src.services.empresas_regimes_service import EmpresasRegimesService
+from src.services.rtc_aliquotas_service import ServicoAliquotasRTC
 
 
 class PainelApuracaoAssistidaRTC(ttk.Frame):
@@ -335,13 +336,35 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         for chave, rotulo in zip(colunas, rotulos):
             grade.heading(chave, text=rotulo)
             grade.column(chave, width=250 if chave in ("descricao", "motivos") else 110)
+        itens_por_linha = {}
         for item in itens:
-            grade.insert("", END, values=(
+            identificador = grade.insert("", END, values=(
                 item["numero_nf"], item["numero_item"], item["descricao"],
                 item["ncm"], item["cfop"], item["cst_ibscbs"],
                 item["cclass_trib"], item["valor_ibs"], item["valor_cbs"],
                 item["status_auditoria"], item["motivos"],
             ))
+            itens_por_linha[identificador] = item
+
+        opcoes = ttk.Frame(frame)
+        opcoes.pack(fill=X, pady=(8, 0))
+        cenario_tcu = BooleanVar(value=False)
+        ttk.Label(
+            opcoes, text="Projecao 2027: somente item selecionado, "
+                         "sem alterar XMLs ou apuracao.",
+        ).pack(side=LEFT, padx=(0, 12))
+        ttk.Checkbutton(
+            opcoes,
+            text="Incluir cenario CBS TCU (11,2%, NAO oficial)",
+            variable=cenario_tcu,
+        ).pack(side=LEFT, padx=(0, 8))
+        ttk.Button(
+            opcoes,
+            text="Simular item em 2027",
+            command=lambda: self._simular_item_auditoria_2027(
+                grade, itens_por_linha, cenario_tcu.get(), popup,
+            ),
+        ).pack(side=LEFT)
         area.rowconfigure(0, weight=1)
         area.columnconfigure(0, weight=1)
         grade.grid(row=0, column=0, sticky="nsew")
@@ -350,6 +373,62 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         grade.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
         scroll_y.grid(row=0, column=1, sticky="ns")
         scroll_x.grid(row=1, column=0, sticky="ew")
+
+    def _simular_item_auditoria_2027(
+        self, grade, itens_por_linha: dict, usar_cenario_tcu: bool, parent,
+    ):
+        """Somente uma projecao informativa, sem alterar status do XML."""
+        selecionados = grade.selection()
+        if len(selecionados) != 1:
+            messagebox.showinfo(
+                "RTC | Projecao por item",
+                "Selecione uma linha da Auditoria por Item antes de simular.",
+                parent=parent,
+            )
+            return
+
+        item = itens_por_linha[selecionados[0]]
+        empresa = self.empresas.get(self.var_empresa.get()) or {}
+        regime_original = EmpresasRegimesService.normalizar_regime(
+            empresa.get("regime") or ""
+        )
+        mapa = {
+            "LUCRO REAL": "Lucro Real",
+            "LUCRO PRESUMIDO": "Lucro Presumido",
+            "SIMPLES NACIONAL": "Simples Nacional",
+        }
+        regime = mapa.get(regime_original, "Nao informado")
+        resultado = ServicoAliquotasRTC.simular_item_2027(
+            item, regime=regime, usar_cenario_tcu=usar_cenario_tcu,
+        )
+        contexto = (
+            f"NF {item.get('numero_nf')} / item {item.get('numero_item')}\n"
+            f"Produto: {str(item.get('descricao') or '')[:130]}\n"
+            f"CFOP: {item.get('cfop')} | CST: {item.get('cst_ibscbs')} | "
+            f"cClassTrib: {item.get('cclass_trib')}\n"
+            f"Regime do cadastro: {regime}\n"
+            f"Status: {resultado['status']}\n\n"
+        )
+        if resultado["base"] is None:
+            detalhe = "Nenhum valor calculado: operacao exige revisao."
+        else:
+            def dinheiro(valor):
+                if valor is None:
+                    return "Nao calculado"
+                return f"R$ {valor:.2f}".replace(".", ",")
+            detalhe = (
+                f"Base usada (do XML): {dinheiro(resultado['base'])}\n"
+                f"IBS estadual 2027: {dinheiro(resultado['ibs_uf'])}\n"
+                f"IBS municipal 2027: {dinheiro(resultado['ibs_municipal'])}\n"
+                f"CBS 2027: {dinheiro(resultado['cbs'])}\n"
+                f"Total demonstrativo: {dinheiro(resultado['total'])}"
+            )
+        messagebox.showinfo(
+            "RTC | Projecao demonstrativa 2027",
+            contexto + detalhe + "\n\n" + resultado["observacao"]
+            + "\n\nSEM EFEITO FISCAL. Nao altera XML, apuracao, SPED ou credito.",
+            parent=parent,
+        )
 
     def _exportar_excel(self):
         """Relatorio de toda a competencia, sem limitar pelo filtro visual."""
