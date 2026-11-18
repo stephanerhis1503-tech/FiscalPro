@@ -298,6 +298,40 @@ class GestorDocumentosFinanceiros:
             relatorio = raiz / f"RELATORIO_DOCUMENTOS_{comp_br}.xlsx"
             wb.save(relatorio)
 
+            # PDF de conferencia enviado DENTRO do mesmo ZIP: capa com logo,
+            # relacao completa de documentos e CNPJ da conta/documento.
+            from src.financeiro.pdf_identidade_fiscalpro import gerar_pdf_tabela
+            linhas_pdf = []
+            for linha in ws.iter_rows(min_row=2, values_only=True):
+                if not linha or not linha[0]:
+                    continue
+                dinheiro = f"R$ {float(linha[6] or 0):,.2f}".replace(
+                    ",", "_"
+                ).replace(".", ",").replace("_", ".")
+                linhas_pdf.append((
+                    linha[0], linha[1], linha[2], linha[4],
+                    linha[5], dinheiro, linha[8], linha[10],
+                ))
+            total_docs = sum(float(l[6] or 0) for l in list(ws.values)[1:])
+            total_br = f"R$ {total_docs:,.2f}".replace(
+                ",", "_"
+            ).replace(".", ",").replace("_", ".")
+            gerar_pdf_tabela(
+                raiz / f"RELATORIO_DOCUMENTOS_{comp_br}.pdf",
+                titulo="Pacote mensal para a Contabilidade",
+                periodo=comp_br, registros=linhas_pdf,
+                colunas=(
+                    ("Empresa", 20), ("Fornecedor", 19), ("CNPJ do fornecedor", 16),
+                    ("No. documento", 13), ("Vencimento", 12), ("Valor", 12),
+                    ("Situacao", 13), ("Anexo", 8),
+                ),
+                resumo=(
+                    "Fornecedores identificados pelo CNPJ do documento. "
+                    "Conferir anexos e documentos ausentes."
+                ),
+                empresa=" / ".join(empresas_tuple)[:150], total=total_br,
+            )
+
             if faltantes:
                 (raiz / "DOCUMENTOS_FALTANTES.txt").write_text(
                     "DOCUMENTOS SEM ANEXO OU COM CAMINHO INVÁLIDO\n"
