@@ -12,6 +12,8 @@ on:
       - "src/services/rtc_relatorio_local_excel_service.py"
       - "src/services/rtc_relatorio_conciliacao_cbs.py"
       - "src/services/rtc_aliquotas_service.py"
+      - "src/services/rtc_relatorio_lote_2027_service.py"
+      - "tests/test_rtc_lote_2027.py"
       - "src/ui/painel_aliquotas_rtc.py"
       - "tests/test_rtc_aliquotas_2027.py"
       - "src/ui/painel_documentos_fiscais.py"
@@ -37,6 +39,6 @@ jobs:
       - name: Instalar dependencias de teste
         run: python -m pip install pytest openpyxl reportlab pypdf
       - name: Validar sintaxe
-        run: python -m compileall -q src/services/apuracao_assistida_local_service.py src/services/cbs_apuracao_oficial_service.py src/services/cbs_apuracao_api_client.py src/services/receita_integra_auth.py src/services/rtc_relatorio_local_excel_service.py src/services/rtc_relatorio_conciliacao_cbs.py src/services/rtc_aliquotas_service.py src/ui/painel_aliquotas_rtc.py src/ui/painel_documentos_fiscais.py src/ui/painel_apuracao_assistida_rtc.py src/ui/painel_cbs_oficial.py src/ui/painel_documentos_fiscais.py tests/test_rtc1_apuracao_local.py tests/test_rtc_local_excel.py tests/test_rtc_relatorio_conciliacao_cbs.py tests/test_rtc2_cbs_oficial.py tests/test_rtc_aliquotas_2027.py
+        run: python -m compileall -q src/services/apuracao_assistida_local_service.py src/services/cbs_apuracao_oficial_service.py src/services/cbs_apuracao_api_client.py src/services/receita_integra_auth.py src/services/rtc_relatorio_local_excel_service.py src/services/rtc_relatorio_conciliacao_cbs.py src/services/rtc_aliquotas_service.py src/services/rtc_relatorio_lote_2027_service.py src/ui/painel_aliquotas_rtc.py src/ui/painel_documentos_fiscais.py src/ui/painel_apuracao_assistida_rtc.py src/ui/painel_cbs_oficial.py src/ui/painel_documentos_fiscais.py tests/test_rtc1_apuracao_local.py tests/test_rtc_local_excel.py tests/test_rtc_relatorio_conciliacao_cbs.py tests/test_rtc2_cbs_oficial.py tests/test_rtc_aliquotas_2027.py tests/test_rtc_lote_2027.py tests/test_rtc_lote_2027.py
       - name: Testes RTC 1 + 2
         run: python -m pytest -q tests/test_rtc1_apuracao_local.py tests/test_rtc_local_excel.py tests/test_rtc_relatorio_conciliacao_cbs.py tests/test_rtc2_cbs_oficial.py tests/test_rtc_aliquotas_2027.py
