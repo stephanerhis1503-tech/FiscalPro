@@ -12,7 +12,7 @@ NUNCA grava client_id, client_secret, Authorization ou access_token.
 from __future__ import annotations
 
 from base64 import b64encode
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from math import ceil
@@ -59,7 +59,7 @@ def _tempo_retry_after(valor: str | None) -> int | None:
 
 @dataclass(frozen=True)
 class TokenTemporario:
-    valor: str
+    valor: str = field(repr=False)
     expira_em_segundos: int
 
 

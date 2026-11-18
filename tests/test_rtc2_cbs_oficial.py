@@ -470,3 +470,127 @@ def test_lista_oficial_isola_outras_raizes_e_exige_tipo_valido(servico):
         servico.listar_registros_oficiais(EMPRESA, "2026-11", "desconhecido")
     with pytest.raises(ValueError, match="Limite"):
         servico.listar_registros_oficiais(EMPRESA, "2026-11", "debitos", limite=10000)
+
+
+@pytest.mark.parametrize("tipo,registro,direcao", [
+    ("debitos", debito, "SAIDA"),
+    ("creditos", credito, "ENTRADA"),
+])
+def test_retomar_tiquete_apos_reabrir_e_conciliar(
+    servico, tmp_path, tipo, registro, direcao,
+):
+    from urllib.error import URLError
+
+    from src.services.apuracao_assistida_local_service import ServicoApuracaoLocalRTC
+    from tests.test_rtc1_apuracao_local import FORNECEDOR, xml_nfe
+
+    local = ServicoApuracaoLocalRTC(servico.banco)
+    partes = (EMPRESA, FORNECEDOR) if direcao == "SAIDA" else (FORNECEDOR, EMPRESA)
+    arquivo = tmp_path / "nota.xml"
+    arquivo.write_bytes(xml_nfe(emitente=partes[0], destinatario=partes[1]))
+    assert local.importar([arquivo], EMPRESA, "2026-11").importados == 1
+    antes = local.listar(EMPRESA, "2026-11")
+
+    cliente = ClienteCBSReceita("token-teste", servico)
+    pedidos = []
+
+    def controle(metodo, url, corpo=None):
+        pedidos.append((metodo, url))
+        if metodo == "POST":
+            return {"tiqueteSolicitacao": "abc.001"}
+        if "/situacao/" in url:
+            return {"situacao": "CONCLUIDA"}
+        assert "/download/" in url
+        return {"urlAssinada": "https://arquivo.exemplo.test/retorno"}
+
+    class Arquivo:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _limite):
+            return json.dumps(payload(tipo, [registro()])).encode()
+
+    class Download:
+        interrompido = True
+
+        def open(self, req, timeout):
+            assert req.full_url == "https://arquivo.exemplo.test/retorno"
+            assert req.get_header("Authorization") is None
+            if self.interrompido:
+                raise URLError("conexão interrompida")
+            return Arquivo()
+
+    download = Download()
+    cliente._json = controle
+    cliente._opener = download
+    ticket = cliente.solicitar(EMPRESA, tipo)
+    with pytest.raises(ErroConsultaCBS, match="Falha ao baixar"):
+        cliente.retomar(EMPRESA, tipo, ticket)
+
+    reaberto = ServicoCBSOficial(servico.banco)
+    assert reaberto.recuperar_ultimo_tiquete(EMPRESA, tipo)["ticket"] == ticket
+    cliente = ClienteCBSReceita("token-renovado", reaberto)
+    cliente._json = controle
+    cliente._opener = download
+    download.interrompido = False
+    estado, retorno = cliente.retomar(EMPRESA, tipo, ticket)
+    assert estado == "IMPORTADA"
+    assert retorno.novos == 1
+    assert cliente.retomar(EMPRESA, tipo, ticket) == ("IMPORTADA", None)
+    assert [metodo for metodo, _ in pedidos] == ["POST", "GET", "GET", "GET", "GET"]
+    assert not reaberto.existe_pendente(EMPRESA, tipo)
+    assert local.listar(EMPRESA, "2026-11") == antes
+    linha, = reaberto.conciliar(EMPRESA, "2026-11", tipo)
+    assert linha["status"] == "CONFERE"
+    assert linha["tipo"] == direcao
+    if tipo == "creditos":
+        assert linha["apropriado_oficial"] == "5.00"
+        assert linha["a_apropriar_oficial"] == "4.00"
+
+
+def test_tiquete_importado_nao_volta_para_fila(servico):
+    retorno = payload("debitos", [debito()])
+    assert servico.importar(retorno, "debitos", EMPRESA).novos == 1
+    servico.registrar_tiquete(EMPRESA, "debitos", "abc.001")
+    assert servico.importar(retorno, "debitos", EMPRESA).duplicado
+    servico.atualizar_tiquete("abc.001", "CONCLUIDA")
+    assert servico.localizar_tiquete(EMPRESA, "debitos", "abc.001")["situacao"] == "IMPORTADA"
+
+
+@pytest.mark.parametrize("renovar_apos_401", [True, False])
+def test_fluxo_oauth_invalida_token_e_repete_apenas_leitura(
+    monkeypatch, servico, renovar_apos_401,
+):
+    from src.services.receita_integra_auth import TokenTemporario
+    from src.ui.painel_cbs_oficial import PainelCBSOficial
+
+    painel = object.__new__(PainelCBSOficial)
+    painel.servico = servico
+    painel._credenciais_sessao = ("id-ficticio", "segredo-ficticio")
+    painel._invalidar_token()
+    tokens = iter(("primeiro-token", "segundo-token"))
+    monkeypatch.setattr(
+        "src.ui.painel_cbs_oficial.AutenticadorReceitaIntegra.obter_token",
+        lambda self, *_args: TokenTemporario(next(tokens), 60),
+    )
+    usados = []
+
+    def acao(cliente):
+        usados.append(cliente.token)
+        if len(usados) == 1:
+            raise ErroConsultaCBS("Token recusado.", status_http=401)
+        return "PENDENTE"
+
+    if renovar_apos_401:
+        assert painel._com_cliente(acao, renovar_apos_401=True) == "PENDENTE"
+        assert usados == ["primeiro-token", "segundo-token"]
+    else:
+        with pytest.raises(ErroConsultaCBS):
+            painel._com_cliente(acao)
+        assert usados == ["primeiro-token"]
+        assert painel._access_token is None

@@ -1,6 +1,6 @@
 """RTC 2: consulta controlada e conciliacao da CBS oficial vs. XML local.
 
-A interface nao armazena token, nao apropria credito e nao confirma apuracao.
+A sessão OAuth fica em memória e a conciliação é somente leitura.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from time import monotonic
 
 from src.services.cbs_apuracao_oficial_service import ServicoCBSOficial
 from src.services.rtc_relatorio_conciliacao_cbs import ServicoRelatorioConciliacaoCBS
-from src.services.cbs_apuracao_api_client import ClienteCBSReceita
-from src.services.receita_integra_auth import AutenticadorReceitaIntegra
+from src.services.cbs_apuracao_api_client import ClienteCBSReceita, ErroConsultaCBS
+from src.services.receita_integra_auth import AutenticadorReceitaIntegra, ErroAutenticacaoReceita
 from src.services.empresas_regimes_service import EmpresasRegimesService
 from src.ui.painel_apuracao_assistida_rtc import PainelApuracaoAssistidaRTC
 
@@ -33,9 +33,12 @@ class PainelCBSOficial(ttk.Frame):
         self.var_ano = StringVar(value=str(date.today().year))
         self.var_client_id = StringVar()
         self.var_client_secret = StringVar()
+        self._credenciais_sessao: tuple[str, str] | None = None
         self._access_token: str | None = None
         self._token_valido_ate = 0.0
         self.var_tiquete = StringVar()
+        self.var_empresa.trace_add("write", self._limpar_tiquete)
+        self.var_tipo.trace_add("write", self._limpar_tiquete)
         self.var_status = StringVar(value="Sem consulta oficial importada. Valores nao sao apuracao definitiva.")
         self.var_aviso = StringVar(value="Retornos oficiais sao incrementais; ausencia de nota nao prova ausencia na Receita.")
         self._em_rede = False
@@ -139,14 +142,14 @@ class PainelCBSOficial(ttk.Frame):
         )
         self.btn_situacao.pack(side=LEFT, padx=(0, 5))
         self.btn_baixar = ttk.Button(
-            linha_botoes, text="Baixar e importar retorno", command=self._baixar
+            linha_botoes, text="Retomar e importar retorno", command=self._baixar
         )
         self.btn_baixar.pack(side=LEFT)
         ttk.Label(
             api, text=(
-                "Credenciais sao usadas somente para gerar token temporario em memoria; "
-                "os campos sao limpos apos a autenticacao. Cada nova solicitacao "
-                "consome uma das 4 chamadas diarias permitidas por API."
+                "Use a credencial da matriz autorizada para a CBS. As credenciais ficam "
+                "em memória enquanto o painel estiver aberto. Para seguir uma consulta "
+                "existente, recupere o tíquete ou deixe o campo vazio ao retomar."
             ),
             wraplength=1040,
         ).pack(anchor="w", pady=(5, 0))
@@ -421,39 +424,68 @@ class PainelCBSOficial(ttk.Frame):
         )
         messagebox.showinfo("Histórico CBS oficial", texto, parent=self)
 
+    def _invalidar_token(self):
+        self._access_token = None
+        self._token_valido_ate = 0.0
+
+    def _obter_token(self, credenciais: tuple[str, str]):
+        resultado = AutenticadorReceitaIntegra().obter_token(*credenciais)
+        margem = min(120, resultado.expira_em_segundos / 10)
+        self._access_token = resultado.valor
+        self._token_valido_ate = monotonic() + resultado.expira_em_segundos - margem
+
     def _cliente(self):
         if not self._access_token or monotonic() >= self._token_valido_ate:
-            self._access_token = None
-            self._token_valido_ate = 0.0
-            raise ValueError("Token ausente ou expirado. Informe Client ID e Client Secret "
-                             "e clique em Autenticar novamente.")
+            self._invalidar_token()
+            if self._credenciais_sessao is None:
+                raise ErroAutenticacaoReceita(
+                    "Informe o Client ID e o Client Secret e clique em Autenticar."
+                )
+            self._obter_token(self._credenciais_sessao)
         return ClienteCBSReceita(self._access_token, self.servico)
+
+    def _com_cliente(self, acao, *, renovar_apos_401: bool = False):
+        cliente = self._cliente()
+        try:
+            return acao(cliente)
+        except ErroConsultaCBS as erro:
+            if erro.status_http != 401:
+                raise
+            self._invalidar_token()
+            if not renovar_apos_401:
+                raise
+        try:
+            return acao(self._cliente())
+        except ErroConsultaCBS as erro:
+            if erro.status_http == 401:
+                self._invalidar_token()
+                self._credenciais_sessao = None
+            raise
 
     def _autenticar(self):
         if self._em_rede:
-            messagebox.showwarning("CBS", "Ja existe uma requisicao em andamento.", parent=self)
             return
-        if self._access_token and monotonic() < self._token_valido_ate:
-            self.var_status.set(
-                "Token de acesso ainda valido nesta sessao. Nao e necessario "
-                "autenticar novamente. Utilize o tiquete ja salvo."
-            )
+        credenciais = (self.var_client_id.get().strip(), self.var_client_secret.get().strip())
+        if not any(credenciais) and self._credenciais_sessao:
+            credenciais = self._credenciais_sessao
+            if self._access_token and monotonic() < self._token_valido_ate:
+                self.var_status.set("Token válido nesta sessão. Você pode retomar o tíquete salvo.")
+                return
+        if not all(credenciais):
+            messagebox.showwarning("CBS", "Preencha o Client ID e o Client Secret.", parent=self)
             return
-        client_id = self.var_client_id.get()
-        client_secret = self.var_client_secret.get()
-        # Secrets sao retirados dos campos antes do envio. Nada e persistido.
-        self.var_client_id.set("")
-        self.var_client_secret.set("")
-        def solicitar_token():
-            return AutenticadorReceitaIntegra().obter_token(client_id, client_secret)
-        def concluir(resultado):
-            self._access_token = resultado.valor
-            self._token_valido_ate = monotonic() + max(0, resultado.expira_em_segundos - 120)
+        self._credenciais_sessao = None
+        self._invalidar_token()
+
+        def concluir(_resultado):
+            self._credenciais_sessao = credenciais
+            self.var_client_id.set("")
+            self.var_client_secret.set("")
             self.var_status.set(
-                "Autenticacao aceita pela Receita. Token temporario em memoria. "
-                "Agora e possivel solicitar consultas de CBS."
+                "Autenticação aceita. Você pode retomar um tíquete ou solicitar uma consulta."
             )
-        self._executar_online(solicitar_token, concluir)
+
+        self._executar_online(lambda: self._obter_token(credenciais), concluir)
 
     def _executar_online(self, acao, ao_concluir):
         if self._em_rede:
@@ -461,22 +493,26 @@ class PainelCBSOficial(ttk.Frame):
             return
         self._em_rede = True
         self.var_status.set("Consultando a Receita (somente leitura)...")
-        for botao in (self.btn_autenticar, self.btn_solicitar, self.btn_situacao, self.btn_baixar):
-            botao.configure(state="disabled")
+        controles = (self.btn_autenticar, self.btn_solicitar, self.btn_situacao,
+                     self.btn_baixar, self.id_entry, self.secret_entry)
+        for controle in controles:
+            controle.configure(state="disabled")
 
         def tarefa():
             try:
                 resposta = acao()
-            except Exception as exc:
+            except (ErroAutenticacaoReceita, ErroConsultaCBS, ValueError) as exc:
                 mensagem = str(exc)
                 self.after(0, lambda: terminar(None, mensagem))
+            except Exception:
+                self.after(0, lambda: terminar(None, "Falha ao concluir a operação de CBS."))
             else:
                 self.after(0, lambda: terminar(resposta, None))
 
         def terminar(resultado, erro):
             self._em_rede = False
-            for botao in (self.btn_autenticar, self.btn_solicitar, self.btn_situacao, self.btn_baixar):
-                botao.configure(state="normal")
+            for controle in controles:
+                controle.configure(state="normal")
             # Nunca exibir token ou URL assinada em mensagens.
             if erro:
                 self.var_status.set("Consulta nao concluida.")
@@ -489,7 +525,6 @@ class PainelCBSOficial(ttk.Frame):
     def _solicitar(self):
         try:
             cnpj, _, _, tipo = self._filtros()
-            cliente = self._cliente()
             if not messagebox.askyesno(
                 "Confirmar consulta", f"Solicitar nova consulta de {tipo} "
                 "a Receita? O limite oficial e de 4 solicitacoes diarias "
@@ -503,7 +538,9 @@ class PainelCBSOficial(ttk.Frame):
         def concluir(ticket):
             self.var_tiquete.set(ticket)
             self.var_status.set("Solicitacao aceita. Use Verificar tiquete antes do download.")
-        self._executar_online(lambda: cliente.solicitar(cnpj, tipo), concluir)
+        self._executar_online(
+            lambda: self._com_cliente(lambda cliente: cliente.solicitar(cnpj, tipo)), concluir,
+        )
 
     def _recuperar_tiquete(self):
         try:
@@ -528,32 +565,63 @@ class PainelCBSOficial(ttk.Frame):
         self.var_status.set(
             "Tiquete recuperado do banco local. "
             f"Situacao registrada: {registro['situacao']}. "
-            "Use Verificar tiquete para confirmar a situacao atual na Receita."
+            "Use Retomar e importar retorno para continuar esta consulta."
         )
+
+    def _limpar_tiquete(self, *_args):
+        self.var_tiquete.set("")
+
+    def _tiquete_da_consulta(self, cnpj: str, tipo: str) -> str:
+        ticket = self.var_tiquete.get().strip()
+        if not ticket:
+            registro = self.servico.recuperar_ultimo_tiquete(cnpj, tipo)
+            if registro is None:
+                raise ValueError("Nenhum tíquete em aberto para a empresa e o tipo selecionados.")
+            ticket = registro["ticket"]
+            self.var_tiquete.set(ticket)
+        return ticket
 
     def _situacao(self):
         try:
-            cliente = self._cliente()
-            ticket = self.var_tiquete.get().strip()
+            cnpj, _, _, tipo = self._filtros()
+            ticket = self._tiquete_da_consulta(cnpj, tipo)
         except ValueError as exc:
             messagebox.showerror("CBS", str(exc), parent=self)
             return
+
         def concluir(situacao):
-            self.var_status.set(f"Situacao oficial do tiquete: {situacao}")
-        self._executar_online(lambda: cliente.situacao(ticket), concluir)
+            self.var_status.set(f"Situação do tíquete: {situacao}.")
+
+        self._executar_online(
+            lambda: self._com_cliente(
+                lambda cliente: cliente.situacao(ticket, cnpj=cnpj, tipo=tipo),
+                renovar_apos_401=True,
+            ),
+            concluir,
+        )
 
     def _baixar(self):
         try:
             cnpj, _, _, tipo = self._filtros()
-            cliente = self._cliente()
-            ticket = self.var_tiquete.get().strip()
+            ticket = self._tiquete_da_consulta(cnpj, tipo)
         except ValueError as exc:
             messagebox.showerror("CBS", str(exc), parent=self)
             return
-        def concluir(resultado):
-            self.var_status.set(
-                f"JSON oficial recebido: {resultado.novos} novo(s), "
-                f"{resultado.atualizados} atualizados; retorno duplicado: {resultado.duplicado}."
-            )
+
+        def concluir(resposta):
+            estado, resultado = resposta
+            if resultado is None:
+                self.var_status.set(f"Situação do tíquete: {estado}.")
+                return
             self._comparar()
-        self._executar_online(lambda: cliente.baixar_e_importar(cnpj, tipo, ticket), concluir)
+            self.var_status.set(
+                f"Retorno oficial importado. {resultado.novos} novo(s), "
+                f"{resultado.atualizados} atualizado(s)."
+            )
+
+        self._executar_online(
+            lambda: self._com_cliente(
+                lambda cliente: cliente.retomar(cnpj, tipo, ticket), renovar_apos_401=True,
+            ),
+            concluir,
+        )

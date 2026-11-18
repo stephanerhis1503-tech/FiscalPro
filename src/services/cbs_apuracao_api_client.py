@@ -22,7 +22,9 @@ ESTADOS = {"PENDENTE", "EM_PROCESSAMENTO", "CONCLUIDA", "ERRO", "EXPIRADA"}
 
 
 class ErroConsultaCBS(RuntimeError):
-    pass
+    def __init__(self, mensagem: str, status_http: int | None = None):
+        super().__init__(mensagem)
+        self.status_http = status_http
 
 
 class _SemRedirecionamento(HTTPRedirectHandler):
@@ -65,11 +67,21 @@ class ClienteCBSReceita:
                     raise ErroConsultaCBS("Resposta de controle invalida.")
                 return obj
         except HTTPError as exc:
-            # Nunca exponha resposta com URLs assinadas ou credenciais.
-            raise ErroConsultaCBS(f"Consulta da CBS nao autorizada/concluida: HTTP {exc.code}.") from None
-        except (URLError, OSError) as exc:
-            raise ErroConsultaCBS("Nao foi possivel acessar a API da Receita. "
-                                  "Verifique conexao, credenciais e acesso ao servico.") from None
+            mensagens = {
+                401: "HTTP 401: a Receita recusou o token da consulta.",
+                403: "HTTP 403: confira a autorização da credencial da matriz para a CBS.",
+                429: "HTTP 429: limite de consultas da Receita. Aguarde antes de tentar novamente.",
+            }
+            raise ErroConsultaCBS(
+                mensagens.get(exc.code, f"A Receita retornou HTTP {exc.code} na consulta CBS."),
+                status_http=exc.code,
+            ) from None
+        except (URLError, OSError):
+            mensagem = "A conexão com a API da CBS foi interrompida."
+            if metodo == "POST":
+                mensagem += (" A solicitação pode ter sido recebida. "
+                             "Confira o andamento antes de pedir outra.")
+            raise ErroConsultaCBS(mensagem) from None
         except (json.JSONDecodeError, UnicodeError):
             raise ErroConsultaCBS("Resposta nao e JSON valido.") from None
 
@@ -96,8 +108,14 @@ class ClienteCBSReceita:
         self.servico.registrar_tiquete(cnpj_completo, tipo, ticket)
         return ticket
 
-    def situacao(self, ticket: str) -> str:
+    def situacao(self, ticket: str, *, cnpj: str | None = None, tipo: str | None = None) -> str:
         ticket = self._ticket(ticket)
+        if cnpj is not None:
+            registro = self.servico.localizar_tiquete(cnpj, tipo, ticket)
+            if registro is None:
+                raise ErroConsultaCBS("Tíquete não localizado para a empresa e o tipo selecionados.")
+            if registro["situacao"] == "IMPORTADA":
+                return "IMPORTADA"
         resposta = self._json("GET", f"{BASE_API}/situacao/{quote(ticket)}")
         estado = str(resposta.get("situacao") or "")
         if estado not in ESTADOS:
@@ -105,13 +123,20 @@ class ClienteCBSReceita:
         self.servico.atualizar_tiquete(ticket, estado)
         return estado
 
+    def retomar(self, cnpj_completo: str, tipo: str, ticket: str):
+        """Verifica o tíquete salvo e importa o retorno se já estiver disponível."""
+        estado = self.situacao(ticket, cnpj=cnpj_completo, tipo=tipo)
+        if estado != "CONCLUIDA":
+            return estado, None
+        resultado = self.baixar_e_importar(cnpj_completo, tipo, ticket)
+        return "IMPORTADA", resultado
+
     def baixar_e_importar(self, cnpj_completo: str, tipo: str, ticket: str):
         if tipo not in TIPOS:
             raise ValueError("Tipo invalido.")
         ticket = self._ticket(ticket)
-        base = self.servico.cnpj_base(cnpj_completo)
-        titulos = self.servico.listar_tiquetes(cnpj_completo, tipo)
-        if not any(t["ticket"] == ticket and t["situacao"] == "CONCLUIDA" for t in titulos):
+        registro = self.servico.localizar_tiquete(cnpj_completo, tipo, ticket)
+        if registro is None or registro["situacao"] != "CONCLUIDA":
             raise ErroConsultaCBS("Consulte a situacao e confirme CONCLUIDA antes do download.")
         dados = self._json("GET", f"{BASE_API}/download/{quote(ticket)}")
         url = dados.get("urlAssinada")

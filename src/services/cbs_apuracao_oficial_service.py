@@ -182,6 +182,17 @@ class ServicoCBSOficial:
                 ).fetchall()
         return [dict(l) for l in linhas]
 
+    def localizar_tiquete(self, cnpj_completo: str, tipo: str, ticket: str) -> dict | None:
+        if tipo not in TIPOS:
+            raise ValueError("Tipo de consulta inválido.")
+        base = self.cnpj_base(cnpj_completo)
+        with closing(self._conectar()) as con:
+            linha = con.execute(
+                "SELECT * FROM cbs_api_solicitacoes WHERE ticket=? AND cnpj_base=? AND tipo=?",
+                (ticket, base, tipo),
+            ).fetchone()
+        return dict(linha) if linha is not None else None
+
     def recuperar_ultimo_tiquete(self, cnpj_completo: str, tipo: str) -> dict | None:
         """Recupera uma consulta nao importada sem fazer nova chamada a Receita.
 
@@ -212,7 +223,7 @@ class ServicoCBSOficial:
         with closing(self._conectar()) as con, con:
             con.execute(
                 "UPDATE cbs_api_solicitacoes SET situacao=?, atualizado_em=CURRENT_TIMESTAMP, "
-                "detalhe=? WHERE ticket=?",
+                "detalhe=? WHERE ticket=? AND situacao <> 'IMPORTADA'",
                 (situacao, str(detalhe or "")[:300], ticket),
             )
 
@@ -403,6 +414,12 @@ class ServicoCBSOficial:
                 "cnpj_base=? AND tipo=? AND hash_resposta=?",
                 (base, tipo, hash_resposta),
             ).fetchone()
+            if ticket:
+                con.execute(
+                    "UPDATE cbs_api_solicitacoes SET situacao='IMPORTADA', "
+                    "atualizado_em=CURRENT_TIMESTAMP WHERE ticket=? AND cnpj_base=? AND tipo=?",
+                    (ticket, base, tipo),
+                )
             if ja:
                 return ResultadoOficial(tipo, base, 0, 0, 0, tuple(sorted(periodos)), True)
             for linha in declarados:
@@ -440,12 +457,6 @@ class ServicoCBSOficial:
                 "registros_novos,registros_atualizados) VALUES (?,?,?,?,?,?,?,?)",
                 (base, tipo, hash_resposta, ticket, gerado, len(declarados), novos, atualizados),
             )
-            if ticket:
-                con.execute(
-                    "UPDATE cbs_api_solicitacoes SET situacao='IMPORTADA', "
-                    "atualizado_em=CURRENT_TIMESTAMP WHERE ticket=? AND cnpj_base=? AND tipo=?",
-                    (ticket, base, tipo),
-                )
         return ResultadoOficial(tipo, base, novos, atualizados, antigos, tuple(sorted(periodos)))
 
     @staticmethod
