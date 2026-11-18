@@ -261,7 +261,7 @@ class ServicoRelatorioConciliacaoCBS:
         from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         pagina = landscape(A4)
-        doc = SimpleDocTemplate(
+        documento_pdf = SimpleDocTemplate(
             str(destino), pagesize=pagina,
             leftMargin=26, rightMargin=26, topMargin=62, bottomMargin=36,
             title=f"FiscalPro - Conciliacao CBS {dados['competencia']}",
@@ -375,4 +375,4 @@ class ServicoRelatorioConciliacaoCBS:
                                    f"FiscalPro | pagina {documento.page}")
             canvas.restoreState()
 
-        doc.build(story, onFirstPage=moldura, onLaterPages=moldura)
+        documento_pdf.build(story, onFirstPage=moldura, onLaterPages=moldura)
