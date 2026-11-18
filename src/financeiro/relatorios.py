@@ -335,7 +335,7 @@ class GeradorRelatoriosContasPagar:
         from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
         juntar_capa(
             caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
-            sum(len(itens) for itens in grupos.values()), _moeda(total_geral),
+            sum(len(itens) for itens in grupos.values()), _moeda(sum(totais.values())),
             descricao="Vencimentos e pendencias por empresa; valores em reais.",
             empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
         )
@@ -371,7 +371,7 @@ class GeradorRelatoriosContasPagar:
         from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
         juntar_capa(
             caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
-            sum(len(itens) for itens in grupos.values()), _moeda(total_geral),
+            sum(len(itens) for itens in grupos.values()), _moeda(sum(totais.values())),
             descricao="Vencimentos e pendencias por empresa; valores em reais.",
             empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
         )
@@ -402,7 +402,7 @@ class GeradorRelatoriosContasPagar:
         from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
         juntar_capa(
             caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
-            sum(len(itens) for itens in grupos.values()), _moeda(total_geral),
+            sum(len(itens) for itens in grupos.values()), _moeda(sum(totais.values())),
             descricao="Vencimentos e pendencias por empresa; valores em reais.",
             empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
         )
