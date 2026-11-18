@@ -290,7 +290,7 @@ class GeradorRelatoriosContasPagar:
         return elementos
 
     @staticmethod
-    def _identidade_pdf(canvas, doc) -> None:
+    def _cabecalho_pdf(canvas, largura: float, altura: float) -> None:
         from reportlab.lib import colors
         from reportlab.lib.units import mm
         from reportlab.lib.utils import ImageReader
@@ -298,13 +298,23 @@ class GeradorRelatoriosContasPagar:
         from src.core.caminhos import pasta_recursos
 
         canvas.saveState()
-        logo = pasta_recursos() / "assets" / "fiscalpro_logo_horizontal.png"
+        canvas.setFillColor(colors.HexColor("#114B7A"))
+        canvas.rect(0, altura - 10.5 * mm, largura, 10.5 * mm, fill=1, stroke=0)
+        logo = pasta_recursos() / "assets" / "fiscalpro_logo_horizontal_white.png"
         if logo.is_file():
             canvas.drawImage(
-                ImageReader(str(logo)), 12 * mm, doc.pagesize[1] - 12 * mm,
-                width=35 * mm, height=10.5 * mm, preserveAspectRatio=True,
+                ImageReader(str(logo)), 12 * mm, altura - 10 * mm,
+                width=35 * mm, height=9.5 * mm, preserveAspectRatio=True,
                 anchor="w", mask="auto",
             )
+        canvas.restoreState()
+
+    def _identidade_pdf(self, canvas, doc) -> None:
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+
+        self._cabecalho_pdf(canvas, *doc.pagesize)
+        canvas.saveState()
         canvas.setStrokeColor(colors.HexColor("#D9E2F3"))
         canvas.line(12 * mm, 10 * mm, doc.pagesize[0] - 12 * mm, 10 * mm)
         canvas.setFont("Helvetica", 7)
