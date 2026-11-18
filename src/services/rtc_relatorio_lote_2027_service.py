@@ -448,9 +448,20 @@ class ServicoRelatorioLoteRTC2027:
         for n, (titulo, total) in enumerate(conferencias, 21):
             ws.cell(n, 4, titulo)
             ws.cell(n, 5, total)
-        ws["D26"] = "CFOP de entrada da EFD difere do CFOP de saida do fornecedor."
-        ws["D27"] = "Uso e consumo operacional NAO determina automaticamente direito a credito IBS/CBS."
-        ws["D28"] = "Sem SPED Fiscal ou chave+item nao localizado: A CONFERIR."
+        # A26:H28 ja esta mesclado para o aviso tributario principal.
+        # Escrever em D26/D27/D28 gerava AttributeError (MergedCell), e
+        # interrompia a exportacao sem mostrar o erro na interface Tk.
+        notas = (
+            "CFOP de entrada da EFD difere do CFOP de saida do fornecedor.",
+            "Uso e consumo operacional NAO determina automaticamente direito a credito IBS/CBS.",
+            "Sem SPED Fiscal ou chave+item nao localizado: A CONFERIR.",
+        )
+        for numero, aviso in enumerate(notas, 40):
+            ws.merge_cells(start_row=numero, start_column=4, end_row=numero, end_column=8)
+            celula = ws.cell(numero, 4, aviso)
+            celula.font = Font(color=AZUL)
+            celula.alignment = Alignment(wrap_text=True, vertical="center")
+            ws.row_dimensions[numero].height = 28
 
         ws["A30"] = "Configuracao da exportacao"
         ws["A30"].font = Font(bold=True, size=12, color=AZUL)
