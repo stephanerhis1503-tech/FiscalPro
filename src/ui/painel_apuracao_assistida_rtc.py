@@ -11,6 +11,7 @@ from src.services.apuracao_assistida_local_service import ServicoApuracaoLocalRT
 from src.services.rtc_relatorio_local_excel_service import ServicoRelatorioApuracaoLocalRTC
 from src.services.empresas_regimes_service import EmpresasRegimesService
 from src.services.rtc_aliquotas_service import ServicoAliquotasRTC
+from src.services.rtc_relatorio_lote_2027_service import ServicoRelatorioLoteRTC2027
 
 
 class PainelApuracaoAssistidaRTC(ttk.Frame):
@@ -102,6 +103,10 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         ttk.Button(
             botoes, text="Auditoria por item", command=self._auditoria_por_item
         ).pack(side=LEFT)
+        ttk.Button(
+            botoes, text="Auditoria em lote 2027 (Excel)",
+            command=self._exportar_lote_2027,
+        ).pack(side=LEFT, padx=(8, 0))
         ttk.Label(cab, textvariable=self.var_status, wraplength=1020).pack(
             anchor="w", pady=(8, 0)
         )
@@ -440,6 +445,86 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
             + "\n\nSEM EFEITO FISCAL. Nao altera XML, apuracao, SPED ou credito.",
             parent=parent,
         )
+
+    def _exportar_lote_2027(self):
+        """Exporta 100% dos itens com salvaguardas para simular 2027."""
+        try:
+            cnpj, competencia = self._filtros()
+        except ValueError as exc:
+            messagebox.showerror("RTC | Auditoria em lote", str(exc), parent=self)
+            return
+        empresa = self.empresas.get(self.var_empresa.get()) or {}
+        regime_original = EmpresasRegimesService.normalizar_regime(
+            empresa.get("regime") or ""
+        )
+        regime = {
+            "LUCRO REAL": "Lucro Real",
+            "LUCRO PRESUMIDO": "Lucro Presumido",
+            "SIMPLES NACIONAL": "Simples Nacional",
+        }.get(regime_original, "Nao informado")
+
+        opcoes = Toplevel(self.winfo_toplevel())
+        opcoes.title("RTC | Auditoria em lote 2027 - configuracao")
+        opcoes.geometry("670x260")
+        opcoes.resizable(False, False)
+        conteudo = ttk.Frame(opcoes, padding=14)
+        conteudo.pack(fill=BOTH, expand=True)
+        ttk.Label(conteudo, text=(
+            f"Empresa: {empresa.get('nome') or cnpj} | "
+            f"Competencia XML: {competencia} | Simulacao: 2027"
+        ), wraplength=620).pack(anchor="w", pady=(0, 7))
+        ttk.Label(conteudo, text=(
+            "Este relatorio nao muda XML, apuracao ou tributos. "
+            "Operacoes especiais e pendentes serao sinalizadas como REVISAR. "
+            "A CBS definitiva de 2027 ainda nao esta cadastrada."
+        ), wraplength=620).pack(anchor="w", pady=(0, 10))
+        var_st = BooleanVar(value=False)
+        var_tcu = BooleanVar(value=False)
+        ttk.Checkbutton(conteudo, variable=var_st, text=(
+            "Permitir apenas hipotese CONDICIONAL de venda CFOP 5405 (ICMS-ST)"
+        )).pack(anchor="w", pady=(0, 5))
+        ttk.Checkbutton(conteudo, variable=var_tcu, text=(
+            "Simular CBS cenario TCU 11,2% (NAO oficial, nao usar fiscalmente)"
+        )).pack(anchor="w", pady=(0, 10))
+
+        def executar():
+            destino = filedialog.asksaveasfilename(
+                parent=opcoes,
+                title="Salvar auditoria em lote IBS/CBS 2027",
+                defaultextension=".xlsx",
+                initialfile=f"FiscalPro_RTC_Lote_2027_{cnpj}_{competencia}.xlsx",
+                filetypes=(("Planilha Excel", "*.xlsx"),),
+            )
+            if not destino:
+                return
+            try:
+                arquivo = ServicoRelatorioLoteRTC2027(self.servico).gerar(
+                    cnpj, competencia, destino,
+                    regime=regime, empresa=str(empresa.get("nome") or ""),
+                    permitir_venda_icms_st=var_st.get(),
+                    usar_cenario_tcu=var_tcu.get(),
+                )
+            except (ValueError, OSError, PermissionError, ImportError) as exc:
+                messagebox.showerror("RTC | Auditoria em lote", str(exc), parent=opcoes)
+                return
+            self.var_status.set(
+                f"Auditoria em lote 2027 exportada: {arquivo.name}. "
+                "Apenas simulacao, sem alteracoes fiscais."
+            )
+            messagebox.showinfo(
+                "RTC | Auditoria em lote 2027",
+                f"Arquivo gerado: {arquivo}\n\n"
+                "Todos os itens foram analisados. Revise as abas de "
+                "operacoes especiais e pendencias. Nao e apuracao oficial.",
+                parent=opcoes,
+            )
+            opcoes.destroy()
+
+        ttk.Button(
+            conteudo, text="Gerar auditoria em lote (Excel)", command=executar
+        ).pack(anchor="w")
+        opcoes.transient(self.winfo_toplevel())
+        opcoes.grab_set()
 
     def _exportar_excel(self):
         """Relatorio de toda a competencia, sem limitar pelo filtro visual."""
