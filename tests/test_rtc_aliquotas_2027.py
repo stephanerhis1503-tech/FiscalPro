@@ -100,3 +100,81 @@ def test_taxa_nao_entra_na_apuracao_xml():
     assert "PainelAliquotasRTC" in fonte
     assert "importar" not in inspect.getsource(rtc_aliquotas_service.ServicoAliquotasRTC)
     assert "conexao" not in inspect.getsource(rtc_aliquotas_service.ServicoAliquotasRTC)
+
+
+
+ITEM_VENDA = {
+    "numero_nf": "12345",
+    "numero_item": "1",
+    "descricao": "Produto de venda comum",
+    "direcao": "SAIDA",
+    "cfop": "5102",
+    "cst_ibscbs": "000",
+    "cclass_trib": "000001",
+    "base_ibs_cbs": "1000.00",
+    "status_auditoria": "OK",
+}
+
+
+def test_simulacao_item_venda_2027_sem_cbs_definitiva_e_sem_mutacao():
+    item = ITEM_VENDA.copy()
+    retorno = ServicoAliquotasRTC.simular_item_2027(
+        item, regime="Lucro Real"
+    )
+    assert retorno["status"] == "CBS_PENDENTE_DEFINICAO"
+    assert retorno["ibs_uf"] == Decimal("0.50")
+    assert retorno["ibs_municipal"] == Decimal("0.50")
+    assert retorno["cbs"] is None
+    assert retorno["efeito_fiscal"] is False
+    assert item == ITEM_VENDA
+
+
+def test_simulacao_item_2027_tcu_somente_explicitamente():
+    retorno = ServicoAliquotasRTC.simular_item_2027(
+        ITEM_VENDA, regime="Lucro Real", usar_cenario_tcu=True
+    )
+    assert retorno["status"] == "CENARIO_TCU_NAO_OFICIAL"
+    assert retorno["cbs"] == Decimal("112.00")
+    assert retorno["total"] == Decimal("113.00")
+
+
+@pytest.mark.parametrize(
+    "alteracoes,status",
+    [
+        ({"direcao": "ENTRADA"}, "REVISAR_TIPO_OPERACAO"),
+        ({"direcao": "GARANTIA"}, "REVISAR_TIPO_OPERACAO"),
+        ({"status_auditoria": "REVISAR"}, "REVISAR_AUDITORIA_XML"),
+        ({"status_auditoria": "REGRA ESPECIAL"}, "REVISAR_AUDITORIA_XML"),
+        ({"cfop": "5405"}, "REVISAR_CFOP_OPERACAO"),
+        ({"cfop": "6108"}, "REVISAR_CFOP_OPERACAO"),
+        ({"cfop": "5152"}, "REVISAR_CFOP_OPERACAO"),
+        ({"base_ibs_cbs": ""}, "REVISAR_DADOS_ITEM"),
+    ],
+)
+def test_item_fora_do_escopo_nao_recebe_aliquota(alteracoes, status):
+    item = {**ITEM_VENDA, **alteracoes}
+    retorno = ServicoAliquotasRTC.simular_item_2027(
+        item, regime="Lucro Real", usar_cenario_tcu=True
+    )
+    assert retorno["status"] == status
+    assert retorno["cbs"] is None
+    assert retorno["ibs_uf"] is None
+    assert retorno["total"] is None
+    assert retorno["efeito_fiscal"] is False
+
+
+def test_item_cst_especial_nao_calcula():
+    item = {**ITEM_VENDA, "cst_ibscbs": "200", "cclass_trib": "200001"}
+    resultado = ServicoAliquotasRTC.simular_item_2027(
+        item, regime="Lucro Real", usar_cenario_tcu=True
+    )
+    assert resultado["status"] == "REGRA_ESPECIAL_REVISAR"
+    assert resultado["cbs"] is None
+
+
+def test_item_simples_nao_calcula():
+    resultado = ServicoAliquotasRTC.simular_item_2027(
+        ITEM_VENDA, regime="Simples Nacional", usar_cenario_tcu=True
+    )
+    assert resultado["status"] == "REVISAR_REGIME"
+    assert resultado["total"] is None
