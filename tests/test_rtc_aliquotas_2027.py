@@ -93,9 +93,10 @@ def test_bases_invalidas(base):
 
 def test_taxa_nao_entra_na_apuracao_xml():
     import inspect
-    from src.ui.painel_documentos_fiscais import PainelDocumentosFiscais
+    from pathlib import Path
     from src.services import rtc_aliquotas_service
-    fonte = inspect.getsource(PainelDocumentosFiscais)
+    # Ler o codigo da central sem importar a cadeia de certificados A1.
+    fonte = (Path(__file__).parents[1] / "src/ui/painel_documentos_fiscais.py").read_text(encoding="utf-8")
     assert "PainelAliquotasRTC" in fonte
     assert "importar" not in inspect.getsource(rtc_aliquotas_service.ServicoAliquotasRTC)
     assert "conexao" not in inspect.getsource(rtc_aliquotas_service.ServicoAliquotasRTC)
