@@ -291,17 +291,9 @@ class GeradorRelatoriosContasPagar:
 
     @staticmethod
     def _rodape_pdf(canvas, doc) -> None:
-        from reportlab.lib import colors
-        from reportlab.lib.units import mm
-
-        canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor("#D9E2F3"))
-        canvas.line(12 * mm, 10 * mm, doc.pagesize[0] - 12 * mm, 10 * mm)
-        canvas.setFont("Helvetica", 7)
-        canvas.setFillColor(colors.HexColor("#666666"))
-        canvas.drawString(12 * mm, 6 * mm, "FiscalPro - Contas a Pagar")
-        canvas.drawRightString(doc.pagesize[0] - 12 * mm, 6 * mm, f"Página {doc.page}")
-        canvas.restoreState()
+        # Identidade dos relatorios RTC/CBS: faixa azul, logo e creditos.
+        from src.financeiro.pdf_identidade_fiscalpro import cabecalho_financeiro
+        cabecalho_financeiro(canvas, doc)
 
     def _pdf_consolidado(
         self,
@@ -324,7 +316,7 @@ class GeradorRelatoriosContasPagar:
             pagesize=landscape(A4),
             leftMargin=12 * mm,
             rightMargin=12 * mm,
-            topMargin=11 * mm,
+            topMargin=32 * mm,
             bottomMargin=14 * mm,
             title="Relatório de Contas a Pagar - FiscalPro",
             author="FiscalPro - Stephane Rhis + ChatGPT",
@@ -340,6 +332,13 @@ class GeradorRelatoriosContasPagar:
                     elementos.append(PageBreak())
                 elementos.extend(self._detalhe_empresa_pdf(empresa, contas, totais[empresa]))
         doc.build(elementos, onFirstPage=self._rodape_pdf, onLaterPages=self._rodape_pdf)
+        from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
+        juntar_capa(
+            caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
+            sum(len(itens) for itens in grupos.values()), _moeda(total_geral),
+            descricao="Vencimentos e pendencias por empresa; valores em reais.",
+            empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
+        )
         return caminho
 
     def _pdf_empresa(
@@ -359,7 +358,7 @@ class GeradorRelatoriosContasPagar:
         totais = OrderedDict(((empresa, total),))
         doc = SimpleDocTemplate(
             str(caminho), pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm,
-            topMargin=11 * mm, bottomMargin=14 * mm,
+            topMargin=32 * mm, bottomMargin=14 * mm,
             title=f"Contas a Pagar - {empresa}", author="FiscalPro - Stephane Rhis + ChatGPT",
         )
         elementos = self._resumo_pdf(
@@ -369,6 +368,13 @@ class GeradorRelatoriosContasPagar:
         if opcoes.detalhado:
             elementos.extend(self._detalhe_empresa_pdf(empresa, contas, total, incluir_titulo=False))
         doc.build(elementos, onFirstPage=self._rodape_pdf, onLaterPages=self._rodape_pdf)
+        from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
+        juntar_capa(
+            caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
+            sum(len(itens) for itens in grupos.values()), _moeda(total_geral),
+            descricao="Vencimentos e pendencias por empresa; valores em reais.",
+            empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
+        )
         return caminho
 
     def _pdf_resumo_geral(
@@ -385,7 +391,7 @@ class GeradorRelatoriosContasPagar:
 
         doc = SimpleDocTemplate(
             str(caminho), pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm,
-            topMargin=11 * mm, bottomMargin=14 * mm,
+            topMargin=32 * mm, bottomMargin=14 * mm,
             title="Resumo Geral de Contas a Pagar", author="FiscalPro - Stephane Rhis + ChatGPT",
         )
         elementos = self._resumo_pdf(
@@ -393,6 +399,13 @@ class GeradorRelatoriosContasPagar:
             titulo="RESUMO GERAL - CONTAS A PAGAR",
         )
         doc.build(elementos, onFirstPage=self._rodape_pdf, onLaterPages=self._rodape_pdf)
+        from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
+        juntar_capa(
+            caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
+            sum(len(itens) for itens in grupos.values()), _moeda(total_geral),
+            descricao="Vencimentos e pendencias por empresa; valores em reais.",
+            empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
+        )
         return caminho
 
     def _pdf_separado(
