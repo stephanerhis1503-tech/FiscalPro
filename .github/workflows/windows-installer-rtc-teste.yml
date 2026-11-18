@@ -7,6 +7,9 @@ on:
     paths:
       - '.github/workflows/windows-installer-rtc-teste.yml'
       - 'src/financeiro/relatorios.py'
+      - 'src/services/antecipacao_simples_mg_service.py'
+      - 'src/services/antecipacao_simples_mg_xlsx.py'
+      - 'src/ui/janela_xml_icms_st.py'
       - 'src/services/cbs_apuracao_api_client.py'
       - 'src/services/cbs_apuracao_oficial_service.py'
       - 'src/services/receita_integra_auth.py'

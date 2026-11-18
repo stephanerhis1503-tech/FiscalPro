@@ -14,6 +14,7 @@ def adicionar_aba_antecipacao(
     arquivo: str | Path, resultado: dict, *, destinatario_simples: bool,
     finalidade: str, aliquota_interna: object,
     aliquota_interestadual: object,
+    simular_st_nao_localizada: bool = False,
 ) -> dict:
     """A planilha ST original permanece; segunda aba e demonstrativa."""
     from openpyxl import load_workbook
@@ -27,6 +28,7 @@ def adicionar_aba_antecipacao(
         resultado, destinatario_simples=destinatario_simples,
         finalidade=finalidade, aliquota_interna=aliquota_interna,
         aliquota_interestadual=aliquota_interestadual,
+        simular_st_nao_localizada=simular_st_nao_localizada,
     )
     wb = load_workbook(caminho)
     if "Antecipacao SN MG" in wb.sheetnames:
@@ -81,9 +83,11 @@ def adicionar_aba_antecipacao(
     ws.row_dimensions[header_row].height = 34
 
     statuses = Counter()
+    calculados = 0
     for num, linha in enumerate(linhas, header_row + 1):
         item, dados = linha["item"], linha["resultado"]
         statuses[dados["status"]] += 1
+        calculados += dados["antecipacao_estimada"] is not None
         valores = [
             item.get("numero_item"), item.get("codigo"), item.get("descricao"),
             item.get("ncm"), item.get("cfop"), dados["status"],
@@ -108,7 +112,10 @@ def adicionar_aba_antecipacao(
     total = ultima + 2
     ws.cell(total, 12, "TOTAL SIMULADO (NAO RECOLHER)")
     ws.cell(total, 12).font = Font(bold=True, color="114B7A")
-    ws.cell(total, 13, f"=SUM(M{primeira}:M{ultima})")
+    if calculados:
+        ws.cell(total, 13, f"=SUM(M{primeira}:M{ultima})")
+    else:
+        ws.cell(total, 13, "SEM ITENS CALCULADOS")
     ws.cell(total, 13).number_format = 'R$ #,##0.00'
     ws.cell(total, 13).font = Font(bold=True, color="114B7A")
     ws.merge_cells(start_row=total+2, start_column=1, end_row=total+2, end_column=15)
@@ -121,4 +128,4 @@ def adicionar_aba_antecipacao(
     ws.auto_filter.ref = f"A8:O{ultima}"
     wb.calculation.fullCalcOnLoad = True
     wb.save(caminho)
-    return {"arquivo": str(caminho), "total_itens": len(linhas), "status": dict(statuses)}
+    return {"arquivo": str(caminho), "total_itens": len(linhas), "calculados": calculados, "status": dict(statuses)}

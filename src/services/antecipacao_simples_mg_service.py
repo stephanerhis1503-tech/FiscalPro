@@ -60,6 +60,7 @@ def calcular_item(
     aliquota_interna: object,
     aliquota_interestadual: object,
     base_manual: object = None,
+    simular_st_nao_localizada: bool = False,
 ) -> dict:
     """Calcula apenas quando destino/aliquotas/base foram confirmados.
 
@@ -77,18 +78,40 @@ def calcular_item(
         return _revisar("REVISAR FINALIDADE", "Confirmar revenda, industrializacao ou uso na prestacao de servico.")
 
     st = dict(resultado_st.get("st_oficial") or {})
-    if any((
-        bool(st.get("confirmado")),
-        bool(st.get("encontrado")) and not bool(st.get("nao_aplicavel")),
-        bool(st.get("exige_revisao")),
-        bool(resultado_st.get("calculo_condicional")) and bool(resultado_st.get("calculado")),
-        bool(_numero(item.get("icms_st_xml")) or 0),
-        bool(_numero(item.get("icms_st_retido_xml")) or 0),
-        bool(_numero(item.get("base_st_retida_xml")) or 0),
-    )):
+    st_no_xml = any(
+        _numero(item.get(campo)) or 0
+        for campo in ("icms_st_xml", "icms_st_retido_xml", "base_st_retida_xml")
+    )
+    if (st.get("confirmado")
+        or (st.get("encontrado") and not st.get("nao_aplicavel"))
+        or (resultado_st.get("calculo_condicional") and resultado_st.get("calculado"))
+        or st_no_xml
+    ):
         return _revisar(
             "REVISAR ICMS-ST",
-            "ST encontrada, retida ou condicional. NAO somar antecipacao sem verificar o regime aplicavel."
+            "Há enquadramento, cálculo condicional ou indício de ST no XML. Confira a incidência."
+        )
+
+    st_pendente = bool(st.get("exige_revisao"))
+    simulacao_com_pendencia = (
+        simular_st_nao_localizada and st_pendente
+        and st.get("encontrado") is False
+        and st.get("candidatos") == 0
+        and st.get("decisao_st") == "CONDICIONAL"
+        and not resultado_st.get("calculado")
+        and not item.get("cest_xml")
+        and not any(_numero(item.get(campo)) or 0 for campo in (
+            "base_st_xml", "fcp_st_xml", "fcp_st_retido_xml",
+        ))
+        and final == "REVENDA"
+        and str(item.get("cst_icms") or "") == "00"
+        and str(item.get("ncm") or "").isdigit()
+        and len(str(item.get("ncm") or "")) == 8
+    )
+    if st_pendente and not simulacao_com_pendencia:
+        return _revisar(
+            "REVISAR ICMS-ST",
+            str(st.get("observacao") or "Enquadramento ST ainda pendente de verificação."),
         )
 
     interno = _numero(aliquota_interna)
@@ -133,10 +156,14 @@ def calcular_item(
     antecipacao = max(Decimal("0"), interno_val - icms_inter).quantize(
         CENTAVO, rounding=ROUND_HALF_UP
     )
+    ressalva_st = (
+        "Hipótese de revenda sem ST. Enquadramento ST pendente; conferir antes de recolher. "
+        if simulacao_com_pendencia else ""
+    )
     return {
-        "status": "SIMULACAO CONDICIONAL",
+        "status": "SIMULACAO — ST PENDENTE" if simulacao_com_pendencia else "SIMULACAO CONDICIONAL",
         "motivo": (
-            "Valor demonstrativo; conferir CST, CFOP de ENTRADA, eventual beneficio, "
+            ressalva_st + "Valor demonstrativo; conferir CST, CFOP de ENTRADA, eventual beneficio, "
             "aliquotas e base antes de qualquer recolhimento. Fonte base: " + origem_base
         ),
         "base_operacao": base.quantize(CENTAVO, rounding=ROUND_HALF_UP),
@@ -153,7 +180,8 @@ def calcular_item(
 
 def calcular_lote(resultado: dict, *, destinatario_simples: bool,
                    finalidade: str, aliquota_interna: object,
-                   aliquota_interestadual: object) -> list[dict]:
+                   aliquota_interestadual: object,
+                   simular_st_nao_localizada: bool = False) -> list[dict]:
     linhas = []
     for r in resultado.get("itens") or []:
         item = dict(r.get("item") or {})
@@ -165,7 +193,7 @@ def calcular_lote(resultado: dict, *, destinatario_simples: bool,
             finalidade=finalidade,
             aliquota_interna=aliquota_interna,
             aliquota_interestadual=aliquota_interestadual,
-            base_manual=None,
+            simular_st_nao_localizada=simular_st_nao_localizada,
         )
         linhas.append({"item": item, "resultado": dado})
     return linhas

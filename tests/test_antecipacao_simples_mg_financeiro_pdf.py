@@ -244,3 +244,31 @@ def test_pdf_semanal_pagina_em_paisagem_com_logo_e_preserva_contas(
             assert all(empresa in texto for empresa in empresas)
             total = "R$ 7.200,00" if por_empresa == 60 else "R$ 120,00"
             assert total in texto
+
+
+@pytest.mark.parametrize("campos_xml,encontrado,opt_in,status", [
+    ({}, False, False, "REVISAR ICMS-ST"),
+    ({}, False, True, "SIMULACAO — ST PENDENTE"),
+    ({"cest_xml": "28.059.00"}, False, True, "REVISAR ICMS-ST"),
+    ({"icms_st_retido_xml": 10}, False, True, "REVISAR ICMS-ST"),
+    ({}, True, True, "REVISAR ICMS-ST"),
+])
+def test_antecipacao_st_pendente_exige_opcao_e_sem_indicios_de_st(
+    campos_xml, encontrado, opt_in, status,
+):
+    roupa = item(ncm="62121000", cst_icms="00", **campos_xml)
+    regra = {
+        "st_oficial": {
+            "encontrado": encontrado, "exige_revisao": True,
+            "decisao_st": "CONDICIONAL", "candidatos": int(encontrado),
+        }
+    }
+    r = calcular_item(
+        roupa, regra, uf_origem="RJ", uf_destino="MG", destinatario_simples=True,
+        finalidade="REVENDA", aliquota_interna=18, aliquota_interestadual=12,
+        simular_st_nao_localizada=opt_in,
+    )
+    assert r["status"] == status
+    assert r["antecipacao_estimada"] == (
+        Decimal("7.32") if status == "SIMULACAO — ST PENDENTE" else None
+    )

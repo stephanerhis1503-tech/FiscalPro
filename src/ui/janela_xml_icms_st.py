@@ -251,6 +251,7 @@ class JanelaXMLICMSST(tk.Toplevel):
         self.remetente_simples_var = tk.BooleanVar(value=False)
         # Esta opcao e do DESTINATARIO. Nunca inferir do CRT do emitente.
         self.antecipacao_habilitada_var = tk.BooleanVar(value=False)
+        self.antecipacao_st_pendente_var = tk.BooleanVar(value=False)
         self.antecipacao_interna_var = tk.StringVar(value="")
         self.antecipacao_inter_var = tk.StringVar(value="")
         self.antecipacao_finalidade_var = tk.StringVar(value="REVENDA")
@@ -398,6 +399,11 @@ class JanelaXMLICMSST(tk.Toplevel):
             ), foreground="#805314", wraplength=1100,
         ).grid(row=2, column=0, columnspan=6, sticky="w", pady=(2, 2))
 
+        ttk.Checkbutton(
+            ante, text="Simular revenda sem ST quando o enquadramento estiver pendente",
+            variable=self.antecipacao_st_pendente_var,
+        ).grid(row=3, column=0, columnspan=6, sticky="w")
+
         lista = ttk.LabelFrame(conteudo, text="2. Itens, cálculo e conferência do XML", padding=8)
         lista.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
@@ -498,6 +504,7 @@ class JanelaXMLICMSST(tk.Toplevel):
             return
 
         self.ajustes.clear()
+        self.antecipacao_st_pendente_var.set(False)
         self.caminho_xml.set(
             f"NF-e {self.nota.numero}/{self.nota.serie} — {self.nota.emitente_nome} — {Path(arquivo).name}"
         )
@@ -677,6 +684,7 @@ class JanelaXMLICMSST(tk.Toplevel):
             return
         try:
             valores_ante = None
+            resumo_antecipacao = None
             if self.antecipacao_habilitada_var.get():
                 if self.uf_destino_var.get() != "MG" or self.uf_origem_var.get() == "MG":
                     raise ValueError("Antecipacao SN/MG exige operacao interestadual destinada a MG.")
@@ -691,19 +699,24 @@ class JanelaXMLICMSST(tk.Toplevel):
                 valores_ante = (interna, interestadual)
             arquivo = ExportadorXMLICMSSTXLSX.exportar(self.resultado, caminho)
             if valores_ante is not None:
-                adicionar_aba_antecipacao(
+                resumo_antecipacao = adicionar_aba_antecipacao(
                     arquivo, self.resultado, destinatario_simples=True,
                     finalidade=self.antecipacao_finalidade_var.get(),
                     aliquota_interna=valores_ante[0],
                     aliquota_interestadual=valores_ante[1],
+                    simular_st_nao_localizada=self.antecipacao_st_pendente_var.get(),
                 )
         except Exception as erro:
             messagebox.showerror("FiscalPro", f"Não foi possível gerar a planilha:\n{erro}", parent=self)
             return
         self.status_var.set(f"Planilha gerada: {arquivo}")
-        messagebox.showinfo(
-            "FiscalPro",
-            "Planilha gerada com sucesso.\n\n"
-            "Ela contém Valor do item + IPI, ST informado no XML, ST calculado, diferença, situação, classificação do NCM 7318 e fonte oficial.",
-            parent=self,
-        )
+        mensagem = "Planilha de conferência do ICMS-ST gerada."
+        if resumo_antecipacao is not None:
+            calculados = resumo_antecipacao["calculados"]
+            total = resumo_antecipacao["total_itens"]
+            mensagem += f"\n\nAntecipacao SN MG: {calculados} de {total} item(ns) calculado(s)."
+            if calculados < total:
+                mensagem += " Confira a coluna Observação dos itens sem valor."
+            if resumo_antecipacao["status"].get("SIMULACAO — ST PENDENTE"):
+                mensagem += " A simulação inclui itens com enquadramento ST pendente."
+        messagebox.showinfo("FiscalPro", mensagem, parent=self)
