@@ -513,7 +513,13 @@ class ServicoRelatorioConciliacaoCBS:
             c.setPageSize((largura, altura))
             tabela_x = 33
             pagina = 2
-            blocos = 28
+            # Mantem 28 documentos por pagina SEM ultrapassar o rodape.
+            # A4 paisagem: tabela inicia em (altura - 129), e o rodape
+            # comeca em y=26; reservamos um espaco minimo de 42 pt.
+            altura_linha = 15
+            blocos = min(28, int((altura - 129 - 42) // altura_linha))
+            if blocos < 1:
+                raise ValueError("Pagina pequena demais para o anexo de conciliacao.")
             for inicio in range(0, len(linhas), blocos):
                 grupo = linhas[inicio:inicio + blocos]
                 c.setFillColor(azul)
@@ -541,8 +547,8 @@ class ServicoRelatorioConciliacaoCBS:
                     texto(titulo, px + 5, tabela_y + 8, "Helvetica-Bold", 8, colors.white)
                     px += tam
                 for idx, doc in enumerate(grupo):
-                    ylinha = tabela_y - 19 * (idx + 1)
-                    retangulo(tabela_x, ylinha, sum(larguras), 19,
+                    ylinha = tabela_y - altura_linha * (idx + 1)
+                    retangulo(tabela_x, ylinha, sum(larguras), altura_linha,
                               colors.white if idx % 2 == 0 else azul_claro, raio=0)
                     vals = [
                         doc["nf"], doc["tipo"], doc["emissao"], doc["chave"],
