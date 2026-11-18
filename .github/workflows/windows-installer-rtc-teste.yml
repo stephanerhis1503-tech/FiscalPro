@@ -1,0 +1,68 @@
+name: Windows - instalador completo RTC
+
+on:
+  push:
+    branches:
+      - teste/rtc-sped-contribuicoes-20261113
+    paths:
+      - '.github/workflows/windows-installer-rtc-teste.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Testar RTC e relatórios financeiros
+        run: |
+          python -m pip install -r requirements.txt pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q tests/test_antecipacao_simples_mg_financeiro_pdf.py tests/test_rtc_lote_2027_pdf.py tests/test_rtc_relatorio_conciliacao_cbs.py tests/test_relatorio_empresas_17_8_21.py
+
+      - name: Gerar instalador completo
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File build/windows/build_installer.ps1
+
+      - name: Testar instalação e abertura
+        run: |
+          $setup = Get-ChildItem "instalador/saida/FiscalPro_Setup_*.exe" | Select-Object -First 1
+          if (-not $setup) { throw "Instalador não encontrado." }
+          $dir = Join-Path $env:RUNNER_TEMP "FiscalPro_RTC"
+          $instalacao = Start-Process -FilePath $setup.FullName -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$dir`""
+          ) -PassThru -Wait
+          if ($instalacao.ExitCode -ne 0) { exit $instalacao.ExitCode }
+          $exe = Join-Path $dir "FiscalPro.exe"
+          if (-not (Test-Path $exe)) { throw "FiscalPro.exe instalado não encontrado." }
+
+          $app = Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
+          if ($app.WaitForExit(8000)) {
+            throw "FiscalPro encerrou durante a abertura. Código: $($app.ExitCode)"
+          }
+          Stop-Process -Id $app.Id -Force
+
+      - name: Guardar instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: FiscalPro_RTC_Windows_Instalador
+          path: instalador/saida/FiscalPro_Setup_*.exe
+          retention-days: 7
+          if-no-files-found: error
