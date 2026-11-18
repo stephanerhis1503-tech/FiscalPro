@@ -192,7 +192,7 @@ class GeradorRelatoriosContasPagar:
 
         linhas = [["Empresa", "Quantidade", "Total"]]
         for empresa, contas in grupos.items():
-            linhas.append([escape(empresa), str(len(contas)), _moeda(totais[empresa])])
+            linhas.append([Paragraph(escape(empresa), corpo), str(len(contas)), _moeda(totais[empresa])])
         if not grupos:
             linhas.append(["Nenhuma conta encontrada", "0", _moeda(0)])
         linhas.append(["TOTAL GERAL DO GRUPO", str(sum(len(v) for v in grupos.values())), _moeda(total_geral)])
@@ -226,7 +226,7 @@ class GeradorRelatoriosContasPagar:
         from reportlab.lib import colors
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
-        from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
         styles = getSampleStyleSheet()
         secao = ParagraphStyle(
@@ -246,6 +246,8 @@ class GeradorRelatoriosContasPagar:
             fontSize=7,
             leading=8.5,
         )
+        subtotal = ParagraphStyle("FiscalProFinanceiroSubtotal", parent=celula,
+                                  fontName="Helvetica-Bold")
         elementos: list[Any] = []
         if incluir_titulo:
             elementos.append(Paragraph(escape(empresa), secao))
@@ -264,7 +266,9 @@ class GeradorRelatoriosContasPagar:
             ])
         if not contas:
             linhas.append(["-", "Nenhuma conta encontrada", "", "", "", _moeda(0)])
-        linhas.append(["", "", "", "", f"TOTAL {empresa}", _moeda(total)])
+        linhas.append([
+            Paragraph(escape(f"TOTAL {empresa}"), subtotal), "", "", "", "", _moeda(total),
+        ])
         tabela = Table(
             linhas,
             repeatRows=1,
@@ -276,7 +280,8 @@ class GeradorRelatoriosContasPagar:
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#" + self.COR_TOTAL)),
             ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ("ALIGN", (0, 1), (0, -1), "CENTER"),
+            ("SPAN", (0, -1), (-2, -1)),
+            ("ALIGN", (0, 1), (0, -2), "CENTER"),
             ("ALIGN", (-1, 1), (-1, -1), "RIGHT"),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#" + self.COR_BORDA)),
@@ -290,10 +295,18 @@ class GeradorRelatoriosContasPagar:
         return elementos
 
     @staticmethod
-    def _rodape_pdf(canvas, doc) -> None:
-        # Identidade dos relatorios RTC/CBS: faixa azul, logo e creditos.
-        from src.financeiro.pdf_identidade_fiscalpro import cabecalho_financeiro
-        cabecalho_financeiro(canvas, doc)
+    def _montar_pdf(doc, elementos: list[Any]) -> None:
+        from functools import partial
+
+        from reportlab.platypus import KeepInFrame
+
+        from .pdf_identidade_fiscalpro import cabecalho_financeiro
+
+        cabecalho = partial(cabecalho_financeiro, anexo=False)
+        conteudo = KeepInFrame(
+            doc.width, doc.height, elementos, mode="shrink", hAlign="CENTER",
+        )
+        doc.build([conteudo], onFirstPage=cabecalho)
 
     def _pdf_consolidado(
         self,
@@ -306,7 +319,7 @@ class GeradorRelatoriosContasPagar:
         try:
             from reportlab.lib.pagesizes import A4, landscape
             from reportlab.lib.units import mm
-            from reportlab.platypus import PageBreak, SimpleDocTemplate
+            from reportlab.platypus import SimpleDocTemplate
         except ImportError as erro:
             raise RuntimeError("Instale o pacote reportlab para gerar o relatório em PDF.") from erro
 
@@ -326,19 +339,10 @@ class GeradorRelatoriosContasPagar:
             titulo="RELATÓRIO DE VENCIMENTOS - CONTAS A PAGAR",
         )
         if opcoes.detalhado:
-            detalhados = [(empresa, contas) for empresa, contas in grupos.items() if contas]
-            for indice, (empresa, contas) in enumerate(detalhados):
-                if indice > 0:
-                    elementos.append(PageBreak())
-                elementos.extend(self._detalhe_empresa_pdf(empresa, contas, totais[empresa]))
-        doc.build(elementos, onFirstPage=self._rodape_pdf, onLaterPages=self._rodape_pdf)
-        from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
-        juntar_capa(
-            caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
-            sum(len(itens) for itens in grupos.values()), _moeda(sum(totais.values())),
-            descricao="Vencimentos e pendencias por empresa; valores em reais.",
-            empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
-        )
+            for empresa, contas in grupos.items():
+                if contas:
+                    elementos.extend(self._detalhe_empresa_pdf(empresa, contas, totais[empresa]))
+        self._montar_pdf(doc, elementos)
         return caminho
 
     def _pdf_empresa(
@@ -367,14 +371,7 @@ class GeradorRelatoriosContasPagar:
         )
         if opcoes.detalhado:
             elementos.extend(self._detalhe_empresa_pdf(empresa, contas, total, incluir_titulo=False))
-        doc.build(elementos, onFirstPage=self._rodape_pdf, onLaterPages=self._rodape_pdf)
-        from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
-        juntar_capa(
-            caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
-            sum(len(itens) for itens in grupos.values()), _moeda(sum(totais.values())),
-            descricao="Vencimentos e pendencias por empresa; valores em reais.",
-            empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
-        )
+        self._montar_pdf(doc, elementos)
         return caminho
 
     def _pdf_resumo_geral(
@@ -398,14 +395,7 @@ class GeradorRelatoriosContasPagar:
             grupos, totais, total_geral, opcoes,
             titulo="RESUMO GERAL - CONTAS A PAGAR",
         )
-        doc.build(elementos, onFirstPage=self._rodape_pdf, onLaterPages=self._rodape_pdf)
-        from src.financeiro.pdf_identidade_fiscalpro import juntar_capa
-        juntar_capa(
-            caminho, "Relatorio de contas a pagar", self._periodo_texto(opcoes),
-            sum(len(itens) for itens in grupos.values()), _moeda(sum(totais.values())),
-            descricao="Vencimentos e pendencias por empresa; valores em reais.",
-            empresa=" / ".join(grupos.keys())[:150] or "Consolidado",
-        )
+        self._montar_pdf(doc, elementos)
         return caminho
 
     def _pdf_separado(

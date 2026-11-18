@@ -4,6 +4,7 @@ from pathlib import Path
 import zipfile
 
 from openpyxl import Workbook, load_workbook
+import pytest
 from pypdf import PdfReader
 
 from src.financeiro.pdf_identidade_fiscalpro import gerar_pdf_tabela
@@ -169,23 +170,68 @@ def test_relatorio_contas_pagas_preserva_cnpj_da_conta(tmp_path):
 
 
 
-def test_pdf_semanal_usa_capa_logo_e_preserva_valores(tmp_path):
+@pytest.mark.parametrize("detalhado,separado,por_empresa", [
+    (False, False, 1),
+    (True, False, 1),
+    (True, False, 60),
+    (True, True, 60),
+])
+def test_pdf_semanal_usa_uma_pagina_com_logo_e_preserva_contas(
+    tmp_path, detalhado, separado, por_empresa,
+):
     from src.financeiro.relatorios import (
-        GeradorRelatoriosContasPagar, OpcoesRelatorioContas
+        GeradorRelatoriosContasPagar, OpcoesRelatorioContas,
     )
-    opts = OpcoesRelatorioContas(
+
+    empresas = ("Empresa Alpha", "Empresa Beta")
+    contas = [
+        {
+            "empresa": empresa,
+            "vencimento": "2026-10-15",
+            "fornecedor": f"Fornecedor {empresa}",
+            "descricao": "Material de escritório",
+            "categoria": "Operacional",
+            "numero_documento": f"DOC-{indice}-{numero:03d}",
+            "observacoes": "",
+            "valor": 60.0,
+        }
+        for indice, empresa in enumerate(empresas)
+        for numero in range(por_empresa)
+    ]
+    opcoes = OpcoesRelatorioContas(
         inicio_iso="2026-10-01", fim_iso="2026-10-31",
-        detalhado=False, gerar_pdf=True, gerar_excel=False,
-        empresas=("Mega Trilha",),
+        detalhado=detalhado, separado=separado, gerar_excel=False, empresas=empresas,
     )
-    res = GeradorRelatoriosContasPagar().gerar(
-        [{"empresa": "Mega Trilha", "valor": 60.0}], tmp_path, opts,
-    )
-    assert len(res.arquivos) == 1
-    leitor = PdfReader(str(res.arquivos[0]))
-    assert len(leitor.pages) >= 2
-    assert float(leitor.pages[0].mediabox.width) < float(leitor.pages[0].mediabox.height)
-    assert float(leitor.pages[1].mediabox.width) > float(leitor.pages[1].mediabox.height)
-    texto = "\n".join(p.extract_text() or "" for p in leitor.pages)
-    assert "FiscalPro" in texto and "Mega Trilha" in texto
-    assert "R$ 60,00" in texto
+    resultado = GeradorRelatoriosContasPagar().gerar(contas, tmp_path, opcoes)
+
+    assert len(resultado.arquivos) == (3 if separado else 1)
+    for caminho in resultado.arquivos:
+        leitor = PdfReader(caminho)
+        assert len(leitor.pages) == 1
+        pagina = leitor.pages[0]
+        assert 841 < float(pagina.mediabox.width) < 843
+        assert 595 < float(pagina.mediabox.height) < 596
+        assert len(pagina.images) > 0
+        texto = pagina.extract_text()
+        assert "Página 1" in texto
+        assert "01/10/2026 a 31/10/2026" in texto
+        assert "TOTAL GERAL DO GRUPO" in texto
+        contas_esperadas = contas
+        if separado and caminho.name == "00_RESUMO_GERAL.pdf":
+            contas_esperadas = []
+        elif separado:
+            contas_esperadas = [
+                conta for conta in contas if conta["empresa"].replace(" ", "_") in caminho.name
+            ]
+            assert len(contas_esperadas) == por_empresa
+        documentos_no_pdf = {
+            trecho for trecho in texto.split() if trecho.startswith("DOC-")
+        }
+        documentos_esperados = {
+            conta["numero_documento"] for conta in contas_esperadas
+        } if detalhado else set()
+        assert documentos_no_pdf == documentos_esperados
+        if not separado:
+            assert all(empresa in texto for empresa in empresas)
+            total = "R$ 7.200,00" if por_empresa == 60 else "R$ 120,00"
+            assert total in texto

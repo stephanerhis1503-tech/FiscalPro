@@ -96,25 +96,27 @@ def capa_financeira(titulo, periodo, qtd, total, *, descricao="", empresa="Conso
     return memoria
 
 
-def cabecalho_financeiro(c, doc):
-    """Logo e barra azul em cada pagina A4 paisagem do detalhamento."""
+def cabecalho_financeiro(c, doc, *, anexo=True):
+    """Desenha a marca e a numeração na página do relatório financeiro."""
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import landscape, A4
     from src.services.rtc_pdf_identidade_2027 import desenhar_logo
-    w, h = landscape(A4)
+    w, h = doc.pagesize
     c.saveState()
     c.setFillColor(colors.HexColor("#114B7A"))
     c.rect(0, h-73, w, 73, fill=1, stroke=0)
     desenhar_logo(c, 30, h-67, 101, 45)
     c.setFont("Helvetica-Bold", 15)
     c.setFillColor(colors.white)
-    c.drawString(146, h-38, "Anexo documental | Relatorios FiscalPro")
-    c.setFont("Helvetica", 8.5)
-    c.drawString(146, h-55, "Contas a Pagar / Pacote para Contabilidade")
+    if anexo:
+        c.drawString(146, h-38, "Anexo documental | Relatorios FiscalPro")
+        c.setFont("Helvetica", 8.5)
+        c.drawString(146, h-55, "Contas a Pagar / Pacote para Contabilidade")
+    else:
+        c.drawString(146, h-42, "Contas a Pagar")
     c.setFillColor(colors.HexColor("#0B3155"))
     c.setFont("Helvetica-Bold", 8)
     c.drawString(30, 14, "FiscalPro | Stephane Rhis + ChatGPT")
-    c.drawRightString(w-30, 14, f"Pagina {doc.page + 1}")
+    c.drawRightString(w-30, 14, f"Página {doc.page + int(anexo)}")
     c.setLineWidth(0.5)
     c.line(30, 27, w-30, 27)
     c.restoreState()
