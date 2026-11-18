@@ -176,7 +176,7 @@ def test_pdf_anexo_paginas_completas_sem_linhas_sob_rodape(relatorio, tmp_path):
     assert "57-57 de 57" in textos[2]
     import re
     notas_por_pagina = [
-        re.findall(r"(?m)^\s*(\d{6})\s+SAIDA\s+20\d{2}-\d{2}-\d{2}", corpo)
+        re.findall(r"(?m)^\s*(\d{6})\s*$", corpo)
         for corpo in textos
     ]
     assert [len(notas) for notas in notas_por_pagina] == [28, 28, 1]
