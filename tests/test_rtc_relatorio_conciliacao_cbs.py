@@ -145,6 +145,8 @@ def test_nao_aceita_extensao_incorreta_ou_competencia_sem_xml(relatorio, tmp_pat
         relatorio.gerar_pdf(
             EMPRESA, "2026-11", "debitos", tmp_path / "errado.xlsx",
         )
+    # Simula uma competencia sem documentos no retorno.
+    relatorio.oficial.conciliar = lambda cnpj, comp, tipo: []
     with pytest.raises(ValueError, match="Nao ha XMLs"):
         relatorio.gerar_excel(
             EMPRESA, "2026-10", "debitos", tmp_path / "vazio.xlsx",
@@ -172,6 +174,11 @@ def test_pdf_anexo_paginas_completas_sem_linhas_sob_rodape(relatorio, tmp_path):
     assert "1-28 de 57" in textos[0]
     assert "29-56 de 57" in textos[1]
     assert "57-57 de 57" in textos[2]
-    for n in range(1, 58):
-        assert sum(f"{n:06d}" in conteudo for conteudo in textos) == 1
+    import re
+    notas_por_pagina = [
+        re.findall(r"(?m)^\\s*(\\d{6})\\s+SAIDA\\s+20\\d{2}-\\d{2}-\\d{2}", corpo)
+        for corpo in textos
+    ]
+    assert [len(notas) for notas in notas_por_pagina] == [28, 28, 1]
+    assert [int(n) for notas in notas_por_pagina for n in notas] == list(range(1, 58))
     assert all("Pagina " in conteudo for conteudo in textos)
