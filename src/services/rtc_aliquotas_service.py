@@ -215,19 +215,25 @@ class ServicoAliquotasRTC:
     @classmethod
     def simular_item_2027(
         cls, item: dict, *, regime: str, usar_cenario_tcu: bool = False,
+        permitir_venda_icms_st: bool = False,
     ) -> dict:
         """Projecao isolada de um ITEM armazenado em XML, sem escrever no banco.
 
-        Escopo deliberadamente conservador: SOMENTE saidas de venda com
-        CFOP 5101/5102/6101/6102, CST 000, cClassTrib 000001 e
-        auditoria original OK. Outros CFOPs (incluindo 5405/6405) NAO
-        sao presumidos como nao tributados: exigem classificacao fiscal.
-        Base e classificacao historicas nao provam o tratamento em 2027.
+        Escopo deliberadamente conservador: somente vendas comuns 5101,
+        5102, 6101, 6102. CFOP 5405 e uma venda com ICMS-ST na condicao de
+        substituido, e NAO significa isencao de IBS/CBS. Permite apenas
+        simulacao CONDICIONAL se o usuario habilitar expressamente.
+        Para todos os casos exige CST 000, cClassTrib 000001, regime
+        Lucro Real/Presumido e auditoria do XML sem alerta.
+        A base, CST e cClassTrib de XML historico NAO provam tratamento
+        tributario correto para 2027. Nenhum dado e alterado.
         """
         if not isinstance(item, dict):
             raise ValueError("Selecione um item da Auditoria por Item.")
         if type(usar_cenario_tcu) is not bool:
             raise ValueError("O cenario TCU deve ser escolhido explicitamente.")
+        if type(permitir_venda_icms_st) is not bool:
+            raise ValueError("A hipotese ICMS-ST deve ser escolhida explicitamente.")
         contexto = {
             "numero_nf": str(item.get("numero_nf") or ""),
             "numero_item": str(item.get("numero_item") or ""),
@@ -261,13 +267,26 @@ class ServicoAliquotasRTC:
                 "O item ja possui alerta na auditoria original. "
                 "Resolver o enquadramento antes de simular.",
             )
-        if contexto["cfop"] not in {"5101", "5102", "6101", "6102"}:
+        cfop = contexto["cfop"]
+        cfop_venda_comum = cfop in {"5101", "5102", "6101", "6102"}
+        cfop_venda_st = cfop == "5405"
+        if cfop_venda_st and not permitir_venda_icms_st:
+            return revisar(
+                "REVISAR_CFOP_ST",
+                "CFOP 5405 descreve venda de terceiros na condicao de substituido "
+                "do ICMS-ST, e NAO define a incidencia do IBS/CBS. Para realizar "
+                "uma mera projecao condicional, habilite a hipotese de venda "
+                "normal tributada no campo ICMS-ST. "
+                "Nao concluir automaticamente que a operacao e isenta ou tributada.",
+            )
+        if not cfop_venda_comum and not cfop_venda_st:
             return revisar(
                 "REVISAR_CFOP_OPERACAO",
-                "CFOP nao esta entre as vendas comuns aceitas para esta "
-                "simulacao. Transferencias, devolucoes, ST e outras "
-                "operacoes exigem analise; nao se conclui isencao ou incidencia.",
+                "CFOP fora do escopo de vendas simples ou venda ICMS-ST 5405. "
+                "Transferencias, devolucoes, remessas e outras operacoes "
+                "exigem analise da natureza e do tratamento IBS/CBS.",
             )
+        # A flag so vale para o CFOP 5405; nao amplia o escopo para outros CFOPs.
         try:
             calculo = cls.simular(
                 2027, contexto["base_xml"],
@@ -278,6 +297,23 @@ class ServicoAliquotasRTC:
             return revisar(
                 "REVISAR_DADOS_ITEM",
                 f"Base ou classificacao do XML insuficiente para projetar: {exc}",
+            )
+        if cfop_venda_st and calculo["status"] in {
+            "CBS_PENDENTE_DEFINICAO", "CENARIO_TCU_NAO_OFICIAL"
+        }:
+            calculo["status"] = "CENARIO_CONDICIONAL_CFOP_5405"
+            calculo["observacao"] = (
+                "HIPOTESE CONDICIONAL DE VENDA TRIBUTADA: CFOP 5405 indica "
+                "ICMS-ST previamente retido, mas NAO prova isencao nem tributacao "
+                "de IBS/CBS. A classificacao CST 000 / cClassTrib 000001 "
+                "e a base do XML historico precisam ser confirmadas para 2027. "
+                + calculo["observacao"]
+            )
+        elif calculo["status"] in {"CBS_PENDENTE_DEFINICAO", "CENARIO_TCU_NAO_OFICIAL"}:
+            calculo["observacao"] = (
+                "PROJECAO CONDICIONAL baseada no CST/cClassTrib e base do XML: "
+                "a correicao fiscal do enquadramento em 2027 exige verificacao. "
+                + calculo["observacao"]
             )
         calculo["contexto_item"] = contexto
         # Nunca sobrescreve o dict de entrada nem reconhece credito.
