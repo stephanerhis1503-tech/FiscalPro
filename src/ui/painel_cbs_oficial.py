@@ -13,6 +13,7 @@ import threading
 from time import monotonic
 
 from src.services.cbs_apuracao_oficial_service import ServicoCBSOficial
+from src.services.rtc_relatorio_conciliacao_cbs import ServicoRelatorioConciliacaoCBS
 from src.services.cbs_apuracao_api_client import ClienteCBSReceita
 from src.services.receita_integra_auth import AutenticadorReceitaIntegra
 from src.services.empresas_regimes_service import EmpresasRegimesService
@@ -91,6 +92,12 @@ class PainelCBSOficial(ttk.Frame):
         ).pack(side=LEFT, padx=(0, 6))
         ttk.Button(
             acoes, text="Ver documentos oficiais", command=self._ver_documentos_oficiais
+        ).pack(side=LEFT, padx=(0, 6))
+        ttk.Button(
+            acoes, text="Relatorio Excel", command=self._exportar_conciliacao_excel
+        ).pack(side=LEFT, padx=(0, 6))
+        ttk.Button(
+            acoes, text="Relatorio PDF", command=self._exportar_conciliacao_pdf
         ).pack(side=LEFT)
         ttk.Label(filtros, textvariable=self.var_status, wraplength=1050).pack(
             anchor="w", pady=(8, 2)
@@ -247,6 +254,56 @@ class PainelCBSOficial(ttk.Frame):
             f"({num_comparaveis} potencialmente comparaveis por chave). "
             f"{contagem}. A consulta por raiz {base} devolve atualizacoes "
             "incrementais; notas ausentes NAO significam que a Receita as desconhece."
+        )
+
+    def _exportar_conciliacao_excel(self):
+        self._exportar_conciliacao("excel")
+
+    def _exportar_conciliacao_pdf(self):
+        self._exportar_conciliacao("pdf")
+
+    def _exportar_conciliacao(self, formato: str):
+        """Exporta apenas a base local e oficial ja importada, sem API."""
+        try:
+            cnpj, _, competencia, tipo = self._filtros()
+        except ValueError as exc:
+            messagebox.showerror("CBS | Relatorio", str(exc), parent=self)
+            return
+        ext = ".xlsx" if formato == "excel" else ".pdf"
+        destino = filedialog.asksaveasfilename(
+            parent=self,
+            title=f"Salvar conciliacao CBS em {formato.upper()}",
+            defaultextension=ext,
+            initialfile=f"FiscalPro_CBS_Conciliacao_{cnpj}_{competencia}_{tipo}{ext}",
+            filetypes=(("Planilha Excel", "*.xlsx"),) if formato == "excel"
+                      else (("Documento PDF", "*.pdf"),),
+        )
+        if not destino:
+            return
+        empresa = self.empresas.get(self.var_empresa.get()) or {}
+        try:
+            gerador = ServicoRelatorioConciliacaoCBS(self.servico)
+            if formato == "excel":
+                arquivo = gerador.gerar_excel(
+                    cnpj, competencia, tipo, destino, str(empresa.get("nome") or ""),
+                )
+            else:
+                arquivo = gerador.gerar_pdf(
+                    cnpj, competencia, tipo, destino, str(empresa.get("nome") or ""),
+                )
+        except (ValueError, OSError, ImportError) as exc:
+            messagebox.showerror("CBS | Relatorio", str(exc), parent=self)
+            return
+        self.var_status.set(
+            f"Relatorio de conciliacao {formato.upper()} salvo. "
+            "Retorno incremental; nao e apuracao definitiva."
+        )
+        messagebox.showinfo(
+            "CBS | Relatorio gerado",
+            f"Arquivo: {arquivo}\n\n"
+            "A conciliacao utiliza somente os dados ja armazenados, "
+            "sem solicitar novo tiquete ou consulta a Receita.",
+            parent=self,
         )
 
     def _ver_competencias(self):
