@@ -12,6 +12,7 @@ from src.services.rtc_relatorio_local_excel_service import ServicoRelatorioApura
 from src.services.empresas_regimes_service import EmpresasRegimesService
 from src.services.rtc_aliquotas_service import ServicoAliquotasRTC
 from src.services.rtc_relatorio_lote_2027_service import ServicoRelatorioLoteRTC2027
+from src.services.rtc_relatorio_lote_2027_pdf_service import ServicoRelatorioLoteRTC2027PDF
 
 
 class PainelApuracaoAssistidaRTC(ttk.Frame):
@@ -465,7 +466,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
 
         opcoes = Toplevel(self.winfo_toplevel())
         opcoes.title("RTC | Auditoria em lote 2027 - configuracao")
-        opcoes.geometry("750x340")
+        opcoes.geometry("750x410")
         opcoes.resizable(False, False)
         conteudo = ttk.Frame(opcoes, padding=14)
         conteudo.pack(fill=BOTH, expand=True)
@@ -504,44 +505,67 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
             if caminho:
                 var_sped_fiscal.set(caminho)
         ttk.Button(linha_sped, text="Procurar TXT", command=selecionar_sped).pack(side=LEFT)
+        var_pdf_completo = BooleanVar(value=False)
+        ttk.Checkbutton(conteudo, variable=var_pdf_completo, text=(
+            "PDF completo: incluir todos os itens (pode gerar muitas paginas)"
+        )).pack(anchor="w", pady=(0, 9))
 
-        def executar():
+        def executar(formato: str):
+            pdf = formato == "pdf"
+            extensao = ".pdf" if pdf else ".xlsx"
             destino = filedialog.asksaveasfilename(
                 parent=opcoes,
-                title="Salvar auditoria em lote IBS/CBS 2027",
-                defaultextension=".xlsx",
-                initialfile=f"FiscalPro_RTC_Lote_2027_{cnpj}_{competencia}.xlsx",
-                filetypes=(("Planilha Excel", "*.xlsx"),),
+                title="Salvar auditoria em lote IBS/CBS 2027 - " + formato.upper(),
+                defaultextension=extensao,
+                initialfile=f"FiscalPro_RTC_Lote_2027_{cnpj}_{competencia}{extensao}",
+                filetypes=(("Relatorio PDF", "*.pdf"),) if pdf else
+                          (("Planilha Excel", "*.xlsx"),),
             )
             if not destino:
                 return
             try:
-                arquivo = ServicoRelatorioLoteRTC2027(self.servico).gerar(
-                    cnpj, competencia, destino,
+                argumentos = dict(
                     regime=regime, empresa=str(empresa.get("nome") or ""),
                     permitir_venda_icms_st=var_st.get(),
                     usar_cenario_tcu=var_tcu.get(),
                     arquivo_sped_fiscal=var_sped_fiscal.get().strip() or None,
                 )
+                if pdf:
+                    arquivo = ServicoRelatorioLoteRTC2027PDF(self.servico).gerar(
+                        cnpj, competencia, destino,
+                        incluir_todos_itens=var_pdf_completo.get(),
+                        **argumentos,
+                    )
+                else:
+                    arquivo = ServicoRelatorioLoteRTC2027(self.servico).gerar(
+                        cnpj, competencia, destino, **argumentos,
+                    )
             except (ValueError, OSError, PermissionError, ImportError) as exc:
                 messagebox.showerror("RTC | Auditoria em lote", str(exc), parent=opcoes)
                 return
             self.var_status.set(
-                f"Auditoria em lote 2027 exportada: {arquivo.name}. "
+                f"Auditoria 2027 ({formato.upper()}) exportada: {arquivo.name}. "
                 "Apenas simulacao, sem alteracoes fiscais."
             )
             messagebox.showinfo(
                 "RTC | Auditoria em lote 2027",
                 f"Arquivo gerado: {arquivo}\n\n"
-                "Todos os itens foram analisados. Revise as abas de "
-                "operacoes especiais e pendencias. Nao e apuracao oficial.",
+                "Revise os alertas e operacoes que exigem conferencia. "
+                "Este relatorio nao e apuracao oficial.",
                 parent=opcoes,
             )
             opcoes.destroy()
 
+        botoes_exportacao = ttk.Frame(conteudo)
+        botoes_exportacao.pack(anchor="w")
         ttk.Button(
-            conteudo, text="Gerar auditoria em lote (Excel)", command=executar
-        ).pack(anchor="w")
+            botoes_exportacao, text="Gerar Excel",
+            command=lambda: executar("xlsx"),
+        ).pack(side=LEFT, padx=(0, 10))
+        ttk.Button(
+            botoes_exportacao, text="Gerar PDF",
+            command=lambda: executar("pdf"),
+        ).pack(side=LEFT)
         opcoes.transient(self.winfo_toplevel())
         opcoes.grab_set()
 
