@@ -15,9 +15,15 @@ from pathlib import Path
 import re
 
 
+# CFOP do ADQUIRENTE; classificacao da escrituracao, nao conclusao sobre
+# incidencia, creditos ou CST IBS/CBS do fornecedor.
 USO_CONSUMO = frozenset({"1556", "2556", "3556"})
+USO_CONSUMO_ST = frozenset({"1407", "2407"})
 ATIVO = frozenset({"1551", "2551", "3551"})
+ATIVO_ST = frozenset({"1406", "2406"})
 REVENDA = frozenset({"1102", "2102", "3102"})
+REVENDA_ST = frozenset({"1403", "2403"})
+COMBUSTIVEL_USUARIO_FINAL = frozenset({"1653", "2653", "3653"})
 CHAVE_RE = re.compile(r"\d{44}")
 CFOP_RE = re.compile(r"\d{4}")
 ITEM_RE = re.compile(r"\d+")
@@ -76,10 +82,18 @@ class MapaDestinacaoEFD:
             }
         if cfop in USO_CONSUMO:
             destino = "USO E CONSUMO (CFOP EFD)"
+        elif cfop in USO_CONSUMO_ST:
+            destino = "USO E CONSUMO COM ST (CFOP EFD)"
         elif cfop in ATIVO:
             destino = "ATIVO IMOBILIZADO (CFOP EFD)"
+        elif cfop in ATIVO_ST:
+            destino = "ATIVO IMOBILIZADO COM ST (CFOP EFD)"
         elif cfop in REVENDA:
             destino = "REVENDA (CFOP EFD)"
+        elif cfop in REVENDA_ST:
+            destino = "REVENDA COM ST (CFOP EFD)"
+        elif cfop in COMBUSTIVEL_USUARIO_FINAL:
+            destino = "COMBUSTIVEL USUARIO FINAL (CFOP EFD)"
         else:
             destino = "OUTRA ENTRADA (CONFERIR)"
         return {
