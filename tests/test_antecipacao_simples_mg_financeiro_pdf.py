@@ -296,3 +296,104 @@ def test_antecipacao_padrao_somente_tributacao_normal(cst, csosn, calcula):
     )
     assert r["status"] == ("SIMULACAO CONDICIONAL" if calcula else "REVISAR TRIBUTAÇÃO")
     assert r["antecipacao_estimada"] == (Decimal("7.32") if calcula else None)
+
+
+def test_antecipacao_exporta_aliquota_do_xml_por_item_em_uma_planilha(tmp_path):
+    dest = tmp_path / "mista.xlsx"
+    Workbook().save(dest)
+    itens = [
+        {"item": item(numero_item=1, aliquota_icms_xml=4)},
+        {"item": item(numero_item=2, aliquota_icms_xml=12)},
+        {"item": item(numero_item=3, aliquota_icms_xml=7)},
+        {"item": item(numero_item=4, aliquota_icms_xml=0, cst_icms="", csosn="102")},
+        {"item": item(numero_item=5, aliquota_icms_xml=18)},
+    ]
+    resultado = {"uf_origem": "RJ", "uf_destino": "MG", "itens": itens}
+    opcoes = {"destinatario_simples": True, "finalidade": "REVENDA", "aliquota_interna": 18}
+
+    for taxa_manual in (None, 12):
+        dados = adicionar_aba_antecipacao(dest, resultado, aliquota_interestadual=taxa_manual, **opcoes)
+        wb = load_workbook(dest)
+        try:
+            ws = wb["Antecipacao SN MG"]
+            assert [ws.cell(i, 9).value for i in range(9, 12)] == [4, 12, 7]
+            assert [ws.cell(i, 13).value for i in range(9, 12)] == [17.07, 7.32, 13.41]
+            assert "XML do item" in ws["N9"].value
+            assert ws["M12"].value == (7.32 if taxa_manual is not None else None)
+            assert ws["F13"].value == "REVISAR ALIQUOTAS"
+            assert ws["M13"].value is None
+            assert ws["M15"].value == "=SUM(M9:M13)"
+            assert dados["calculados"] == (4 if taxa_manual is not None else 3)
+        finally:
+            wb.close()
+
+
+def test_tela_xml_separa_antecipacao_mista_e_st(tmp_path, monkeypatch):
+    import sys
+    import tkinter as tk
+
+    from src.ui.janela_xml_icms_st import JanelaXMLICMSST
+
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        if sys.platform == "win32":
+            raise
+        pytest.skip("A abertura da tela exige uma sessão gráfica.")
+    root.withdraw()
+    xml = tmp_path / "mista.xml"
+    itens = [
+        f"""<det nItem="{i}"><prod><cProd>{i}</cProd><xProd>Item {i}</xProd>
+        <NCM>62121000</NCM><CFOP>6101</CFOP><vProd>100.00</vProd></prod>
+        <imposto><ICMS><ICMS00><orig>{orig}</orig><CST>00</CST><vBC>100</vBC>
+        <pICMS>{taxa}</pICMS><vICMS>{taxa}</vICMS></ICMS00></ICMS></imposto></det>"""
+        for i, orig, taxa in [(1, 1, 4), (2, 0, 12)]
+    ]
+    xml.write_text(
+        "<NFe><infNFe><ide><nNF>100</nNF></ide>"
+        "<emit><CRT>3</CRT><enderEmit><UF>RJ</UF></enderEmit></emit>"
+        "<dest><enderDest><UF>MG</UF></enderDest></dest>" + "".join(itens) + "</infNFe></NFe>",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.ui.janela_xml_icms_st.filedialog.askopenfilename", lambda **_: str(xml))
+    monkeypatch.setattr("src.ui.janela_xml_icms_st.messagebox.showinfo", lambda *_, **__: None)
+    def alerta(titulo, texto, **_):
+        pytest.fail(f"{titulo}: {texto}")
+
+    for nome in ("showwarning", "showerror"):
+        monkeypatch.setattr(f"src.ui.janela_xml_icms_st.messagebox.{nome}", alerta)
+    monkeypatch.setattr(
+        "src.services.xml_icms_st_service.ICMSSTMGService.analisar",
+        lambda *_, **__: {"encontrado": False, "exige_revisao": False},
+    )
+    try:
+        janela = JanelaXMLICMSST(root)
+        janela.importar_xml()
+        assert [janela.abas.tab(tab, "text") for tab in janela.abas.tabs()] == ["ICMS-ST", "Antecipação SN/MG"]
+        janela.abas.select(janela.aba_antecipacao)
+        root.update()
+        assert janela.btn_exportar.cget("text") == "Gerar planilha de antecipação"
+        janela.antecipacao_habilitada_var.set(True)
+        janela.antecipacao_interna_var.set("18")
+        janela.btn_calcular.invoke()
+        assert "2 de 2 itens calculados" in janela.resumo_antecipacao.get()
+        previa = janela.tree_antecipacao
+        assert [previa.item(i, "values")[3] for i in previa.get_children()] == ["4,00%", "12,00%"]
+        for abas, arquivo in [
+            (["Antecipacao SN MG"], tmp_path / "antecipacao.xlsx"),
+            (["Conferência ICMS-ST"], tmp_path / "st.xlsx"),
+        ]:
+            monkeypatch.setattr("src.ui.janela_xml_icms_st.filedialog.asksaveasfilename",
+                                lambda **_: str(arquivo))
+            janela.btn_exportar.invoke()
+            wb = load_workbook(arquivo)
+            try:
+                assert wb.sheetnames == abas
+                if abas == ["Antecipacao SN MG"]:
+                    assert [wb.active[f"M{i}"].value for i in (9, 10)] == [17.07, 7.32]
+            finally:
+                wb.close()
+            janela.abas.select(0)
+            root.update()
+    finally:
+        root.destroy()

@@ -1,4 +1,4 @@
-"""Adiciona aba de antecipacao SEM alterar memoria de ICMS-ST existente."""
+"""Exportação da simulação de antecipação SN/MG."""
 from __future__ import annotations
 
 from collections import Counter
@@ -13,16 +13,19 @@ from src.services.antecipacao_simples_mg_service import (
 def adicionar_aba_antecipacao(
     arquivo: str | Path, resultado: dict, *, destinatario_simples: bool,
     finalidade: str, aliquota_interna: object,
-    aliquota_interestadual: object,
+    aliquota_interestadual: object = None,
     simular_st_nao_localizada: bool = False,
+    planilha_independente: bool = False,
 ) -> dict:
-    """A planilha ST original permanece; segunda aba e demonstrativa."""
-    from openpyxl import load_workbook
+    """Grava a simulação em arquivo próprio ou em uma planilha de ST existente."""
+    from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
     caminho = Path(arquivo)
-    if not caminho.is_file() or caminho.suffix.lower() != ".xlsx":
+    if caminho.suffix.lower() != ".xlsx":
+        raise ValueError("Escolha um arquivo .xlsx.")
+    if not planilha_independente and not caminho.is_file():
         raise ValueError("Gere primeiro a planilha ICMS-ST XLSX.")
     linhas = calcular_lote(
         resultado, destinatario_simples=destinatario_simples,
@@ -30,10 +33,15 @@ def adicionar_aba_antecipacao(
         aliquota_interestadual=aliquota_interestadual,
         simular_st_nao_localizada=simular_st_nao_localizada,
     )
-    wb = load_workbook(caminho)
-    if "Antecipacao SN MG" in wb.sheetnames:
-        del wb["Antecipacao SN MG"]
-    ws = wb.create_sheet("Antecipacao SN MG")
+    if planilha_independente:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Antecipacao SN MG"
+    else:
+        wb = load_workbook(caminho)
+        if "Antecipacao SN MG" in wb.sheetnames:
+            del wb["Antecipacao SN MG"]
+        ws = wb.create_sheet("Antecipacao SN MG")
     ws.sheet_view.showGridLines = False
     ws.merge_cells("A1:O1")
     ws["A1"] = "FISCALPRO | ANTECIPACAO DO ICMS - SIMPLES NACIONAL / MG"
@@ -55,7 +63,7 @@ def adicionar_aba_antecipacao(
         ("G4", "UF origem"), ("H4", resultado.get("uf_origem", "")),
         ("J4", "UF destino"), ("K4", resultado.get("uf_destino", "")),
         ("A5", "Al. interna MG %"), ("B5", aliquota_interna),
-        ("D5", "Al. interestadual %"), ("E5", aliquota_interestadual),
+        ("D5", "Al. inter. manual %"), ("E5", aliquota_interestadual),
     ]:
         ws[col] = valor
         ws[col].font = Font(color="114B7A", bold=col[0] in ("A", "D", "G", "J"))
@@ -63,7 +71,8 @@ def adicionar_aba_antecipacao(
     ws["A6"] = (
         "Metodologia: excluir ICMS interestadual da operacao; recompor base "
         "pela aliquota interna; ICMS interno menos ICMS interestadual. "
-        "A fórmula padrão exige tributação normal no XML e conferência da tributação em MG."
+        "A alíquota interestadual vem do XML do item. A manual vale para itens sem alíquota. "
+        "Confira a tributação em MG."
     )
     ws["A6"].alignment = Alignment(wrap_text=True)
     ws.row_dimensions[6].height = 32

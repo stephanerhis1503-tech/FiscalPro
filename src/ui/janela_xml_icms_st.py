@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, Dict, Optional
 
 from src.services.exportador_xml_icms_st_xlsx import ExportadorXMLICMSSTXLSX
+from src.services.antecipacao_simples_mg_service import calcular_lote
 from src.services.antecipacao_simples_mg_xlsx import adicionar_aba_antecipacao
 from src.ui.layout_responsivo import FrameRolavel, dimensionar_janela
 from src.services.xml_icms_st_service import (
@@ -235,7 +236,7 @@ class JanelaXMLICMSST(tk.Toplevel):
 
     def __init__(self, parent: tk.Misc) -> None:
         super().__init__(parent)
-        self.title("FiscalPro — Importar XML, calcular e conferir ICMS-ST/MG")
+        self.title("FiscalPro — XML, ICMS-ST e Antecipação SN/MG")
         dimensionar_janela(self, 1360, 860, 960, 600)
         self.transient(parent)
 
@@ -271,14 +272,14 @@ class JanelaXMLICMSST(tk.Toplevel):
         cabecalho.pack(fill=tk.X)
         tk.Label(
             cabecalho,
-            text="Importar XML, calcular e conferir ICMS-ST/MG",
+            text="XML → Planilhas de ICMS-ST e Antecipação",
             bg="#1F4E78",
             fg="white",
             font=("Segoe UI", 16, "bold"),
         ).pack(anchor="w", padx=18, pady=(10, 0))
         tk.Label(
             cabecalho,
-            text="O FiscalPro lê o XML, calcula o ST e compara com o valor informado pelo fornecedor.",
+            text="Importe a NF-e e selecione a aba do cálculo desejado.",
             bg="#1F4E78",
             fg="white",
             font=("Segoe UI", 9),
@@ -298,14 +299,13 @@ class JanelaXMLICMSST(tk.Toplevel):
         rodape = ttk.Frame(self, padding=(12, 5, 12, 10))
         rodape.pack(fill=tk.X, side=tk.BOTTOM)
         ttk.Button(rodape, text="📂 Importar XML", command=self.importar_xml).pack(side=tk.LEFT)
-        ttk.Button(rodape, text="🔄 Recalcular", command=self.recalcular).pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Button(rodape, text="✏ Ajustar item", command=self.editar_item).pack(side=tk.LEFT, padx=(8, 0))
+        self.btn_calcular = ttk.Button(rodape, text="Recalcular ST", command=self._calcular_aba)
+        self.btn_calcular.pack(side=tk.LEFT, padx=(8, 0))
+        self.btn_ajustar = ttk.Button(rodape, text="Ajustar item de ST", command=self.editar_item)
+        self.btn_ajustar.pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(rodape, text="Fechar", command=self.destroy).pack(side=tk.RIGHT)
-        ttk.Button(
-            rodape,
-            text="📊 GERAR PLANILHA",
-            command=self.gerar_planilha,
-        ).pack(side=tk.RIGHT, padx=(0, 8), ipadx=10, ipady=3)
+        self.btn_exportar = ttk.Button(rodape, text="Gerar planilha ST", command=self._exportar_aba)
+        self.btn_exportar.pack(side=tk.RIGHT, padx=(0, 8), ipadx=10, ipady=3)
 
         conteudo = ttk.Frame(self, padding=12)
         conteudo.pack(fill=tk.BOTH, expand=True)
@@ -328,19 +328,28 @@ class JanelaXMLICMSST(tk.Toplevel):
                 row=1, column=coluna * 2 + 1, sticky="w", padx=(0, 14)
             )
 
-        ttk.Label(origem, text="Alíquota interna MG", font=("Segoe UI", 9, "bold")).grid(row=1, column=4, sticky="w")
-        ttk.Entry(origem, textvariable=self.aliquota_interna_var, width=10, justify=tk.RIGHT).grid(
-            row=1, column=5, sticky="w", padx=(5, 14)
-        )
-        ttk.Label(origem, text="Alíquota interestadual", font=("Segoe UI", 9, "bold")).grid(row=1, column=6, sticky="w")
-        ttk.Entry(origem, textvariable=self.aliquota_inter_var, width=10, justify=tk.RIGHT).grid(
-            row=1, column=7, sticky="w", padx=(5, 14)
-        )
-        ttk.Label(origem, text="FCP-ST", font=("Segoe UI", 9, "bold")).grid(row=1, column=8, sticky="w")
-        ttk.Entry(origem, textvariable=self.fcp_var, width=9, justify=tk.RIGHT).grid(row=1, column=9, sticky="w", padx=(5, 0))
+        self.abas = ttk.Notebook(conteudo)
+        self.abas.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        aba_st = ttk.Frame(self.abas, padding=8)
+        self.aba_antecipacao = ttk.Frame(self.abas, padding=8)
+        self.abas.add(aba_st, text="ICMS-ST")
+        self.abas.add(self.aba_antecipacao, text="Antecipação SN/MG")
 
-        opcoes = ttk.Frame(origem)
-        opcoes.grid(row=2, column=0, columnspan=10, sticky="w", pady=(9, 0))
+        opcoes_st = ttk.LabelFrame(aba_st, text="Dados para ICMS-ST", padding=8)
+        opcoes_st.pack(fill=tk.X)
+        ttk.Label(opcoes_st, text="Alíquota interna MG", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Entry(opcoes_st, textvariable=self.aliquota_interna_var, width=10, justify=tk.RIGHT).grid(
+            row=0, column=1, sticky="w", padx=(5, 14)
+        )
+        ttk.Label(opcoes_st, text="Alíquota interestadual", font=("Segoe UI", 9, "bold")).grid(row=0, column=2, sticky="w")
+        ttk.Entry(opcoes_st, textvariable=self.aliquota_inter_var, width=10, justify=tk.RIGHT).grid(
+            row=0, column=3, sticky="w", padx=(5, 14)
+        )
+        ttk.Label(opcoes_st, text="FCP-ST", font=("Segoe UI", 9, "bold")).grid(row=0, column=4, sticky="w")
+        ttk.Entry(opcoes_st, textvariable=self.fcp_var, width=9, justify=tk.RIGHT).grid(row=0, column=5, sticky="w", padx=(5, 0))
+
+        opcoes = ttk.Frame(opcoes_st)
+        opcoes.grid(row=1, column=0, columnspan=10, sticky="w", pady=(9, 0))
         self.chk_mva_ajustada = ttk.Checkbutton(
             opcoes,
             text="Aplicar MVA ajustada quando cabível (desmarque para MVA original)",
@@ -354,8 +363,8 @@ class JanelaXMLICMSST(tk.Toplevel):
             command=self._atualizar_opcoes_simples,
         ).pack(side=tk.LEFT, padx=(18, 0))
 
-        opcoes2 = ttk.Frame(origem)
-        opcoes2.grid(row=3, column=0, columnspan=10, sticky="w", pady=(5, 0))
+        opcoes2 = ttk.Frame(opcoes_st)
+        opcoes2.grid(row=2, column=0, columnspan=10, sticky="w", pady=(5, 0))
         self.chk_deducao_icms = ttk.Checkbutton(
             opcoes2,
             text="Deduzir ICMS da operação própria pela alíquota aplicável quando o XML vier sem vICMS (automático no Simples)",
@@ -369,42 +378,7 @@ class JanelaXMLICMSST(tk.Toplevel):
         ).pack(side=tk.LEFT, padx=(12, 0))
         self._atualizar_opcoes_simples()
 
-        # Anticipacao Simples MG totalmente independente da memoria ST.
-        # Desabilitada por padrao para proteger os calculos ST aprovados.
-        ante = ttk.LabelFrame(
-            conteudo, text="Simples Nacional MG - Antecipacao (opcional)", padding=7,
-        )
-        ante.pack(fill=tk.X, pady=(7, 0))
-        ttk.Checkbutton(
-            ante, text="Destinatario do Simples Nacional: simular antecipacao em aba separada",
-            variable=self.antecipacao_habilitada_var,
-        ).grid(row=0, column=0, columnspan=6, sticky="w")
-        ttk.Label(ante, text="Finalidade da entrada:").grid(row=1, column=0, sticky="w")
-        ttk.Combobox(
-            ante, textvariable=self.antecipacao_finalidade_var,
-            values=("REVENDA", "INDUSTRIALIZACAO", "PRESTACAO_SERVICO"),
-            state="readonly", width=22,
-        ).grid(row=1, column=1, padx=(4, 12), pady=4, sticky="w")
-        ttk.Label(ante, text="Aliq. interna MG %:").grid(row=1, column=2, sticky="w")
-        ttk.Entry(ante, textvariable=self.antecipacao_interna_var,
-                  width=9).grid(row=1, column=3, padx=(4, 12))
-        ttk.Label(ante, text="Aliq. interestadual %:").grid(row=1, column=4, sticky="w")
-        ttk.Entry(ante, textvariable=self.antecipacao_inter_var,
-                  width=9).grid(row=1, column=5, padx=(4, 0))
-        ttk.Label(
-            ante, text=(
-                "O regime do REMETENTE acima e diferente do regime do DESTINATARIO. "
-                "Para antecipacao, confirme 4/7/12%, aliquota MG e itens sem ST. "
-                "Nao gera guia, DAE ou somatorio ST+antecipacao."
-            ), foreground="#805314", wraplength=1100,
-        ).grid(row=2, column=0, columnspan=6, sticky="w", pady=(2, 2))
-
-        ttk.Checkbutton(
-            ante, text="Simular revenda sem ST quando o enquadramento estiver pendente",
-            variable=self.antecipacao_st_pendente_var,
-        ).grid(row=3, column=0, columnspan=6, sticky="w")
-
-        lista = ttk.LabelFrame(conteudo, text="2. Itens, cálculo e conferência do XML", padding=8)
+        lista = ttk.LabelFrame(aba_st, text="Itens e conferência do ICMS-ST", padding=8)
         lista.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
         ttk.Label(
@@ -449,6 +423,103 @@ class JanelaXMLICMSST(tk.Toplevel):
         self.tree.tag_configure("atencao", background="#FFF2CC")
         self.tree.tag_configure("divergente", background="#F4CCCC")
         self.tree.tag_configure("revisar", background="#FCE5CD")
+
+        self._montar_antecipacao(self.aba_antecipacao)
+        for variavel in (
+            self.uf_origem_var, self.uf_destino_var, self.antecipacao_habilitada_var,
+            self.antecipacao_finalidade_var, self.antecipacao_interna_var,
+            self.antecipacao_inter_var, self.antecipacao_st_pendente_var,
+        ):
+            variavel.trace_add("write", self._limpar_previa_antecipacao)
+        self.abas.bind("<<NotebookTabChanged>>", self._atualizar_botoes)
+
+    def _montar_antecipacao(self, painel: ttk.Frame) -> None:
+        ante = ttk.LabelFrame(
+            painel, text="Dados para antecipação do Simples Nacional em MG", padding=7,
+        )
+        ante.pack(fill=tk.X, pady=(7, 0))
+        ttk.Checkbutton(
+            ante, text="Confirmo que o destinatário é do Simples Nacional",
+            variable=self.antecipacao_habilitada_var,
+        ).grid(row=0, column=0, columnspan=6, sticky="w")
+        ttk.Label(ante, text="Finalidade da entrada:").grid(row=1, column=0, sticky="w")
+        ttk.Combobox(
+            ante, textvariable=self.antecipacao_finalidade_var,
+            values=("REVENDA", "INDUSTRIALIZACAO", "PRESTACAO_SERVICO"),
+            state="readonly", width=22,
+        ).grid(row=1, column=1, padx=(4, 12), pady=4, sticky="w")
+        ttk.Label(ante, text="Aliq. interna MG %:").grid(row=1, column=2, sticky="w")
+        ttk.Entry(ante, textvariable=self.antecipacao_interna_var,
+                  width=9).grid(row=1, column=3, padx=(4, 12))
+        ttk.Label(ante, text="Aliq. inter. manual %:").grid(row=1, column=4, sticky="w")
+        ttk.Entry(ante, textvariable=self.antecipacao_inter_var,
+                  width=9).grid(row=1, column=5, padx=(4, 0))
+        ttk.Label(
+            ante, text=(
+                "A alíquota interestadual é lida por item do XML (4%, 7% ou 12%). "
+                "Preencha a manual só para itens sem alíquota no XML. "
+                "Confirme a alíquota interna em MG e o enquadramento da mercadoria."
+            ), foreground="#805314", wraplength=1100,
+        ).grid(row=2, column=0, columnspan=6, sticky="w", pady=(2, 2))
+
+        ttk.Checkbutton(
+            ante, text="Simular revenda sem ST quando o enquadramento estiver pendente",
+            variable=self.antecipacao_st_pendente_var,
+        ).grid(row=3, column=0, columnspan=6, sticky="w")
+
+        self.resumo_antecipacao = tk.StringVar(value="Importe o XML e clique em Calcular antecipação.")
+        ttk.Label(painel, textvariable=self.resumo_antecipacao).pack(anchor="w", pady=(10, 5))
+        grade = ttk.Frame(painel)
+        grade.pack(fill=tk.BOTH, expand=True)
+        campos = (
+            ("Item", 55), ("Produto", 285), ("NCM", 85), ("Alíq. inter.", 90),
+            ("Antecipação estimada", 145), ("Situação", 250),
+        )
+        indices = tuple(str(i) for i in range(len(campos)))
+        self.tree_antecipacao = ttk.Treeview(grade, columns=indices, show="headings", height=11)
+        for i, (titulo, largura) in enumerate(campos):
+            self.tree_antecipacao.heading(str(i), text=titulo)
+            self.tree_antecipacao.column(str(i), width=largura, minwidth=45, stretch=i in (1, 5))
+        rolagem_y = ttk.Scrollbar(grade, orient=tk.VERTICAL, command=self.tree_antecipacao.yview)
+        rolagem_x = ttk.Scrollbar(grade, orient=tk.HORIZONTAL, command=self.tree_antecipacao.xview)
+        self.tree_antecipacao.configure(yscrollcommand=rolagem_y.set, xscrollcommand=rolagem_x.set)
+        self.tree_antecipacao.grid(row=0, column=0, sticky="nsew")
+        rolagem_y.grid(row=0, column=1, sticky="ns")
+        rolagem_x.grid(row=1, column=0, sticky="ew")
+        grade.rowconfigure(0, weight=1)
+        grade.columnconfigure(0, weight=1)
+
+    def _limpar_previa_antecipacao(self, *_args) -> None:
+        self.tree_antecipacao.delete(*self.tree_antecipacao.get_children())
+        self.resumo_antecipacao.set("Clique em Calcular antecipação para conferir esta nota.")
+
+    def _aba_antecipacao_ativa(self) -> bool:
+        return self.abas.select() == str(self.aba_antecipacao)
+
+    def _atualizar_botoes(self, _evento=None) -> None:
+        antecipacao = self._aba_antecipacao_ativa()
+        self.btn_calcular.configure(text="Calcular antecipação" if antecipacao else "Recalcular ST")
+        self.btn_exportar.configure(
+            text="Gerar planilha de antecipação" if antecipacao else "Gerar planilha ST",
+        )
+        self.btn_ajustar.configure(state="disabled" if antecipacao else "normal")
+
+    def _calcular_aba(self) -> None:
+        if self._aba_antecipacao_ativa():
+            try:
+                self._calcular_antecipacao()
+            except ValueError as erro:
+                messagebox.showwarning("FiscalPro", str(erro), parent=self)
+            except Exception as erro:
+                messagebox.showerror("FiscalPro", f"Não foi possível calcular a antecipação:\n{erro}", parent=self)
+        else:
+            self.recalcular()
+
+    def _exportar_aba(self) -> None:
+        if self._aba_antecipacao_ativa():
+            self.gerar_planilha_antecipacao()
+        else:
+            self.gerar_planilha()
 
     @staticmethod
     def _valor_manual(texto: str, nome: str, permitir_vazio: bool = False) -> Optional[float]:
@@ -504,6 +575,7 @@ class JanelaXMLICMSST(tk.Toplevel):
             return
 
         self.ajustes.clear()
+        self.antecipacao_habilitada_var.set(False)
         self.antecipacao_st_pendente_var.set(False)
         self.caminho_xml.set(
             f"NF-e {self.nota.numero}/{self.nota.serie} — {self.nota.emitente_nome} — {Path(arquivo).name}"
@@ -661,62 +733,108 @@ class JanelaXMLICMSST(tk.Toplevel):
 
         def salvar(dados: Dict[str, Any]) -> None:
             self.ajustes[numero] = dados
+            self._limpar_previa_antecipacao()
             self.recalcular()
             self.status_var.set(f"Item {numero} ajustado e recalculado.")
 
         _JanelaEditarItem(self, item=item, ajuste=atual, ao_salvar=salvar)
+
+    def _preparar_antecipacao(self) -> tuple[dict, dict]:
+        if self.nota is None:
+            raise ValueError("Importe uma NF-e XML primeiro.")
+        if not self.antecipacao_habilitada_var.get():
+            raise ValueError("Confirme que o destinatário é do Simples Nacional.")
+        origem = self.uf_origem_var.get()
+        destino = self.uf_destino_var.get()
+        if destino != "MG" or origem == "MG":
+            raise ValueError("Selecione uma operação interestadual destinada a MG.")
+        interna = self._valor_manual(self.antecipacao_interna_var.get(), "Alíquota interna MG")
+        manual = self._valor_manual(
+            self.antecipacao_inter_var.get(), "Alíquota interestadual manual", permitir_vazio=True,
+        )
+        if not 0 < interna < 100:
+            raise ValueError("Informe uma alíquota interna positiva abaixo de 100%.")
+        if manual is not None and not 0 < manual < 100:
+            raise ValueError("Informe uma alíquota interestadual positiva abaixo de 100%.")
+        resultado = XMLICMSSTService.calcular_nota(
+            self.nota, uf_origem=origem, uf_destino=destino, aliquota_interna=interna,
+            remetente_simples=self.remetente_simples_var.get(), ajustes=self.ajustes,
+        )
+        opcoes = {
+            "destinatario_simples": True,
+            "finalidade": self.antecipacao_finalidade_var.get(),
+            "aliquota_interna": interna,
+            "aliquota_interestadual": manual,
+            "simular_st_nao_localizada": self.antecipacao_st_pendente_var.get(),
+        }
+        return resultado, opcoes
+
+    def _calcular_antecipacao(self) -> tuple[dict, dict]:
+        self.tree_antecipacao.delete(*self.tree_antecipacao.get_children())
+        self.resumo_antecipacao.set("Confira os dados para calcular a antecipação.")
+        resultado, opcoes = self._preparar_antecipacao()
+        linhas = calcular_lote(resultado, **opcoes)
+        calculados = []
+        for linha in linhas:
+            item, dados = linha["item"], linha["resultado"]
+            aliquota = dados["aliquota_interestadual"]
+            valor = dados["antecipacao_estimada"]
+            if valor is not None:
+                calculados.append(valor)
+            self.tree_antecipacao.insert("", tk.END, values=(
+                item["numero_item"], item["descricao"], item["ncm"],
+                f"{_numero_br(aliquota)}%" if aliquota is not None else "—",
+                _moeda(valor) if valor is not None else "—",
+                dados["status"],
+            ))
+        resumo = f"{len(calculados)} de {len(linhas)} itens calculados"
+        if calculados:
+            resumo += f" • Total simulado: {_moeda(sum(calculados))}"
+        self.resumo_antecipacao.set(resumo)
+        return resultado, opcoes
+
+    def _caminho_planilha(self, sufixo: str, titulo: str) -> str:
+        return filedialog.asksaveasfilename(
+            parent=self, title=titulo, defaultextension=".xlsx",
+            initialfile=f"NFe_{self.nota.numero or 'XML'}_{sufixo}.xlsx",
+            filetypes=[("Planilha Excel", "*.xlsx")],
+        )
 
     def gerar_planilha(self) -> None:
         if not self.resultado:
             self.recalcular()
         if not self.resultado or self.nota is None:
             return
-
-        nome = f"NFe_{self.nota.numero or 'XML'}_ICMS_ST_MG.xlsx"
-        caminho = filedialog.asksaveasfilename(
-            parent=self,
-            title="Salvar planilha do cálculo de ICMS-ST",
-            defaultextension=".xlsx",
-            initialfile=nome,
-            filetypes=[("Planilha Excel", "*.xlsx")],
-        )
+        caminho = self._caminho_planilha("ICMS_ST_MG", "Salvar planilha de ICMS-ST")
         if not caminho:
             return
         try:
-            valores_ante = None
-            resumo_antecipacao = None
-            if self.antecipacao_habilitada_var.get():
-                if self.uf_destino_var.get() != "MG" or self.uf_origem_var.get() == "MG":
-                    raise ValueError("Antecipacao SN/MG exige operacao interestadual destinada a MG.")
-                interna = self._valor_manual(
-                    self.antecipacao_interna_var.get(), "Aliquota interna antecipacao"
-                )
-                interestadual = self._valor_manual(
-                    self.antecipacao_inter_var.get(), "Aliquota interestadual antecipacao"
-                )
-                if not (0 < interna < 100 and 0 < interestadual < 100):
-                    raise ValueError("Informe aliquotas positivas abaixo de 100%.")
-                valores_ante = (interna, interestadual)
             arquivo = ExportadorXMLICMSSTXLSX.exportar(self.resultado, caminho)
-            if valores_ante is not None:
-                resumo_antecipacao = adicionar_aba_antecipacao(
-                    arquivo, self.resultado, destinatario_simples=True,
-                    finalidade=self.antecipacao_finalidade_var.get(),
-                    aliquota_interna=valores_ante[0],
-                    aliquota_interestadual=valores_ante[1],
-                    simular_st_nao_localizada=self.antecipacao_st_pendente_var.get(),
-                )
         except Exception as erro:
             messagebox.showerror("FiscalPro", f"Não foi possível gerar a planilha:\n{erro}", parent=self)
             return
         self.status_var.set(f"Planilha gerada: {arquivo}")
-        mensagem = "Planilha de conferência do ICMS-ST gerada."
-        if resumo_antecipacao is not None:
-            calculados = resumo_antecipacao["calculados"]
-            total = resumo_antecipacao["total_itens"]
-            mensagem += f"\n\nAntecipacao SN MG: {calculados} de {total} item(ns) calculado(s)."
-            if calculados < total:
-                mensagem += " Confira a coluna Observação dos itens sem valor."
-            if resumo_antecipacao["status"].get("SIMULACAO — ST PENDENTE"):
-                mensagem += " A simulação inclui itens com enquadramento ST pendente."
+        messagebox.showinfo("FiscalPro", "Planilha de conferência do ICMS-ST gerada.", parent=self)
+
+    def gerar_planilha_antecipacao(self) -> None:
+        try:
+            resultado, opcoes = self._calcular_antecipacao()
+            caminho = self._caminho_planilha("Antecipacao_SN_MG", "Salvar simulação de antecipação")
+            if not caminho:
+                return
+            resumo = adicionar_aba_antecipacao(
+                caminho, resultado, planilha_independente=True, **opcoes,
+            )
+        except ValueError as erro:
+            messagebox.showwarning("FiscalPro", str(erro), parent=self)
+            return
+        except Exception as erro:
+            messagebox.showerror("FiscalPro", f"Não foi possível gerar a planilha:\n{erro}", parent=self)
+            return
+        self.status_var.set(f"Planilha gerada: {caminho}")
+        mensagem = f"Antecipação SN/MG: {resumo['calculados']} de {resumo['total_itens']} itens calculados."
+        if resumo["calculados"] < resumo["total_itens"]:
+            mensagem += " Confira a coluna Observação dos itens sem valor."
+        if resumo["status"].get("SIMULACAO — ST PENDENTE"):
+            mensagem += " A simulação inclui itens com enquadramento ST pendente."
         messagebox.showinfo("FiscalPro", mensagem, parent=self)

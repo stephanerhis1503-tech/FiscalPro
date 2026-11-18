@@ -20,6 +20,7 @@ FONTE = (
     "instrucoes_normativas/2016/insutri001_2016.html"
 )
 CENTAVO = Decimal("0.01")
+ALIQUOTAS_INTERESTADUAIS_XML = frozenset({Decimal("4"), Decimal("7"), Decimal("12")})
 DESTINOS_PERMITIDOS = frozenset({
     "REVENDA", "INDUSTRIALIZACAO", "PRESTACAO_SERVICO"
 })
@@ -193,11 +194,16 @@ def calcular_item(
 
 def calcular_lote(resultado: dict, *, destinatario_simples: bool,
                    finalidade: str, aliquota_interna: object,
-                   aliquota_interestadual: object,
+                   aliquota_interestadual: object = None,
                    simular_st_nao_localizada: bool = False) -> list[dict]:
     linhas = []
     for r in resultado.get("itens") or []:
         item = dict(r.get("item") or {})
+        taxa_xml = _numero(item.get("aliquota_icms_xml"))
+        tem_taxa_xml = taxa_xml not in (None, 0)
+        taxa_item = aliquota_interestadual
+        if tem_taxa_xml:
+            taxa_item = taxa_xml if taxa_xml in ALIQUOTAS_INTERESTADUAIS_XML else None
         dado = calcular_item(
             item, r,
             uf_origem=resultado.get("uf_origem"),
@@ -205,8 +211,22 @@ def calcular_lote(resultado: dict, *, destinatario_simples: bool,
             destinatario_simples=destinatario_simples,
             finalidade=finalidade,
             aliquota_interna=aliquota_interna,
-            aliquota_interestadual=aliquota_interestadual,
+            aliquota_interestadual=taxa_item,
             simular_st_nao_localizada=simular_st_nao_localizada,
         )
+        if dado["antecipacao_estimada"] is not None:
+            origem = "XML do item" if tem_taxa_xml else "informação manual"
+            dado["motivo"] = f"Alíquota interestadual: {origem}. " + dado["motivo"]
+        elif dado["status"] == "REVISAR ALIQUOTAS" and taxa_item is None:
+            if tem_taxa_xml:
+                dado["motivo"] = (
+                    f"O item informa {taxa_xml}% no XML, fora de 4%, 7% ou 12%. "
+                    "Confira a alíquota aplicável antes de calcular."
+                )
+            else:
+                dado["motivo"] = (
+                    "Item sem alíquota interestadual no XML. "
+                    "Confirme a alíquota aplicável e informe no campo manual."
+                )
         linhas.append({"item": item, "resultado": dado})
     return linhas
