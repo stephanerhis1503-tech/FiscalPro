@@ -438,16 +438,28 @@ class ServicoRelatorioLoteRTC2027:
         ws["D20"] = "Destinacao da entrada no SPED Fiscal"
         ws["D20"].font = Font(bold=True, color=AZUL)
         destino = dados["destinacoes"]
-        conferencias = (
-            ("Uso e consumo - 1556/2556/3556", destino["USO E CONSUMO (CFOP EFD)"]),
-            ("Ativo imobilizado", destino["ATIVO IMOBILIZADO (CFOP EFD)"]),
-            ("Revenda", destino["REVENDA (CFOP EFD)"]),
-            ("Entrada a conferir", sum(n for k, n in destino.items() if k not in {
-                "USO E CONSUMO (CFOP EFD)", "ATIVO IMOBILIZADO (CFOP EFD)", "REVENDA (CFOP EFD)"})),
+        categorias_conhecidas = (
+            ("Uso e consumo", "USO E CONSUMO (CFOP EFD)"),
+            ("Uso e consumo com ICMS-ST", "USO E CONSUMO COM ST (CFOP EFD)"),
+            ("Revenda", "REVENDA (CFOP EFD)"),
+            ("Revenda com ICMS-ST", "REVENDA COM ST (CFOP EFD)"),
+            ("Ativo imobilizado", "ATIVO IMOBILIZADO (CFOP EFD)"),
+            ("Ativo imobilizado com ICMS-ST", "ATIVO IMOBILIZADO COM ST (CFOP EFD)"),
+            ("Combustivel para usuario final", "COMBUSTIVEL USUARIO FINAL (CFOP EFD)"),
         )
-        for n, (titulo, total) in enumerate(conferencias, 21):
+        conferencias = tuple(
+            (rotulo, destino[chave]) for rotulo, chave in categorias_conhecidas
+        ) + ((
+            "Demais entradas / sem vinculo",
+            sum(n for chave, n in destino.items()
+                if chave not in {identificador for _, identificador in categorias_conhecidas}),
+        ),)
+        for n, (titulo, total) in enumerate(conferencias, 45):
             ws.cell(n, 4, titulo)
             ws.cell(n, 5, total)
+        # A26:H28 e a area mesclada do aviso fiscal; indicadores nela
+        # causariam AttributeError. O quadro de destinacoes usa D45:E52.
+
         # A26:H28 ja esta mesclado para o aviso tributario principal.
         # Escrever em D26/D27/D28 gerava AttributeError (MergedCell), e
         # interrompia a exportacao sem mostrar o erro na interface Tk.
