@@ -166,3 +166,26 @@ def test_relatorio_contas_pagas_preserva_cnpj_da_conta(tmp_path):
                      PdfReader(str(res.caminho.with_suffix(".pdf"))).pages)
     assert "12.345.678/0001-90" in text
     assert "00.000.000/0000-00" not in text
+
+
+
+def test_pdf_semanal_usa_capa_logo_e_preserva_valores(tmp_path):
+    from src.financeiro.relatorios import (
+        GeradorRelatoriosContasPagar, OpcoesRelatorioContas
+    )
+    opts = OpcoesRelatorioContas(
+        inicio_iso="2026-10-01", fim_iso="2026-10-31",
+        detalhado=False, gerar_pdf=True, gerar_excel=False,
+        empresas=("Mega Trilha",),
+    )
+    res = GeradorRelatoriosContasPagar().gerar(
+        [{"empresa": "Mega Trilha", "valor": 60.0}], tmp_path, opts,
+    )
+    assert len(res.arquivos) == 1
+    leitor = PdfReader(str(res.arquivos[0]))
+    assert len(leitor.pages) >= 2
+    assert float(leitor.pages[0].mediabox.width) < float(leitor.pages[0].mediabox.height)
+    assert float(leitor.pages[1].mediabox.width) > float(leitor.pages[1].mediabox.height)
+    texto = "\n".join(p.extract_text() or "" for p in leitor.pages)
+    assert "FiscalPro" in texto and "Mega Trilha" in texto
+    assert "R$ 60,00" in texto
