@@ -114,7 +114,7 @@ def test_excel_abas_e_formulas_condicionais(dados, tmp_path):
     assert ws["R11"].value is None  # regra especial
     assert len([r for r in ws.iter_rows(min_row=8) if r[0].value]) == 6
     assert book["CFOP 5405"]["T8"].value == "CENARIO_CONDICIONAL_CFOP_5405"
-    assert book["Revisar"]["T8"].value == "REVISAR_TIPO_OPERACAO"
+    assert book["Revisar"]["T8"].value == "REVISAR_AUDITORIA_XML"
     assert book["Alertas XML"]["X8"].value == "ALERTA XML"
     assert book["CFOP 5405"]["X8"].value == "ST CONDICIONAL"
     assert book["Revisar"].max_row == 11
