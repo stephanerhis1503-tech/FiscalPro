@@ -88,7 +88,7 @@ def capa_financeira(titulo, periodo, qtd, total, *, descricao="", empresa="Conso
     c.line(34, 57, w-34, 57)
     palavras("FiscalPro | Stephane Rhis + ChatGPT", 34, 39, w-68,
              8, "Helvetica-Bold", 10, 1, marinho)
-    c.setFont("Helvetica")
+    c.setFont("Helvetica", 7)
     c.drawRightString(w-34, 22, "Pagina 1")
     c.showPage()
     c.save()
