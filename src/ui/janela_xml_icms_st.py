@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, Dict, Optional
 
 from src.services.exportador_xml_icms_st_xlsx import ExportadorXMLICMSSTXLSX
+from src.services.antecipacao_simples_mg_xlsx import adicionar_aba_antecipacao
 from src.ui.layout_responsivo import FrameRolavel, dimensionar_janela
 from src.services.xml_icms_st_service import (
     APLICABILIDADE_7318_CONSTRUCAO,
@@ -248,6 +249,11 @@ class JanelaXMLICMSST(tk.Toplevel):
         self.aliquota_inter_var = tk.StringVar(value="")
         self.fcp_var = tk.StringVar(value="0,00")
         self.remetente_simples_var = tk.BooleanVar(value=False)
+        # Esta opcao e do DESTINATARIO. Nunca inferir do CRT do emitente.
+        self.antecipacao_habilitada_var = tk.BooleanVar(value=False)
+        self.antecipacao_interna_var = tk.StringVar(value="")
+        self.antecipacao_inter_var = tk.StringVar(value="")
+        self.antecipacao_finalidade_var = tk.StringVar(value="REVENDA")
         self.mva_ajustada_var = tk.BooleanVar(value=True)
         self.deduzir_icms_inter_var = tk.BooleanVar(value=True)
         self.info_simples_var = tk.StringVar(
@@ -361,6 +367,36 @@ class JanelaXMLICMSST(tk.Toplevel):
             foreground="#7F6000",
         ).pack(side=tk.LEFT, padx=(12, 0))
         self._atualizar_opcoes_simples()
+
+        # Anticipacao Simples MG totalmente independente da memoria ST.
+        # Desabilitada por padrao para proteger os calculos ST aprovados.
+        ante = ttk.LabelFrame(
+            conteudo, text="Simples Nacional MG - Antecipacao (opcional)", padding=7,
+        )
+        ante.pack(fill=tk.X, pady=(7, 0))
+        ttk.Checkbutton(
+            ante, text="Destinatario do Simples Nacional: simular antecipacao em aba separada",
+            variable=self.antecipacao_habilitada_var,
+        ).grid(row=0, column=0, columnspan=6, sticky="w")
+        ttk.Label(ante, text="Finalidade da entrada:").grid(row=1, column=0, sticky="w")
+        ttk.Combobox(
+            ante, textvariable=self.antecipacao_finalidade_var,
+            values=("REVENDA", "INDUSTRIALIZACAO", "PRESTACAO_SERVICO"),
+            state="readonly", width=22,
+        ).grid(row=1, column=1, padx=(4, 12), pady=4, sticky="w")
+        ttk.Label(ante, text="Aliq. interna MG %:").grid(row=1, column=2, sticky="w")
+        ttk.Entry(ante, textvariable=self.antecipacao_interna_var,
+                  width=9).grid(row=1, column=3, padx=(4, 12))
+        ttk.Label(ante, text="Aliq. interestadual %:").grid(row=1, column=4, sticky="w")
+        ttk.Entry(ante, textvariable=self.antecipacao_inter_var,
+                  width=9).grid(row=1, column=5, padx=(4, 0))
+        ttk.Label(
+            ante, text=(
+                "O regime do REMETENTE acima e diferente do regime do DESTINATARIO. "
+                "Para antecipacao, confirme 4/7/12%, aliquota MG e itens sem ST. "
+                "Nao gera guia, DAE ou somatorio ST+antecipacao."
+            ), foreground="#805314", wraplength=1100,
+        ).grid(row=2, column=0, columnspan=6, sticky="w", pady=(2, 2))
 
         lista = ttk.LabelFrame(conteudo, text="2. Itens, cálculo e conferência do XML", padding=8)
         lista.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
@@ -640,7 +676,27 @@ class JanelaXMLICMSST(tk.Toplevel):
         if not caminho:
             return
         try:
+            valores_ante = None
+            if self.antecipacao_habilitada_var.get():
+                if self.uf_destino_var.get() != "MG" or self.uf_origem_var.get() == "MG":
+                    raise ValueError("Antecipacao SN/MG exige operacao interestadual destinada a MG.")
+                interna = self._valor_manual(
+                    self.antecipacao_interna_var.get(), "Aliquota interna antecipacao"
+                )
+                interestadual = self._valor_manual(
+                    self.antecipacao_inter_var.get(), "Aliquota interestadual antecipacao"
+                )
+                if not (0 < interna < 100 and 0 < interestadual < 100):
+                    raise ValueError("Informe aliquotas positivas abaixo de 100%.")
+                valores_ante = (interna, interestadual)
             arquivo = ExportadorXMLICMSSTXLSX.exportar(self.resultado, caminho)
+            if valores_ante is not None:
+                adicionar_aba_antecipacao(
+                    arquivo, self.resultado, destinatario_simples=True,
+                    finalidade=self.antecipacao_finalidade_var.get(),
+                    aliquota_interna=valores_ante[0],
+                    aliquota_interestadual=valores_ante[1],
+                )
         except Exception as erro:
             messagebox.showerror("FiscalPro", f"Não foi possível gerar a planilha:\n{erro}", parent=self)
             return
