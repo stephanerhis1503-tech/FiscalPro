@@ -78,7 +78,7 @@ def test_pdf_resumido_gera_sem_credito_ou_cbs_tcu(servico, tmp_path):
     assert "2. Outras operacoes a revisar" in texto
     assert "Sem grupo IBS/CBS" in texto
     assert "Produto & servico <teste>" in texto
-    assert "As demais 3 linhas" in texto
+    assert "As demais 3 linhas" in " ".join(texto.split())
     assert "3. Demais itens - anexo completo" not in texto
     assert "R$ 1,00" in texto  # 2 itens x 0,50 no IBS UF
     assert len(leitor.pages) >= 2
