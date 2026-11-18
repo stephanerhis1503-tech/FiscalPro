@@ -359,13 +359,15 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
             text="Incluir cenario CBS TCU (11,2%, NAO oficial)",
             variable=cenario_tcu,
         ).pack(side=LEFT, padx=(0, 8))
+        opcoes_adicionais = ttk.Frame(frame)
+        opcoes_adicionais.pack(fill=X, pady=(2, 0))
         ttk.Checkbutton(
-            opcoes,
-            text="CFOP 5405: hipotese de venda tributada (REVISAR)",
+            opcoes_adicionais,
+            text="CFOP 5405: hipotese condicional de venda tributada (REVISAR)",
             variable=hipotese_st,
-        ).pack(side=LEFT, padx=(0, 8))
+        ).pack(side=LEFT, padx=(0, 12))
         ttk.Button(
-            opcoes,
+            opcoes_adicionais,
             text="Simular item em 2027",
             command=lambda: self._simular_item_auditoria_2027(
                 grade, itens_por_linha, cenario_tcu.get(), popup,
