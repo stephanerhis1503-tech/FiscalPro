@@ -147,14 +147,19 @@ class AutenticadorReceitaIntegra:
                 ) from None
             if exc.code == 401:
                 raise ErroAutenticacaoReceita(
-                    "HTTP 401 (autenticacao recusada). Confira a validade e os "
-                    "dados da credencial no portal da Receita. Nao envie as chaves "
-                    "em mensagens ou capturas de tela."
+                    "HTTP 401 (autenticacao recusada). Para a API CBS v2, confira "
+                    "se a credencial foi GERADA novamente apos a liberacao das "
+                    "APIs 2.0 (28/10/2026). A Receita orientou cancelar chaves "
+                    "anteriores e gerar novas no portal. Confira tambem Client ID "
+                    "e Client Secret da mesma credencial. Nao envie as chaves em "
+                    "mensagens ou capturas de tela."
                 ) from None
             if exc.code == 403:
                 raise ErroAutenticacaoReceita(
-                    "HTTP 403 (acesso negado). Verifique no portal se a credencial "
-                    "esta ativa e autorizada a acessar o servico de Apuracao CBS."
+                    "HTTP 403 (acesso negado). Verifique no portal se a nova "
+                    "credencial esta ativa, vinculada a matriz ou procurador "
+                    "autorizado, e habilitada para a API CBS v2. Nao tente "
+                    "repetidamente sem corrigir a autorizacao."
                 ) from None
             raise ErroAutenticacaoReceita(
                 f"Receita nao concluiu autenticacao: HTTP {exc.code}."
