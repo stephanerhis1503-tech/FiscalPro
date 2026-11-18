@@ -465,7 +465,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
 
         opcoes = Toplevel(self.winfo_toplevel())
         opcoes.title("RTC | Auditoria em lote 2027 - configuracao")
-        opcoes.geometry("670x260")
+        opcoes.geometry("750x340")
         opcoes.resizable(False, False)
         conteudo = ttk.Frame(opcoes, padding=14)
         conteudo.pack(fill=BOTH, expand=True)
@@ -480,12 +480,30 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
         ), wraplength=620).pack(anchor="w", pady=(0, 10))
         var_st = BooleanVar(value=False)
         var_tcu = BooleanVar(value=False)
+        var_sped_fiscal = StringVar(value="")
         ttk.Checkbutton(conteudo, variable=var_st, text=(
             "Permitir apenas hipotese CONDICIONAL de venda CFOP 5405 (ICMS-ST)"
         )).pack(anchor="w", pady=(0, 5))
         ttk.Checkbutton(conteudo, variable=var_tcu, text=(
             "Simular CBS cenario TCU 11,2% (NAO oficial, nao usar fiscalmente)"
         )).pack(anchor="w", pady=(0, 10))
+        ttk.Label(conteudo, text=(
+            "SPED Fiscal ICMS/IPI da MESMA empresa e competencia (opcional): "
+            "somente para reconhecer CFOP de ENTRADA por chave e numero do item."
+        ), wraplength=700).pack(anchor="w", pady=(0, 4))
+        linha_sped = ttk.Frame(conteudo)
+        linha_sped.pack(fill=X, pady=(0, 10))
+        ttk.Entry(linha_sped, textvariable=var_sped_fiscal, width=80).pack(
+            side=LEFT, fill=X, expand=True, padx=(0, 6)
+        )
+        def selecionar_sped():
+            caminho = filedialog.askopenfilename(
+                parent=opcoes, title="Selecionar SPED Fiscal ICMS/IPI TXT",
+                filetypes=(("SPED Fiscal TXT", "*.txt"),),
+            )
+            if caminho:
+                var_sped_fiscal.set(caminho)
+        ttk.Button(linha_sped, text="Procurar TXT", command=selecionar_sped).pack(side=LEFT)
 
         def executar():
             destino = filedialog.asksaveasfilename(
@@ -503,6 +521,7 @@ class PainelApuracaoAssistidaRTC(ttk.Frame):
                     regime=regime, empresa=str(empresa.get("nome") or ""),
                     permitir_venda_icms_st=var_st.get(),
                     usar_cenario_tcu=var_tcu.get(),
+                    arquivo_sped_fiscal=var_sped_fiscal.get().strip() or None,
                 )
             except (ValueError, OSError, PermissionError, ImportError) as exc:
                 messagebox.showerror("RTC | Auditoria em lote", str(exc), parent=opcoes)
