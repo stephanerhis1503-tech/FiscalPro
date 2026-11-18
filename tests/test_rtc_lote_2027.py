@@ -62,7 +62,11 @@ def test_preparar_sem_limite_visual_e_segura_cfop_st(dados):
         "VENDA ICMS-ST 5405": 1,
         "REVISAR OUTROS": 4,
     }
-    assert res["revisar"] == 5
+    assert res["revisar"] == 4
+    assert res["alertas_xml"] == 1
+    assert res["outras_revisoes"] == 3
+    assert res["st_sem_cenario"] == 1
+    assert res["st_condicionais"] == 0
     assert res["linhas"][0]["simulacao"]["ibs_uf"] == Decimal("0.50")
     assert res["linhas"][1]["status"] == "REVISAR_CFOP_ST"
     assert res["linhas"][1]["simulacao"]["cbs"] is None
@@ -80,13 +84,18 @@ def test_excel_abas_e_formulas_condicionais(dados, tmp_path):
     )
     book = load_workbook(destino)
     assert book.sheetnames == [
-        "Resumo", "Todos os itens", "Vendas comuns", "CFOP 5405", "Revisar"
+        "Resumo", "Todos os itens", "Vendas comuns", "CFOP 5405",
+        "Alertas XML", "Outras operacoes", "Revisar"
     ]
     assert book["Resumo"]["B12"].value == 6
     assert book["Resumo"]["B14"].value == 1
     assert book["Resumo"]["B15"].value == 1
     assert book["Resumo"]["B16"].value == 4
-    assert book["Resumo"]["B17"].value == 5
+    assert book["Resumo"]["B17"].value == 4
+    assert book["Resumo"]["E12"].value == 1
+    assert book["Resumo"]["E13"].value == 3
+    assert book["Resumo"]["E14"].value == 1
+    assert book["Resumo"]["E15"].value == 0
     assert book["Resumo"]["B31"].value == "SIM"
     assert book["Resumo"]["B32"].value == "SIM (NAO OFICIAL)"
     ws = book["Todos os itens"]
@@ -105,7 +114,12 @@ def test_excel_abas_e_formulas_condicionais(dados, tmp_path):
     assert ws["R11"].value is None  # regra especial
     assert len([r for r in ws.iter_rows(min_row=8) if r[0].value]) == 6
     assert book["CFOP 5405"]["T8"].value == "CENARIO_CONDICIONAL_CFOP_5405"
-    assert book["Revisar"]["T8"].value == "CENARIO_CONDICIONAL_CFOP_5405"
+    assert book["Revisar"]["T8"].value == "REVISAR_TIPO_OPERACAO"
+    assert book["Alertas XML"]["X8"].value == "ALERTA XML"
+    assert book["CFOP 5405"]["X8"].value == "ST CONDICIONAL"
+    assert book["Revisar"].max_row == 11
+    assert book["Outras operacoes"].max_row == 10
+    assert book["Todos os itens"]["Y9"].value.startswith("Projecao opcional")
     assert book["Resumo"]["B21"].value == "=SUM('Todos os itens'!O8:O13)"
 
 
@@ -152,3 +166,56 @@ def test_inconsistencia_contagem_interrompe():
         ServicoRelatorioLoteRTC2027(BancoInconsistente([item(1)])).preparar(
             CNPJ, COMPETENCIA, regime="Lucro Real"
         )
+
+
+
+def test_alerta_xml_tem_prioridade_sobre_st_e_nao_duplicar():
+    dados = [
+        item(1, cfop="5405", status="REVISAR"),
+        item(2, cfop="5405", status="OK"),
+        item(3, cfop="5102", status="REGRA ESPECIAL"),
+        item(4, cfop="5152", status="OK"),
+        item(5, cfop="5102", status="OK"),
+    ]
+    svc = ServicoRelatorioLoteRTC2027(LocalFalso(dados))
+    resumo = svc.preparar(
+        CNPJ, COMPETENCIA, regime="Lucro Real",
+        permitir_venda_icms_st=True,
+    )
+    assert resumo["itens"] == 5
+    assert resumo["alertas_xml"] == 2
+    assert resumo["outras_revisoes"] == 1
+    assert resumo["st_condicionais"] == 1
+    assert resumo["revisar"] == 3
+    assert resumo["linhas"][0]["classificacao"] == "ALERTA XML"
+    assert resumo["linhas"][1]["classificacao"] == "ST CONDICIONAL"
+    assert resumo["linhas"][2]["classificacao"] == "ALERTA XML"
+    assert resumo["linhas"][3]["classificacao"] == "REVISAR OPERACAO"
+    assert resumo["linhas"][4]["classificacao"] == "PROJECAO COMUM"
+
+
+def test_st_5405_nao_e_pendencia_somente_por_cfop(tmp_path):
+    dados = [item(1, cfop="5405"), item(2, cfop="5102")]
+    svc = ServicoRelatorioLoteRTC2027(LocalFalso(dados))
+    caminho = svc.gerar(
+        CNPJ, COMPETENCIA, tmp_path / "separado.xlsx",
+        regime="Lucro Real", permitir_venda_icms_st=True,
+    )
+    wb = load_workbook(caminho)
+    assert wb["Resumo"]["B17"].value == 0
+    assert wb["Resumo"]["E14"].value == 1
+    assert wb["CFOP 5405"]["X8"].value == "ST CONDICIONAL"
+    assert wb["Revisar"].max_row == 7
+    assert wb["Alertas XML"].max_row == 7
+    assert wb["Outras operacoes"].max_row == 7
+
+
+def test_xml_alerta_sem_cenario_st_permanece_prioritario():
+    resultado = ServicoRelatorioLoteRTC2027(LocalFalso([
+        item(1, cfop="5405", status="REGRA ESPECIAL"),
+        item(2, cfop="5405"),
+    ])).preparar(CNPJ, COMPETENCIA, regime="Lucro Real")
+    assert resultado["alertas_xml"] == 1
+    assert resultado["st_sem_cenario"] == 1
+    assert resultado["revisar"] == 1
+    assert resultado["linhas"][0]["classificacao"] == "ALERTA XML"
