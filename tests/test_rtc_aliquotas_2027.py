@@ -145,7 +145,7 @@ def test_simulacao_item_2027_tcu_somente_explicitamente():
         ({"direcao": "GARANTIA"}, "REVISAR_TIPO_OPERACAO"),
         ({"status_auditoria": "REVISAR"}, "REVISAR_AUDITORIA_XML"),
         ({"status_auditoria": "REGRA ESPECIAL"}, "REVISAR_AUDITORIA_XML"),
-        ({"cfop": "5405"}, "REVISAR_CFOP_OPERACAO"),
+        ({"cfop": "5405"}, "REVISAR_CFOP_ST"),
         ({"cfop": "6108"}, "REVISAR_CFOP_OPERACAO"),
         ({"cfop": "5152"}, "REVISAR_CFOP_OPERACAO"),
         ({"base_ibs_cbs": ""}, "REVISAR_DADOS_ITEM"),
@@ -177,4 +177,59 @@ def test_item_simples_nao_calcula():
         ITEM_VENDA, regime="Simples Nacional", usar_cenario_tcu=True
     )
     assert resultado["status"] == "REVISAR_REGIME"
+    assert resultado["total"] is None
+
+
+
+def test_5405_requer_flag_explicita_e_nao_conclui_incidencia():
+    item = {**ITEM_VENDA, "cfop": "5405"}
+    revisao = ServicoAliquotasRTC.simular_item_2027(
+        item, regime="Lucro Real"
+    )
+    assert revisao["status"] == "REVISAR_CFOP_ST"
+    assert revisao["cbs"] is None
+    assert "NAO define" in revisao["observacao"]
+
+    hipotese = ServicoAliquotasRTC.simular_item_2027(
+        item, regime="Lucro Real", permitir_venda_icms_st=True
+    )
+    assert hipotese["status"] == "CENARIO_CONDICIONAL_CFOP_5405"
+    assert hipotese["ibs_uf"] == Decimal("0.50")
+    assert hipotese["ibs_municipal"] == Decimal("0.50")
+    assert hipotese["cbs"] is None
+    assert hipotese["total"] is None
+    assert hipotese["efeito_fiscal"] is False
+    assert item["cfop"] == "5405"
+
+
+def test_5405_hipotese_tcu_nao_oficial_e_sem_efeito_fiscal():
+    item = {**ITEM_VENDA, "cfop": "5405"}
+    hipotese = ServicoAliquotasRTC.simular_item_2027(
+        item, regime="Lucro Real", usar_cenario_tcu=True,
+        permitir_venda_icms_st=True
+    )
+    assert hipotese["status"] == "CENARIO_CONDICIONAL_CFOP_5405"
+    assert hipotese["cbs"] == Decimal("112.00")
+    assert hipotese["total"] == Decimal("113.00")
+    assert "HIPOTESE CONDICIONAL" in hipotese["observacao"]
+    assert hipotese["efeito_fiscal"] is False
+
+
+@pytest.mark.parametrize("cfop", ["6108", "5152", "5949", "6411", "6404"])
+def test_hipotese_5405_nao_liberar_outras_operacoes(cfop):
+    resultado = ServicoAliquotasRTC.simular_item_2027(
+        {**ITEM_VENDA, "cfop": cfop}, regime="Lucro Real",
+        permitir_venda_icms_st=True, usar_cenario_tcu=True
+    )
+    assert resultado["status"] == "REVISAR_CFOP_OPERACAO"
+    assert resultado["total"] is None
+
+
+def test_5405_com_regra_especial_permanece_revisar():
+    resultado = ServicoAliquotasRTC.simular_item_2027(
+        {**ITEM_VENDA, "cfop": "5405", "cst_ibscbs": "200",
+         "cclass_trib": "200001"}, regime="Lucro Real",
+        permitir_venda_icms_st=True, usar_cenario_tcu=True
+    )
+    assert resultado["status"] == "REGRA_ESPECIAL_REVISAR"
     assert resultado["total"] is None
