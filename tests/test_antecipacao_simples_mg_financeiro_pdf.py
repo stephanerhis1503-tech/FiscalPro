@@ -176,7 +176,7 @@ def test_relatorio_contas_pagas_preserva_cnpj_da_conta(tmp_path):
     (True, False, 60),
     (True, True, 60),
 ])
-def test_pdf_semanal_usa_uma_pagina_com_logo_e_preserva_contas(
+def test_pdf_semanal_pagina_em_paisagem_com_logo_e_preserva_contas(
     tmp_path, detalhado, separado, por_empresa,
 ):
     from src.financeiro.relatorios import (
@@ -207,15 +207,26 @@ def test_pdf_semanal_usa_uma_pagina_com_logo_e_preserva_contas(
     assert len(resultado.arquivos) == (3 if separado else 1)
     for caminho in resultado.arquivos:
         leitor = PdfReader(caminho)
-        assert len(leitor.pages) == 1
-        pagina = leitor.pages[0]
-        assert 841 < float(pagina.mediabox.width) < 843
-        assert 595 < float(pagina.mediabox.height) < 596
-        assert len(pagina.images) > 0
-        texto = pagina.extract_text()
-        assert "Página 1" in texto
-        assert "01/10/2026 a 31/10/2026" in texto
-        assert "TOTAL GERAL DO GRUPO" in texto
+        tem_detalhes = detalhado and caminho.name != "00_RESUMO_GERAL.pdf"
+        if tem_detalhes and (por_empresa == 60 or not separado):
+            assert len(leitor.pages) > 1
+        else:
+            assert len(leitor.pages) == 1
+        textos = []
+        for indice, pagina in enumerate(leitor.pages, start=1):
+            assert 841 < float(pagina.mediabox.width) < 843
+            assert 595 < float(pagina.mediabox.height) < 596
+            assert len(pagina.images) > 0
+            texto_pagina = pagina.extract_text()
+            assert f"Página {indice}" in texto_pagina
+            assert "FiscalPro - Contas a Pagar" in texto_pagina
+            assert "Anexo documental" not in texto_pagina
+            if "DOC-" in texto_pagina:
+                assert "Vencimento" in texto_pagina
+            textos.append(texto_pagina)
+        assert "01/10/2026 a 31/10/2026" in textos[0]
+        assert "TOTAL GERAL DO GRUPO" in textos[0]
+        texto = "\n".join(textos)
         contas_esperadas = contas
         if separado and caminho.name == "00_RESUMO_GERAL.pdf":
             contas_esperadas = []
@@ -224,13 +235,11 @@ def test_pdf_semanal_usa_uma_pagina_com_logo_e_preserva_contas(
                 conta for conta in contas if conta["empresa"].replace(" ", "_") in caminho.name
             ]
             assert len(contas_esperadas) == por_empresa
-        documentos_no_pdf = {
-            trecho for trecho in texto.split() if trecho.startswith("DOC-")
-        }
-        documentos_esperados = {
-            conta["numero_documento"] for conta in contas_esperadas
-        } if detalhado else set()
-        assert documentos_no_pdf == documentos_esperados
+        documentos_no_pdf = [trecho for trecho in texto.split() if trecho.startswith("DOC-")]
+        documentos_esperados = [conta["numero_documento"] for conta in contas_esperadas]
+        assert documentos_no_pdf == (documentos_esperados if detalhado else [])
+        if tem_detalhes:
+            assert "DOC-" in textos[0]
         if not separado:
             assert all(empresa in texto for empresa in empresas)
             total = "R$ 7.200,00" if por_empresa == 60 else "R$ 120,00"

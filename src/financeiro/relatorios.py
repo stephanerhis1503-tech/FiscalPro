@@ -192,7 +192,7 @@ class GeradorRelatoriosContasPagar:
 
         linhas = [["Empresa", "Quantidade", "Total"]]
         for empresa, contas in grupos.items():
-            linhas.append([Paragraph(escape(empresa), corpo), str(len(contas)), _moeda(totais[empresa])])
+            linhas.append([escape(empresa), str(len(contas)), _moeda(totais[empresa])])
         if not grupos:
             linhas.append(["Nenhuma conta encontrada", "0", _moeda(0)])
         linhas.append(["TOTAL GERAL DO GRUPO", str(sum(len(v) for v in grupos.values())), _moeda(total_geral)])
@@ -226,7 +226,7 @@ class GeradorRelatoriosContasPagar:
         from reportlab.lib import colors
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
-        from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 
         styles = getSampleStyleSheet()
         secao = ParagraphStyle(
@@ -246,8 +246,6 @@ class GeradorRelatoriosContasPagar:
             fontSize=7,
             leading=8.5,
         )
-        subtotal = ParagraphStyle("FiscalProFinanceiroSubtotal", parent=celula,
-                                  fontName="Helvetica-Bold")
         elementos: list[Any] = []
         if incluir_titulo:
             elementos.append(Paragraph(escape(empresa), secao))
@@ -266,9 +264,7 @@ class GeradorRelatoriosContasPagar:
             ])
         if not contas:
             linhas.append(["-", "Nenhuma conta encontrada", "", "", "", _moeda(0)])
-        linhas.append([
-            Paragraph(escape(f"TOTAL {empresa}"), subtotal), "", "", "", "", _moeda(total),
-        ])
+        linhas.append(["", "", "", "", f"TOTAL {empresa}", _moeda(total)])
         tabela = Table(
             linhas,
             repeatRows=1,
@@ -280,8 +276,7 @@ class GeradorRelatoriosContasPagar:
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#" + self.COR_TOTAL)),
             ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ("SPAN", (0, -1), (-2, -1)),
-            ("ALIGN", (0, 1), (0, -2), "CENTER"),
+            ("ALIGN", (0, 1), (0, -1), "CENTER"),
             ("ALIGN", (-1, 1), (-1, -1), "RIGHT"),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#" + self.COR_BORDA)),
@@ -295,18 +290,28 @@ class GeradorRelatoriosContasPagar:
         return elementos
 
     @staticmethod
-    def _montar_pdf(doc, elementos: list[Any]) -> None:
-        from functools import partial
+    def _identidade_pdf(canvas, doc) -> None:
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
 
-        from reportlab.platypus import KeepInFrame
+        from src.core.caminhos import pasta_recursos
 
-        from .pdf_identidade_fiscalpro import cabecalho_financeiro
-
-        cabecalho = partial(cabecalho_financeiro, anexo=False)
-        conteudo = KeepInFrame(
-            doc.width, doc.height, elementos, mode="shrink", hAlign="CENTER",
-        )
-        doc.build([conteudo], onFirstPage=cabecalho)
+        canvas.saveState()
+        logo = pasta_recursos() / "assets" / "fiscalpro_logo_horizontal.png"
+        if logo.is_file():
+            canvas.drawImage(
+                ImageReader(str(logo)), 12 * mm, doc.pagesize[1] - 12 * mm,
+                width=35 * mm, height=10.5 * mm, preserveAspectRatio=True,
+                anchor="w", mask="auto",
+            )
+        canvas.setStrokeColor(colors.HexColor("#D9E2F3"))
+        canvas.line(12 * mm, 10 * mm, doc.pagesize[0] - 12 * mm, 10 * mm)
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.HexColor("#666666"))
+        canvas.drawString(12 * mm, 6 * mm, "FiscalPro - Contas a Pagar")
+        canvas.drawRightString(doc.pagesize[0] - 12 * mm, 6 * mm, f"Página {doc.page}")
+        canvas.restoreState()
 
     def _pdf_consolidado(
         self,
@@ -319,7 +324,7 @@ class GeradorRelatoriosContasPagar:
         try:
             from reportlab.lib.pagesizes import A4, landscape
             from reportlab.lib.units import mm
-            from reportlab.platypus import SimpleDocTemplate
+            from reportlab.platypus import PageBreak, SimpleDocTemplate
         except ImportError as erro:
             raise RuntimeError("Instale o pacote reportlab para gerar o relatório em PDF.") from erro
 
@@ -329,7 +334,7 @@ class GeradorRelatoriosContasPagar:
             pagesize=landscape(A4),
             leftMargin=12 * mm,
             rightMargin=12 * mm,
-            topMargin=32 * mm,
+            topMargin=11 * mm,
             bottomMargin=14 * mm,
             title="Relatório de Contas a Pagar - FiscalPro",
             author="FiscalPro - Stephane Rhis + ChatGPT",
@@ -339,10 +344,12 @@ class GeradorRelatoriosContasPagar:
             titulo="RELATÓRIO DE VENCIMENTOS - CONTAS A PAGAR",
         )
         if opcoes.detalhado:
-            for empresa, contas in grupos.items():
-                if contas:
-                    elementos.extend(self._detalhe_empresa_pdf(empresa, contas, totais[empresa]))
-        self._montar_pdf(doc, elementos)
+            detalhados = [(empresa, contas) for empresa, contas in grupos.items() if contas]
+            for indice, (empresa, contas) in enumerate(detalhados):
+                if indice > 0:
+                    elementos.append(PageBreak())
+                elementos.extend(self._detalhe_empresa_pdf(empresa, contas, totais[empresa]))
+        doc.build(elementos, onFirstPage=self._identidade_pdf, onLaterPages=self._identidade_pdf)
         return caminho
 
     def _pdf_empresa(
@@ -362,7 +369,7 @@ class GeradorRelatoriosContasPagar:
         totais = OrderedDict(((empresa, total),))
         doc = SimpleDocTemplate(
             str(caminho), pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm,
-            topMargin=32 * mm, bottomMargin=14 * mm,
+            topMargin=11 * mm, bottomMargin=14 * mm,
             title=f"Contas a Pagar - {empresa}", author="FiscalPro - Stephane Rhis + ChatGPT",
         )
         elementos = self._resumo_pdf(
@@ -371,7 +378,7 @@ class GeradorRelatoriosContasPagar:
         )
         if opcoes.detalhado:
             elementos.extend(self._detalhe_empresa_pdf(empresa, contas, total, incluir_titulo=False))
-        self._montar_pdf(doc, elementos)
+        doc.build(elementos, onFirstPage=self._identidade_pdf, onLaterPages=self._identidade_pdf)
         return caminho
 
     def _pdf_resumo_geral(
@@ -388,14 +395,14 @@ class GeradorRelatoriosContasPagar:
 
         doc = SimpleDocTemplate(
             str(caminho), pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm,
-            topMargin=32 * mm, bottomMargin=14 * mm,
+            topMargin=11 * mm, bottomMargin=14 * mm,
             title="Resumo Geral de Contas a Pagar", author="FiscalPro - Stephane Rhis + ChatGPT",
         )
         elementos = self._resumo_pdf(
             grupos, totais, total_geral, opcoes,
             titulo="RESUMO GERAL - CONTAS A PAGAR",
         )
-        self._montar_pdf(doc, elementos)
+        doc.build(elementos, onFirstPage=self._identidade_pdf, onLaterPages=self._identidade_pdf)
         return caminho
 
     def _pdf_separado(

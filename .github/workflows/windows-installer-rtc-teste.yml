@@ -6,6 +6,7 @@ on:
       - teste/rtc-sped-contribuicoes-20261113
     paths:
       - '.github/workflows/windows-installer-rtc-teste.yml'
+      - 'src/financeiro/relatorios.py'
   workflow_dispatch:
 
 permissions:
