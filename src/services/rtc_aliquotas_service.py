@@ -210,3 +210,75 @@ class ServicoAliquotasRTC:
             "Aguardar resolucao do Senado e validar cada tratamento tributario."
         )
         return resultado
+
+
+    @classmethod
+    def simular_item_2027(
+        cls, item: dict, *, regime: str, usar_cenario_tcu: bool = False,
+    ) -> dict:
+        """Projecao isolada de um ITEM armazenado em XML, sem escrever no banco.
+
+        Escopo deliberadamente conservador: SOMENTE saidas de venda com
+        CFOP 5101/5102/6101/6102, CST 000, cClassTrib 000001 e
+        auditoria original OK. Outros CFOPs (incluindo 5405/6405) NAO
+        sao presumidos como nao tributados: exigem classificacao fiscal.
+        Base e classificacao historicas nao provam o tratamento em 2027.
+        """
+        if not isinstance(item, dict):
+            raise ValueError("Selecione um item da Auditoria por Item.")
+        if type(usar_cenario_tcu) is not bool:
+            raise ValueError("O cenario TCU deve ser escolhido explicitamente.")
+        contexto = {
+            "numero_nf": str(item.get("numero_nf") or ""),
+            "numero_item": str(item.get("numero_item") or ""),
+            "descricao": str(item.get("descricao") or ""),
+            "direcao": str(item.get("direcao") or "").upper().strip(),
+            "cfop": str(item.get("cfop") or "").strip(),
+            "cst": str(item.get("cst_ibscbs") or "").strip(),
+            "cclass_trib": str(item.get("cclass_trib") or "").strip(),
+            "base_xml": str(item.get("base_ibs_cbs") or ""),
+            "status_xml": str(item.get("status_auditoria") or ""),
+        }
+
+        def revisar(status: str, observacao: str) -> dict:
+            return {
+                **contexto, "ano": 2027, "regime": regime,
+                "status": status, "observacao": observacao,
+                "base": None, "ibs_uf": None, "ibs_municipal": None,
+                "cbs": None, "total": None, "p_cbs_usado": None,
+                "efeito_fiscal": False,
+            }
+
+        if contexto["direcao"] != "SAIDA":
+            return revisar(
+                "REVISAR_TIPO_OPERACAO",
+                "Entrada ou operacao sem saida de venda: nao projetar debito "
+                "padrao. Credito de aquisicao depende das regras proprias.",
+            )
+        if contexto["status_xml"] != "OK":
+            return revisar(
+                "REVISAR_AUDITORIA_XML",
+                "O item ja possui alerta na auditoria original. "
+                "Resolver o enquadramento antes de simular.",
+            )
+        if contexto["cfop"] not in {"5101", "5102", "6101", "6102"}:
+            return revisar(
+                "REVISAR_CFOP_OPERACAO",
+                "CFOP nao esta entre as vendas comuns aceitas para esta "
+                "simulacao. Transferencias, devolucoes, ST e outras "
+                "operacoes exigem analise; nao se conclui isencao ou incidencia.",
+            )
+        try:
+            calculo = cls.simular(
+                2027, contexto["base_xml"],
+                cst=contexto["cst"], cclass_trib=contexto["cclass_trib"],
+                regime=regime, usar_cenario_tcu=usar_cenario_tcu,
+            )
+        except ValueError as exc:
+            return revisar(
+                "REVISAR_DADOS_ITEM",
+                f"Base ou classificacao do XML insuficiente para projetar: {exc}",
+            )
+        calculo["contexto_item"] = contexto
+        # Nunca sobrescreve o dict de entrada nem reconhece credito.
+        return calculo
