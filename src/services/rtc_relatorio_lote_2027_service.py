@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from src.services.apuracao_assistida_local_service import ServicoApuracaoLocalRTC
+from src.services.rtc_destinacao_efd_service import ler_efd_icms_ipi
 from src.services.rtc_aliquotas_service import (
     ServicoAliquotasRTC, _dinheiro,
 )
@@ -56,6 +57,9 @@ COLUNAS = (
     ("Observacao fiscal da simulacao", 110),
     ("Classificacao da triagem", 25),
     ("Proxima acao", 78),
+    ("CFOP entrada EFD", 19),
+    ("Destinacao da compra", 30),
+    ("Conferencia chave+item", 48),
 )
 
 
@@ -84,12 +88,15 @@ class ServicoRelatorioLoteRTC2027:
         self, cnpj: str, competencia: str, *,
         regime: str, permitir_venda_icms_st: bool = False,
         usar_cenario_tcu: bool = False, empresa: str = "",
+        arquivo_sped_fiscal: str | Path | None = None,
     ) -> dict:
         if type(permitir_venda_icms_st) is not bool or type(usar_cenario_tcu) is not bool:
             raise ValueError("As hipoteses de simulacao precisam de marcacao explicita.")
         cnpj = ServicoApuracaoLocalRTC.validar_cnpj(cnpj)
         competencia = ServicoApuracaoLocalRTC.validar_competencia(competencia)
         regra = ServicoAliquotasRTC.consultar(2027)
+        mapa_efd = (ler_efd_icms_ipi(arquivo_sped_fiscal, cnpj_esperado=cnpj,
+            competencia_esperada=competencia) if arquivo_sped_fiscal else None)
 
         # Nao fornecer limite para incluir todos os itens, inclusive os 22050
         # de uma competencia grande. A consulta e apenas leitura.
@@ -159,6 +166,11 @@ class ServicoRelatorioLoteRTC2027:
                     "Analisar operacao, CFOP, CST, cClassTrib e regime; "
                     "nao aplicar aliquota geral automaticamente."
                 )
+            vinculo = (mapa_efd.localizar(item) if mapa_efd else {
+                "cfop_entrada": "",
+                "destinacao": "A CONFERIR" if direcao == "ENTRADA" else "NAO SE APLICA",
+                "situacao": "SEM SPED FISCAL" if direcao == "ENTRADA" else "SAIDA",
+            })
             chaves.add(str(item.get("chave_nfe") or ""))
             agrupamentos[grupo] += 1
             situacoes[status] += 1
@@ -171,6 +183,9 @@ class ServicoRelatorioLoteRTC2027:
                 "alerta_xml": alerta_xml,
                 "classificacao": classificacao,
                 "acao": acao,
+                "cfop_entrada": vinculo["cfop_entrada"],
+                "destinacao": vinculo["destinacao"],
+                "situacao_efd": vinculo["situacao"],
                 "revisar": classificacao in CLASSES_REVISAR,
             })
 
@@ -184,6 +199,9 @@ class ServicoRelatorioLoteRTC2027:
             "gerado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
             "permitir_venda_icms_st": permitir_venda_icms_st,
             "usar_cenario_tcu": usar_cenario_tcu,
+            "arquivo_sped_fiscal": mapa_efd.origem if mapa_efd else "",
+            "destinacoes": Counter(l["destinacao"] for l in linhas
+                if str(l["item"].get("direcao") or "").upper() == "ENTRADA"),
             "linhas": linhas,
             "itens": len(linhas),
             "notas": len(chaves),
@@ -208,21 +226,21 @@ class ServicoRelatorioLoteRTC2027:
         from openpyxl.utils import get_column_letter
 
         ws.sheet_view.showGridLines = False
-        ws.merge_cells("A1:Y2")
+        ws.merge_cells("A1:AB2")
         ws["A1"] = "FiscalPro | " + titulo
         ws["A1"].fill = PatternFill("solid", fgColor=AZUL)
         ws["A1"].font = Font(bold=True, color="FFFFFF", size=15)
         ws["A1"].alignment = Alignment(vertical="center")
         ws.row_dimensions[1].height = 28
         ws.row_dimensions[2].height = 17
-        ws.merge_cells("A3:Y3")
+        ws.merge_cells("A3:AB3")
         ws["A3"] = (
             f"Empresa: {_texto(dados['empresa'])} | CNPJ: {dados['cnpj']} | "
             f"Origem: {dados['competencia']} | Projecao: 2027 | "
             f"Regime: {dados['regime']} | Itens nesta aba: {len(linhas)}"
         )
         ws["A3"].font = Font(color=AZUL, bold=True)
-        ws.merge_cells("A4:Y5")
+        ws.merge_cells("A4:AB5")
         ws["A4"] = (
             "NAO E APURACAO OFICIAL NEM ALIQUOTA DEFINITIVA. Bases e CST/cClassTrib "
             "extraidos de XMLs historicos nao comprovam tratamento fiscal de 2027. "
@@ -274,6 +292,9 @@ class ServicoRelatorioLoteRTC2027:
                 _texto(sim.get("observacao")),
                 linha["classificacao"],
                 linha["acao"],
+                linha["cfop_entrada"],
+                linha["destinacao"],
+                linha["situacao_efd"],
             ]
             for col, valor in enumerate(valores, 1):
                 cel = ws.cell(idx, col, valor)
@@ -281,7 +302,7 @@ class ServicoRelatorioLoteRTC2027:
                     cel.number_format = MONEY_FMT
                 if col in (13, 14, 17):
                     cel.number_format = PCT_FMT
-                if col in (3, 4, 6, 8, 9, 10, 11):
+                if col in (3, 4, 6, 8, 9, 10, 11, 26):
                     cel.number_format = "@"
                 if col in (15, 16, 18, 19) and valor is not None:
                     cel.font = Font(color="000000")
@@ -304,7 +325,7 @@ class ServicoRelatorioLoteRTC2027:
                 cel.font = Font(bold=True, color=cor_texto)
 
         ws.freeze_panes = "L8"
-        ws.auto_filter.ref = f"A7:Y{max(7, len(linhas) + 7)}"
+        ws.auto_filter.ref = f"A7:AB{max(7, len(linhas) + 7)}"
         ws.print_title_rows = "1:7"
         ws.page_setup.orientation = "landscape"
         ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -414,6 +435,23 @@ class ServicoRelatorioLoteRTC2027:
         for row in (26, 27, 28):
             ws.row_dimensions[row].height = 28
 
+        ws["D20"] = "Destinacao da entrada no SPED Fiscal"
+        ws["D20"].font = Font(bold=True, color=AZUL)
+        destino = dados["destinacoes"]
+        conferencias = (
+            ("Uso e consumo - 1556/2556/3556", destino["USO E CONSUMO (CFOP EFD)"]),
+            ("Ativo imobilizado", destino["ATIVO IMOBILIZADO (CFOP EFD)"]),
+            ("Revenda", destino["REVENDA (CFOP EFD)"]),
+            ("Entrada a conferir", sum(n for k, n in destino.items() if k not in {
+                "USO E CONSUMO (CFOP EFD)", "ATIVO IMOBILIZADO (CFOP EFD)", "REVENDA (CFOP EFD)"})),
+        )
+        for n, (titulo, total) in enumerate(conferencias, 21):
+            ws.cell(n, 4, titulo)
+            ws.cell(n, 5, total)
+        ws["D26"] = "CFOP de entrada da EFD difere do CFOP de saida do fornecedor."
+        ws["D27"] = "Uso e consumo operacional NAO determina automaticamente direito a credito IBS/CBS."
+        ws["D28"] = "Sem SPED Fiscal ou chave+item nao localizado: A CONFERIR."
+
         ws["A30"] = "Configuracao da exportacao"
         ws["A30"].font = Font(bold=True, size=12, color=AZUL)
         ws["A31"] = "Hipotese CFOP 5405 autorizada"
@@ -422,6 +460,8 @@ class ServicoRelatorioLoteRTC2027:
         ws["B32"] = "SIM (NAO OFICIAL)" if dados["usar_cenario_tcu"] else "NAO"
         ws["A33"] = "Gerado em"
         ws["B33"] = dados["gerado_em"]
+        ws["A34"] = "SPED Fiscal usado"
+        ws["B34"] = dados["arquivo_sped_fiscal"] or "NAO SELECIONADO"
         ws["A35"] = "Fontes para conferencia"
         ws["A35"].font = Font(bold=True, color=AZUL)
         ws.merge_cells("A36:H36")
@@ -441,6 +481,7 @@ class ServicoRelatorioLoteRTC2027:
         regime: str, empresa: str = "",
         permitir_venda_icms_st: bool = False,
         usar_cenario_tcu: bool = False,
+        arquivo_sped_fiscal: str | Path | None = None,
     ) -> Path:
         from openpyxl import Workbook
         from openpyxl.workbook.properties import CalcProperties
@@ -452,6 +493,7 @@ class ServicoRelatorioLoteRTC2027:
             cnpj, competencia, regime=regime, empresa=empresa,
             permitir_venda_icms_st=permitir_venda_icms_st,
             usar_cenario_tcu=usar_cenario_tcu,
+            arquivo_sped_fiscal=arquivo_sped_fiscal,
         )
         wb = Workbook()
         wb.calculation = CalcProperties(calcMode="auto", fullCalcOnLoad=True)
