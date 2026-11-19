@@ -234,6 +234,8 @@ class ResultadoAuditoriaTributaria:
     notas_sped_chaves_unicas: int = 0
     notas_sped_chaves_por_mes: dict[str, int] = field(default_factory=dict)
     notas_sped_chaves_coincidentes: int = 0
+    notas_c170_chaves_unicas: int = 0
+    notas_c170_chaves_coincidentes: int = 0
     diagnostico_xml: str = ""
     apontamentos: list[ApontamentoAuditoriaTributaria] = field(default_factory=list)
     contexto: dict[str, str] = field(default_factory=dict)
@@ -556,6 +558,18 @@ class AuditorTributarioSPED:
         }
         resultado.notas_sped_chaves_unicas = len(chaves_sped)
         resultado.notas_sped_chaves_coincidentes = len(chaves_sped.intersection(xmls))
+        # A cobertura dos C170 precisa considerar apenas C100 com itens e
+        # modelo NF-e 55. O C100 inteiro pode trazer documentos sem C170
+        # e nao indica milhares de itens obrigatoriamente sem XML.
+        chaves_c170 = {
+            chave
+            for nota in notas
+            if nota.get("itens") and str(nota.get("modelo") or "").zfill(2) == "55"
+            for chave in [_digitos(nota.get("chave"))]
+            if len(chave) == 44
+        }
+        resultado.notas_c170_chaves_unicas = len(chaves_c170)
+        resultado.notas_c170_chaves_coincidentes = len(chaves_c170.intersection(xmls))
         por_mes: dict[str, int] = {}
         for chave in chaves_sped:
             mes = f"20{chave[2:4]}-{chave[4:6]}"
@@ -816,19 +830,37 @@ class AuditorTributarioSPED:
                 f"erros de leitura: {resultado.xml_erros_importacao}. "
                 "Verifique se a pasta/ZIP contem NF-e autorizadas com chave de 44 digitos."
             )
-        elif not resultado.notas_sped_chaves_coincidentes:
+        elif resultado.notas_c170_chaves_unicas == 0:
             resultado.diagnostico_xml = (
-                f"Foram importadas {resultado.xml_validos_importados} NF-e, mas nenhuma das "
-                f"{resultado.notas_sped_chaves_unicas} chaves distintas do C100 coincidiu. "
-                f"Meses das chaves presentes no SPED: {meses}. "
-                "Confira empresa, periodo, origens e arquivos XML, sem assumir erro na NF-e."
+                f"O SPED contem {resultado.notas_sped_chaves_unicas} chaves C100, "
+                "mas nao foi localizada NF-e modelo 55 com itens C170 e chave valida. "
+                "Confira quais registros precisam de confronto de XML. "
+                f"Meses das chaves C100: {meses}."
             )
-        elif resultado.notas_sem_xml:
+        elif not resultado.notas_c170_chaves_coincidentes:
             resultado.diagnostico_xml = (
-                f"Cruzamento parcial: {resultado.notas_sped_chaves_coincidentes} de "
-                f"{resultado.notas_sped_chaves_unicas} chaves C100 localizadas entre "
-                f"{resultado.xml_validos_importados} NF-e importadas. "
-                f"Meses do SPED: {meses}. Revise apenas os documentos restantes."
+                f"Foram importadas {resultado.xml_validos_importados} NF-e 55, mas "
+                f"nenhuma das {resultado.notas_c170_chaves_unicas} chaves C100 "
+                "com itens C170 coincidiu com os XMLs. "
+                f"O arquivo contem {resultado.notas_sped_chaves_unicas} chaves C100 "
+                "no total, inclusive documentos sem C170. "
+                f"Meses das chaves C100: {meses}."
+            )
+        elif resultado.notas_c170_chaves_coincidentes < resultado.notas_c170_chaves_unicas:
+            resultado.diagnostico_xml = (
+                f"Cruzamento parcial: {resultado.notas_c170_chaves_coincidentes} de "
+                f"{resultado.notas_c170_chaves_unicas} NF-e 55 com itens C170 "
+                f"localizadas entre {resultado.xml_validos_importados} XML(s) importado(s). "
+                f"O SPED possui {resultado.notas_sped_chaves_unicas} chaves C100 "
+                "no total, inclusive notas sem C170; nao use esse total como "
+                f"denominador dos itens auditados. Meses do C100: {meses}."
+            )
+        else:
+            resultado.diagnostico_xml = (
+                f"Todas as {resultado.notas_c170_chaves_unicas} NF-e modelo 55 "
+                "com C170 e chave valida foram localizadas nos XMLs importados. "
+                f"Ha {resultado.notas_sped_chaves_unicas} chaves C100 no SPED "
+                "no total, incluindo documentos que nao possuem C170."
             )
         self._progresso(progresso, 100, "Auditoria tributária concluída.")
         return resultado
@@ -1202,7 +1234,8 @@ class AuditorTributarioSPED:
             f"Diagnostico da cobertura: {resultado.diagnostico_regras or 'Sem ressalvas de cobertura identificadas'}",
             f"NF-e validas importadas: {resultado.xml_validos_importados}",
             f"NFC-e validas importadas: {resultado.nfce_validas_importadas}",
-            f"Chaves C100 unicas / com XML localizado: {resultado.notas_sped_chaves_unicas} / {resultado.notas_sped_chaves_coincidentes}",
+            f"Chaves C100 totais / com XML localizado: {resultado.notas_sped_chaves_unicas} / {resultado.notas_sped_chaves_coincidentes}",
+            f"NF-e 55 com C170 / com XML localizado: {resultado.notas_c170_chaves_unicas} / {resultado.notas_c170_chaves_coincidentes}",
             f"Diagnostico do XML: {resultado.diagnostico_xml or 'Sem ressalvas de XML identificadas'}",
             "",
             "APONTAMENTOS",
