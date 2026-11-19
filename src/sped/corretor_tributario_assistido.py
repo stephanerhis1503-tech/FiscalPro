@@ -189,7 +189,12 @@ class CorretorTributarioAssistido:
         apontamentos = [
             item
             for item in auditoria.apontamentos
-            if item.origem in self.ORIGENS_CORRIGIVEIS and item.campo in self.CAMPOS
+            if (
+                item.nivel == "ERRO"
+                and item.origem in self.ORIGENS_CORRIGIVEIS
+                and item.campo in self.CAMPOS
+                and (item.origem != "FICHA TRIBUTÁRIA" or item.aderencia >= 60)
+            )
         ]
         total = max(1, len(apontamentos))
 
