@@ -1,5 +1,7 @@
 """Metadados centrais do FiscalPro.
 
+Versao 18.3.4 — correcao ICMS-ST/MG: cadeados NCM 8301.10.00 nao se enquadram no CEST 10.075.00; bloqueio de MVA e calculo indevido no XML, mantendo as melhorias da CBS e interface da versao 18.3.3.
+
 Versao 18.3.3 — Triagem documental CBS (valor positivo/zero/sem retorno) e interface principal enxuta, sem apagar registros ou relatorios de modulos existentes.
 
 Versão 18.3.2 — Status cadastral consistente na Auditoria Excel:
@@ -878,9 +880,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.3.3"
+VERSAO_APP = "18.3.4"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.3.3.0"
+VERSAO_ARQUIVO_WINDOWS = "18.3.4.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
