@@ -1859,6 +1859,8 @@ class JanelaSPEDInteligente(Toplevel):
             ).replace(",", ".")
             if resumo.diagnostico_regras:
                 mensagem += "\n\n" + resumo.diagnostico_regras
+            if resumo.diagnostico_xml:
+                mensagem += "\n\nXML: " + resumo.diagnostico_xml
             if resumo.auditoria_tributaria_inconclusiva:
                 messagebox.showwarning(
                     "FiscalPro — Auditoria inconclusiva",
@@ -3893,7 +3895,7 @@ class JanelaSPEDInteligente(Toplevel):
                 f"{a.itens_sem_regra:,} sem regra • {a.erros:,} erro(s) • {a.avisos:,} aviso(s) • "
                 f"cobertura de regras {a.cobertura_regras:.2f}% • "
                 f"conformidade {a.conformidade_exibicao}. {xml_texto} "
-                f"{a.diagnostico_regras} "
+                f"{a.diagnostico_regras} {a.diagnostico_xml} "
                 f"Filtro atual: {filtro} ({len(apontamentos):,} linha(s))."
             ).replace(",", ".")
         )
