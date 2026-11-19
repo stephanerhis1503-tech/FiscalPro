@@ -3,7 +3,7 @@ name: Windows - Instalador FiscalPro 18.3.4 CBS, Interface e Cadeados
 on:
   push:
     branches:
-      - release/fiscalpro-18.3.4-cbs-interface-20261119
+      - release/fiscalpro-18.3.4-cadeado-st-20261119
   workflow_dispatch:
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
       - name: Salvar instalador
         uses: actions/upload-artifact@v4
         with:
-          name: FiscalPro_Setup_18.3.4_CBS_Interface
+          name: FiscalPro_Setup_18.3.4_CBS_Cadeados
           path: instalador/saida/FiscalPro_Setup_18.3.4.exe
           retention-days: 7
           if-no-files-found: error
