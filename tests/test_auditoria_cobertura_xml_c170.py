@@ -47,3 +47,12 @@ def test_c100_sem_c170_nao_aumenta_documentos_faltantes(monkeypatch):
     assert r.notas_c170_chaves_unicas == 1
     assert r.notas_c170_chaves_coincidentes == 1
     assert "Todas as 1 NF-e modelo 55 com C170" in r.diagnostico_xml
+    assert r.c170_notas_entrada == 1
+    assert r.c170_notas_entrada_com_xml == 1
+    assert r.c170_notas_saida == 0
+    assert r.xml_importados_c100_sem_c170 == 0
+    assert len(r.documentos_c170) == 1
+    assert r.documentos_c170[0]["situacao"] == "LOCALIZADO"
+    assert len(r.documentos_xml_importados) == 1
+    assert r.documentos_xml_importados[0]["situacao"] == "CORRESPONDE A C170"
+
