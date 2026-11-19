@@ -57,7 +57,7 @@ class ReferenciasAuditoriaSPEDService:
             "st_status": "NAO CONSULTADO", "st_decisao_confirmada": False,
             "st_cest": "", "icms_fonte": "",
             "falha_tecnica": False,
-            "nota": (
+            "restricao_uso": (
                 "Consulta meramente referencial. Nao equivale a regra "
                 "da Ficha nem confirma CST, base, credito, MVA ou imposto "
                 "devido. Verificar finalidade, operacao e vigencia."
