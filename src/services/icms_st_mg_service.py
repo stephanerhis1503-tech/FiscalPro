@@ -809,6 +809,63 @@ class ICMSSTMGService:
         }
 
     @classmethod
+    def _resultado_cadeado_83011000(
+        cls, codigo: str, origem: str, destino: str, descricao: str
+    ) -> Dict[str, Any]:
+        """Cadeados NCM 8301.10.00 NAO integram a descricao do CEST 10.075.00.
+
+        O item 75.0 do segmento 10 do Anexo VII/MG utiliza NBM/SH 8301,
+        mas descreve fechaduras, ferrolhos, fechos/armacoes e suas chaves,
+        nao cadeados (subposicao propria 8301.10). O NCM amplo NAO basta.
+        Fontes: SEF/MG RICMS/2023 Anexo VII, Parte 1 art. 12 e Parte 2
+        segmento 10 item 75.0; RFB NESH 83.01.
+        """
+        texto = cls._normalizar_texto(descricao)
+        descricao_e_cadeado = bool(re.search(r"\bCADEAD(?:O|OS)\b", texto))
+        if not descricao_e_cadeado:
+            # Descricao omitida ou incoerente com o NCM exige revisao
+            # cadastral, mas nunca habilita a MVA do CEST 10.075.00.
+            status = "REVISAR NCM/DESCRICAO — 8301.10.00 E EXCLUSIVO DE CADEADOS"
+            revisao = True
+            decisao = "CONDICIONAL"
+        else:
+            status = "NAO ST/MG — CADEADO FORA DA DESCRICAO DO CEST 10.075.00"
+            revisao = False
+            decisao = "NAO"
+        return ResultadoICMSSTMG(
+            ncm=codigo,
+            status=status,
+            encontrado=False,
+            confirmado=False,
+            exige_revisao=revisao,
+            ncm_legal="8301.10.00",
+            descricao_legal="Cadeados (subposicao 8301.10.00)",
+            segmento="MATERIAIS DE CONSTRUÇÃO E CONGÊNERES",
+            mva_original=None,
+            aplicacao_operacao="SEM ST PELO ITEM 75.0 DO SEGMENTO 10/MG",
+            fundamento="RICMS/MG/2023 — Anexo VII, Parte 1, art. 12; Parte 2, segmento 10, item 75.0",
+            artigo_item="Parte 2, segmento 10, item 75.0, CEST 10.075.00 (descricao nao abrange cadeados)",
+            fonte_codigo="SEF_MG_ST_MATERIAIS_CONSTRUCAO",
+            fonte_url=URL_RICMS_MG_MATERIAIS_CONSTRUCAO,
+            aplicabilidade_segmento="CADEADO_FORA_CEST_1007500",
+            nao_aplicavel=True,
+            observacao=(
+                "NCM 8301.10.00 designa cadeados. O item 75.0 (CEST 10.075.00) "
+                "descreve fechaduras, ferrolhos, fechos, partes e chaves, mas nao "
+                "cadeados. Nao usar MVA de 50% nem MVA ajustada para esse item. "
+                "Se a mercadoria nao for efetivamente cadeado, revise o NCM. "
+                "Eventual regime especial ou operacao especifica requer analise propria."
+            ),
+            candidatos=0,
+            uf_origem=origem,
+            uf_destino=destino,
+            potencial=False,
+            decisao_st=decisao,
+            cest_sugerido="",
+            mva_sugerida=None,
+        ).para_dict()
+
+    @classmethod
     def analisar(
         cls,
         ncm: Any,
@@ -825,6 +882,13 @@ class ICMSSTMGService:
         finalidade_automotiva = cls._normalizar_finalidade_automotiva(
             contexto.get("finalidade_automotiva")
         )
+        # Bloqueio legal anterior a qualquer CEST herdado, base offline ou
+        # inferencia de autopecas: 8301.10.00 e a subposicao de cadeados,
+        # ausentes da descricao do CEST 10.075.00 do RICMS/MG.
+        if codigo == "83011000":
+            return cls._resultado_cadeado_83011000(
+                codigo, origem, destino, descricao
+            )
         cobertura_st = BaseOficialRepository.resumo_st_mg()
         base_st_completa = bool(
             cobertura_st.get("base_completa")
