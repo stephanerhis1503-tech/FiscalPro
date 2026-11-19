@@ -169,7 +169,8 @@ class ServicoRelatorioAuditoriaTributaria:
             ("Sem regra tributaria", resultado.itens_sem_regra),
             ("Itens com XML localizado", resultado.itens_com_xml),
             ("Itens sem XML correspondente", resultado.itens_sem_xml),
-            ("Conformidade parcial (%)", resultado.conformidade),
+            ("Cobertura das regras (%)", resultado.cobertura_regras),
+            ("Conformidade avaliavel", resultado.conformidade_exibicao),
         ]
         resumo_ws["A12"] = "Cobertura da auditoria"
         resumo_ws["A12"].font = Font(size=12, bold=True, color=AZUL)
@@ -192,7 +193,8 @@ class ServicoRelatorioAuditoriaTributaria:
         resumo_ws.merge_cells("A24:P25")
         aviso_detalhe = resumo_ws["A24"]
         aviso_detalhe.value = (
-            "A aba Todos preserva cada apontamento, inclusive linha, NF, chave, "
+            (resultado.diagnostico_regras + " " if resultado.diagnostico_regras else "")
+            + "A aba Todos preserva cada apontamento, inclusive linha, NF, chave, "
             "produto, valores atuais e de referencia, regra, problema e orientacao. "
             "Erros e Avisos permitem filtragem separada. A conformidade e apenas "
             "indicador dos testes executados: nao representa homologacao fiscal."
@@ -319,6 +321,14 @@ class ServicoRelatorioAuditoriaTributaria:
             ),
             Spacer(1, 11),
             Paragraph(escape(AVISO), aviso),
+        ]
+        if resultado.diagnostico_regras:
+            story.append(Spacer(1, 7))
+            story.append(Paragraph(
+                "<b>COBERTURA INSUFICIENTE:</b> " + escape(resultado.diagnostico_regras),
+                aviso,
+            ))
+        story.extend([
             Paragraph("Resumo da auditoria", titulo),
         ]
         kpis = [
@@ -326,7 +336,7 @@ class ServicoRelatorioAuditoriaTributaria:
             ("Erros", str(r["erros"])),
             ("Avisos", str(r["avisos"])),
             ("Total de apontamentos", str(r["total"])),
-        ]
+        ])
         quadro = Table(
             [
                 [p(nome, strong=True) for nome, _ in kpis],
@@ -350,7 +360,8 @@ class ServicoRelatorioAuditoriaTributaria:
             ("Com / sem cadastro 0200", f"{resultado.itens_com_0200} / {resultado.itens_sem_0200}"),
             ("Com / sem regra tributaria", f"{resultado.itens_com_regra} / {resultado.itens_sem_regra}"),
             ("Itens com / sem XML associado", f"{resultado.itens_com_xml} / {resultado.itens_sem_xml}"),
-            ("Conformidade parcial", f"{resultado.conformidade:.2f}%".replace(".", ",")),
+            ("Cobertura de regras", f"{resultado.cobertura_regras:.2f}%".replace(".", ",")),
+            ("Conformidade parcial", resultado.conformidade_exibicao),
         ]
         tab = Table([[p(a), p(b, strong=True)] for a, b in cobertura], colWidths=[270, 180])
         tab.setStyle(TableStyle([
