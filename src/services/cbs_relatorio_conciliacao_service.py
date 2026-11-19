@@ -56,6 +56,40 @@ def _formatar_valor_pdf(valor) -> str:
     return numero.translate(str.maketrans({",": ".", ".": ","}))
 
 
+def _triagem_pendencia(doc: dict) -> str:
+    """Classificacao documental informativa, sem concluir ausencia na Receita."""
+    status = doc["status"]
+    if status == "CONFERE":
+        return "CONFERE"
+    if status == "DIFERENCA_REVISAR":
+        return "REVISAR_DIVERGENCIA"
+    if status == "MULTIPLOS_OFICIAIS_REVISAR":
+        return "REVISAR_MULTIPLOS"
+    if status == "SEM_DADO_NESTE_RETORNO":
+        valor = doc.get("cbs_xml")
+        if valor in (None, ""):
+            return "SEM_RETORNO_VALOR_INDISPONIVEL"
+        try:
+            quantia = Decimal(str(valor))
+        except (ValueError, ArithmeticError):
+            return "SEM_RETORNO_VALOR_INDISPONIVEL"
+        if quantia == 0:
+            return "SEM_RETORNO_CBS_ZERO"
+        if quantia > 0:
+            return "SEM_RETORNO_CBS_POSITIVA"
+        return "SEM_RETORNO_VALOR_NEGATIVO_REVISAR"
+    return "OUTRO_STATUS_REVISAR"
+
+
+def _contagem_triagem(dados: dict) -> Counter:
+    return Counter(
+        _triagem_pendencia(doc)
+        for grupo in dados["grupos"].values()
+        for doc in grupo["linhas"]
+        if doc["status"] != "CONFERE"
+    )
+
+
 def _linha(doc: dict) -> tuple:
     return (
         doc["tipo"], doc["nf"], doc["chave"],
@@ -206,6 +240,16 @@ class ServicoRelatorioConciliacaoCBS:
             ws.column_dimensions[get_column_letter(i)].width = largura
         ws.auto_filter.ref = f"A9:I{max(9, len(linhas) + 9)}"
         ws.column_dimensions["C"].number_format = "@"
+        if nome == "Pendencias":
+            ws["J9"] = "Triagem documental"
+            ws["J9"].fill = PatternFill("solid", fgColor=AZUL)
+            ws["J9"].font = Font(bold=True, color="FFFFFF")
+            ws.column_dimensions["J"].width = 37
+            for idx, documento in enumerate(linhas, 10):
+                celula = ws.cell(idx, 10, _triagem_pendencia(documento))
+                celula.fill = PatternFill("solid", fgColor=AMARELO)
+                celula.font = Font(color="8A4D12", bold=True)
+            ws.auto_filter.ref = f"A9:J{max(9, len(linhas) + 9)}"
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.orientation = "landscape"
         ws.print_title_rows = "1:9"
@@ -245,6 +289,27 @@ class ServicoRelatorioConciliacaoCBS:
             ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=9)
             ws.cell(linha, 1).font = Font(color="8A4D12", italic=True)
         ws.freeze_panes = "B10"
+        ws["A18"] = "Triagem informativa de documentos sem correspondencia no retorno incremental"
+        ws["A18"].font = Font(bold=True, color=AZUL)
+        categorias = (
+            ("SEM_RETORNO_CBS_POSITIVA", "Sem retorno, CBS positiva (verificar)"),
+            ("SEM_RETORNO_CBS_ZERO", "Sem retorno, CBS zero (acompanhamento)"),
+            ("SEM_RETORNO_VALOR_INDISPONIVEL", "Sem retorno, valor indisponivel"),
+            ("SEM_RETORNO_VALOR_NEGATIVO_REVISAR", "Sem retorno, valor negativo (revisar)"),
+            ("REVISAR_DIVERGENCIA", "Valores divergentes (revisar)"),
+            ("REVISAR_MULTIPLOS", "Multiplos oficiais (revisar)"),
+            ("OUTRO_STATUS_REVISAR", "Outro status (revisar)"),
+        )
+        contagem = _contagem_triagem(dados)
+        for indice, (chave, rotulo) in enumerate(categorias, 19):
+            ws.cell(indice, 1, rotulo)
+            ws.cell(indice, 2, contagem[chave])
+        ws["A27"] = (
+            "A classificacao nao comprova ausencia na Receita nem autoriza "
+            "credito automatico; consultar origem e natureza dos documentos."
+        )
+        ws.merge_cells("A27:I27")
+        ws["A27"].font = Font(color="8A4D12", italic=True)
 
         todos = []
         for tipo, aba in (("debitos", "Debitos"), ("creditos", "Creditos")):
@@ -316,6 +381,30 @@ class ServicoRelatorioConciliacaoCBS:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
         ]))
         story.extend([tabela, Spacer(1, 8)])
+        triagem = _contagem_triagem(dados)
+        story.append(Paragraph("Triagem das pendencias (informativa)", secoes))
+        linhas_triagem = [
+            ["Sem retorno, CBS positiva", str(triagem["SEM_RETORNO_CBS_POSITIVA"])],
+            ["Sem retorno, CBS zero", str(triagem["SEM_RETORNO_CBS_ZERO"])],
+            ["Sem retorno, valor indisponivel", str(triagem["SEM_RETORNO_VALOR_INDISPONIVEL"])],
+            ["Sem retorno, valor negativo", str(triagem["SEM_RETORNO_VALOR_NEGATIVO_REVISAR"])],
+            ["Valores divergentes", str(triagem["REVISAR_DIVERGENCIA"])],
+            ["Multiplos oficiais", str(triagem["REVISAR_MULTIPLOS"])],
+            ["Outros status", str(triagem["OUTRO_STATUS_REVISAR"])],
+        ]
+        quadro = Table(linhas_triagem, colWidths=[245, 65], hAlign="LEFT")
+        quadro.setStyle(TableStyle([
+            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#EFF5FA")]),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(quadro)
+        story.append(Paragraph(
+            "Sem retorno nao significa erro ou ausencia na Receita. "
+            "CBS zero nao implica direito a credito. Valores sao documentais.",
+            corpo,
+        ))
         story.append(Paragraph(
             "Oficiais por raiz: a contagem pode incluir filiais. "
             "Nao corresponde necessariamente aos XMLs deste estabelecimento.",
