@@ -1282,6 +1282,7 @@ class JanelaSPEDInteligente(Toplevel):
             self.preparacao_assistida = None
             self.analise_chaves_cte = None
             self.auditoria_tributaria = None
+            self.importacao_nfe_xml = None
             self.preparacao_correcao_tributaria = None
             self.analise_estorno_icms = None
             self.analise_danfe_icms = None
@@ -1291,6 +1292,7 @@ class JanelaSPEDInteligente(Toplevel):
             self._limpar_chaves_cte()
             self._limpar_correcoes()
             self._limpar_auditoria_tributaria()
+            self.lbl_auditoria_xml.config(text="Nenhum XML de NF-e importado para este SPED.")
             self._limpar_difal()
             self._limpar_correcao_tributaria()
             self._limpar_estorno_icms()
@@ -3819,6 +3821,8 @@ class JanelaSPEDInteligente(Toplevel):
             apontamentos = [item for item in apontamentos if item.campo == "Regra tributária"]
         elif filtro in {"Ficha Tributária", "XML NF-e", "Cadastro 0200", "Base Legal"}:
             origem = filtro.upper() if filtro != "Ficha Tributária" else "FICHA TRIBUTÁRIA"
+            if filtro == "XML NF-e":
+                origem = "XML NF-e"
             if filtro == "Cadastro 0200":
                 origem = "CADASTRO 0200"
             elif filtro == "Base Legal":
