@@ -399,8 +399,21 @@ class XMLICMSSTService:
         observacoes: List[str] = []
         aplicabilidade_7318 = str(resultado_calculo.get("aplicabilidade_7318") or "")
         if resultado_calculo.get("nao_aplicavel"):
-            conferencia = "NÃO APLICÁVEL — USO EXCLUSIVO AUTOMOTIVO"
-            if informado > limite:
+            cadeado = (
+                str(resultado_calculo.get("aplicabilidade_7318") or "")
+                == "CADEADO_FORA_CEST_1007500"
+            )
+            conferencia = (
+                "NÃO APLICÁVEL — CADEADO FORA DO CEST 10.075.00"
+                if cadeado else "NÃO APLICÁVEL — USO EXCLUSIVO AUTOMOTIVO"
+            )
+            if cadeado:
+                observacoes.append(
+                    "NCM 8301.10.00: cadeado nao integra a descricao do CEST "
+                    "10.075.00. ST calculada bloqueada, inclusive com MVA manual. "
+                    "Se o XML trouxer ST, conferir destaque do fornecedor."
+                )
+            elif informado > limite:
                 observacoes.append(
                     "O item foi classificado como de uso exclusivamente automotivo, mas o XML contém ICMS-ST. "
                     "Revise a classificação e o destaque do fornecedor."
@@ -448,6 +461,7 @@ class XMLICMSSTService:
 
         if conferencia not in {
             "NÃO APLICÁVEL — USO EXCLUSIVO AUTOMOTIVO",
+            "NÃO APLICÁVEL — CADEADO FORA DO CEST 10.075.00",
             "REVISAR USO DO NCM 7318",
         } and (
             "MVA MANUAL" in status_calculo
@@ -582,7 +596,13 @@ class XMLICMSSTService:
             return base
 
         if st.get("nao_aplicavel"):
-            base["status"] = "NÃO CALCULADO — USO EXCLUSIVAMENTE AUTOMOTIVO"
+            if str(st.get("aplicabilidade_segmento") or "") == "CADEADO_FORA_CEST_1007500":
+                base["status"] = str(st.get("status") or "NÃO CALCULADO — CADEADO SEM ST/MG")
+                base["cest"] = ""
+                base["mva_original"] = None
+                base["calculo_condicional"] = False
+            else:
+                base["status"] = "NÃO CALCULADO — USO EXCLUSIVAMENTE AUTOMOTIVO"
             base.update(cls.conferir_icms_st(item, base, tolerancia_conferencia))
             return base
 
