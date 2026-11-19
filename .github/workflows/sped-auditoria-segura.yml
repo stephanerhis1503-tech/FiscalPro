@@ -12,7 +12,9 @@ on:
       - src/ui/janela_sped_inteligente.py
       - src/services/relatorio_auditoria_tributaria_service.py
       - src/services/referencias_auditoria_sped_service.py
+      - src/services/empresas_regimes_service.py
       - tests/test_referencias_auditoria_sped.py
+      - tests/test_regime_automatico_sped_auditoria.py
       - tests/test_auditoria_sped_segura_18_3_5.py
       - tests/test_relatorio_auditoria_tributaria_visual.py
       - tests/test_auditoria_sem_regras_18_3_5.py
