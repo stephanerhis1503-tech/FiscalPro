@@ -153,12 +153,16 @@ class DocumentoXMLNFe:
     valor_nota: float = 0.0
 
     def localizar_item(self, numero_item: str, codigo: str) -> Optional[ItemXMLNFe]:
+        """Correlacao conservadora; evita fallback incorreto quando nItem diverge."""
         numero_item = _texto(numero_item)
         codigo = _texto(codigo).upper()
         if numero_item:
             encontrados = [item for item in self.itens if _texto(item.numero_item) == numero_item]
             if len(encontrados) == 1:
                 return encontrados[0]
+            # Se o item numerado nao existe no XML, nao presumir que um
+            # cProd identico (que pode ser reutilizado) representa a mesma linha.
+            return None
         if codigo:
             encontrados = [item for item in self.itens if _texto(item.codigo).upper() == codigo]
             if len(encontrados) == 1:
@@ -546,7 +550,26 @@ class AuditorTributarioSPED:
                 item_xml = documento_xml.localizar_item(item.numero_item, item.codigo) if documento_xml else None
                 if item_xml:
                     resultado.itens_com_xml += 1
-                    self._comparar_xml(resultado, numero_linha, nota, item, item_xml)
+                    # cProd do fornecedor pode diferir do codigo interno, mas
+                    # quando AMBOS codigo e NCM divergem, nItem isolado nao
+                    # comprova que este e o mesmo produto.
+                    vinculo_duvidoso = bool(
+                        _texto(item.codigo).upper() != _texto(item_xml.codigo).upper()
+                        and item.ncm and item_xml.ncm
+                        and _digitos(item.ncm) != _digitos(item_xml.ncm)
+                    )
+                    if vinculo_duvidoso:
+                        self._adicionar(
+                            resultado, "AVISO", "XML NF-e", numero_linha, nota, item,
+                            "Vinculo XML", item.codigo, item_xml.codigo, "", 0,
+                            "Numero do item coincide, mas codigo e NCM divergem; vinculo nao confirmado.",
+                            "Confira fisicamente a correspondencia antes de comparar ou corrigir NCM/CST.",
+                        )
+                    else:
+                        self._comparar_xml(
+                            resultado, numero_linha, nota, item, item_xml,
+                            entrada=nota.get("ind_oper") == "0",
+                        )
                 elif importacao_xml is not None:
                     resultado.itens_sem_xml += 1
                     origem = "XML NF-e"
@@ -868,7 +891,8 @@ class AuditorTributarioSPED:
             esperado = regra.get(campo_regra)
             if self._divergente(atual, esperado, tipo):
                 self._adicionar(
-                    resultado, "ERRO", "FICHA TRIBUTÁRIA", linha, nota, item, nome,
+                    resultado, "ERRO" if aderencia >= 60 else "AVISO",
+                    "FICHA TRIBUTÁRIA", linha, nota, item, nome,
                     self._formatar(atual, tipo), self._formatar(esperado, tipo), regra_id, aderencia,
                     f"{nome} do C170 diverge da regra tributária selecionada.",
                     "Confira a operação e a base legal. Depois corrija o SPED ou ajuste a regra, conforme o caso.",
@@ -902,8 +926,16 @@ class AuditorTributarioSPED:
         nota: dict[str, Any],
         item: RegistroC170,
         xml: ItemXMLNFe,
+        *,
+        entrada: bool = False,
     ) -> None:
         for nome, atributo_item, atributo_xml, tipo in self.CAMPOS_XML:
+            # Na entrada, CFOP, CST e aliquotas de escrituracao do adquirente
+            # nao sao necessariamente iguais aos de emissao do fornecedor.
+            # Comparar NCM/CEST como cadastro documental; nao criar sugestao
+            # automatica de alteracao fiscal a partir do XML de compra.
+            if entrada and nome not in {"NCM", "CEST"}:
+                continue
             atual = getattr(item, atributo_item, "")
             if nome == "NCM":
                 atual = item.ncm
@@ -912,10 +944,16 @@ class AuditorTributarioSPED:
             esperado = getattr(xml, atributo_xml, "")
             if self._divergente(atual, esperado, tipo):
                 self._adicionar(
-                    resultado, "ERRO", "XML NF-e", linha, nota, item, nome,
+                    resultado, "AVISO" if entrada else "ERRO", "XML NF-e", linha, nota, item, nome,
                     self._formatar(atual, tipo), self._formatar(esperado, tipo), "", 0,
-                    f"{nome} do SPED diverge do XML da NF-e.",
-                    "Confira o XML autorizado e corrija a escrituração para refletir o documento fiscal.",
+                    (
+                        f"{nome} do cadastro da entrada difere do XML do fornecedor; revisar classificacao."
+                        if entrada else f"{nome} do SPED diverge do XML da NF-e."
+                    ),
+                    (
+                        "Confronte o cadastro com o documento e a classificacao fiscal; nao corrija o SPED automaticamente."
+                        if entrada else "Confira o XML autorizado antes de corrigir a escrituracao."
+                    ),
                 )
 
     @staticmethod
