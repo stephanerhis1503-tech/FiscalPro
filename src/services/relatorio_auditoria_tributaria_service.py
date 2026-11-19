@@ -169,6 +169,8 @@ class ServicoRelatorioAuditoriaTributaria:
             ("Sem regra tributaria", resultado.itens_sem_regra),
             ("Itens com XML localizado", resultado.itens_com_xml),
             ("Itens sem XML correspondente", resultado.itens_sem_xml),
+            ("NF-e validas importadas", resultado.xml_validos_importados),
+            ("Chaves C100 com XML", resultado.notas_sped_chaves_coincidentes),
             ("Cobertura das regras (%)", resultado.cobertura_regras),
             ("Conformidade avaliavel", resultado.conformidade_exibicao),
         ]
@@ -194,6 +196,7 @@ class ServicoRelatorioAuditoriaTributaria:
         aviso_detalhe = resumo_ws["A24"]
         aviso_detalhe.value = (
             (resultado.diagnostico_regras + " " if resultado.diagnostico_regras else "")
+            + (resultado.diagnostico_xml + " " if resultado.diagnostico_xml else "")
             + "A aba Todos preserva cada apontamento, inclusive linha, NF, chave, "
             "produto, valores atuais e de referencia, regra, problema e orientacao. "
             "Erros e Avisos permitem filtragem separada. A conformidade e apenas "
@@ -328,6 +331,12 @@ class ServicoRelatorioAuditoriaTributaria:
                 "<b>COBERTURA INSUFICIENTE:</b> " + escape(resultado.diagnostico_regras),
                 aviso,
             ))
+        if resultado.diagnostico_xml:
+            story.append(Spacer(1, 7))
+            story.append(Paragraph(
+                "<b>COBERTURA XML:</b> " + escape(resultado.diagnostico_xml),
+                aviso,
+            ))
         story.append(Paragraph("Resumo da auditoria", titulo))
         kpis = [
             ("Itens C170", str(r["itens"])),
@@ -358,6 +367,7 @@ class ServicoRelatorioAuditoriaTributaria:
             ("Com / sem cadastro 0200", f"{resultado.itens_com_0200} / {resultado.itens_sem_0200}"),
             ("Com / sem regra tributaria", f"{resultado.itens_com_regra} / {resultado.itens_sem_regra}"),
             ("Itens com / sem XML associado", f"{resultado.itens_com_xml} / {resultado.itens_sem_xml}"),
+            ("NF-e importadas / chaves coincidentes", f"{resultado.xml_validos_importados} / {resultado.notas_sped_chaves_coincidentes}"),
             ("Cobertura de regras", f"{resultado.cobertura_regras:.2f}%".replace(".", ",")),
             ("Conformidade parcial", resultado.conformidade_exibicao),
         ]
