@@ -56,7 +56,6 @@ from .layout_responsivo import dimensionar_janela, vincular_wraplength
 from .painel_info import PainelInfo
 from .painel_contas_pagar import PainelContasPagar
 from .painel_empresas import PainelEmpresas
-from .painel_entregas import PainelEntregas
 from .painel_documentos_fiscais import PainelDocumentosFiscais
 from .painel_dere import PainelDeRE
 
@@ -183,6 +182,7 @@ class JanelaPrincipal:
         ).pack(side=RIGHT, padx=14)
 
     def criar_abas(self):
+        # Somente paineis operacionais ativos; dados de modulos antigos ficam preservados.
         area = ttk.Frame(self.janela, style="Page.TFrame")
         area.pack(fill=BOTH, expand=True, padx=8, pady=(4, 4))
 
@@ -192,31 +192,22 @@ class JanelaPrincipal:
         self.aba_sped = ttk.Frame(self.notebook, style="Page.TFrame")
         self.aba_empresas = ttk.Frame(self.notebook, style="Page.TFrame")
         self.aba_tributacao = ttk.Frame(self.notebook, style="Page.TFrame")
-        self.aba_correcoes = ttk.Frame(self.notebook, style="Page.TFrame")
         self.aba_dere = ttk.Frame(self.notebook, style="Page.TFrame")
-        self.aba_relatorios = ttk.Frame(self.notebook, style="Page.TFrame")
         self.aba_financeiro = ttk.Frame(self.notebook, style="Page.TFrame")
-        self.aba_entregas = ttk.Frame(self.notebook, style="Page.TFrame")
         self.aba_nfse = ttk.Frame(self.notebook, style="Page.TFrame")
 
         self.notebook.add(self.aba_sped, text="  SPED  ")
         self.notebook.add(self.aba_empresas, text="  Empresas  ")
         self.notebook.add(self.aba_tributacao, text="  Tributação  ")
-        self.notebook.add(self.aba_correcoes, text="  Correções  ")
         self.notebook.add(self.aba_dere, text="  DeRE  ")
-        self.notebook.add(self.aba_relatorios, text="  Relatórios  ")
         self.notebook.add(self.aba_financeiro, text="  Contas a Pagar  ")
-        self.notebook.add(self.aba_entregas, text="  Controle de Entregas  ")
         self.notebook.add(self.aba_nfse, text="  NF-e / NFS-e  ")
 
         self.criar_painel_sped()
         self.criar_painel_empresas()
         self.criar_painel_tributacao()
-        self.criar_painel_correcoes()
         self.criar_painel_dere()
-        self.criar_painel_relatorios()
         self.criar_painel_financeiro()
-        self.criar_painel_entregas()
         self.criar_painel_nfse()
 
     def _cabecalho_pagina(self, master, titulo: str, descricao: str):
@@ -750,6 +741,8 @@ class JanelaPrincipal:
                 ("Auditoria de cadastro por Excel", self.abrir_auditoria_cadastros_excel, "Accent.TButton"),
                 ("Auditoria de cadastro por XML", self.abrir_auditoria_cadastros_xml, "Secondary.TButton"),
                 ("Análise em lote", self.abrir_analise_tributaria_lote, "Secondary.TButton"),
+                ("Auditar PIS/COFINS x ICMS-ST entradas", self.abrir_auditoria_icms_st_piscofins, "Secondary.TButton"),
+                ("Auditar PIS/COFINS x ICMS-ST saídas", self.abrir_auditoria_icms_st_piscofins_saidas, "Secondary.TButton"),
             ),
         )
         self._grupo_tributario(
@@ -776,97 +769,9 @@ class JanelaPrincipal:
         ):
             Label(legenda, text=f"{simbolo} {texto}", bg=COR_CARD, fg=cor, font=("Segoe UI", 9, "bold")).pack(side=LEFT, padx=(0, 18))
 
-    def criar_painel_correcoes(self):
-        self._cabecalho_pagina(
-            self.aba_correcoes,
-            "Correções e auditorias",
-            "Revise divergências com segurança antes de qualquer alteração no SPED.",
-        )
-
-        acoes = ttk.Frame(self.aba_correcoes, style="Page.TFrame")
-        acoes.pack(fill=X, padx=14, pady=(0, 8))
-        acoes.columnconfigure(0, weight=1)
-        acoes.columnconfigure(1, weight=1)
-        self._card_acao(
-            acoes,
-            0,
-            "Exclusão ICMS-ST da base PIS/COFINS — Etapa 1",
-            "Cruze o SPED Contribuições com os XMLs de entrada e confirme se o ICMS-ST já está fora da base. Modo auditoria: não altera o SPED.",
-            "Auditar entradas com ICMS-ST",
-            self.abrir_auditoria_icms_st_piscofins,
-            "Accent.TButton",
-            linha=0,
-            columnspan=2,
-        )
-        self._card_acao(
-            acoes,
-            0,
-            "Exclusão ICMS-ST da base PIS/COFINS — Etapa 2",
-            "Pré-audite as saídas pelo SPED e identifique o CFOP 5405. Os XMLs de saída serão usados na próxima validação para confirmar o ICMS-ST antes de qualquer correção.",
-            "Pré-auditar saídas com ST",
-            self.abrir_auditoria_icms_st_piscofins_saidas,
-            "Accent.TButton",
-            linha=1,
-            columnspan=2,
-        )
-
-        frame = ttk.LabelFrame(
-            self.aba_correcoes,
-            text="Relatório de correções",
-            padding=7,
-            style="Card.TLabelframe",
-        )
-        frame.pack(fill=BOTH, expand=True, padx=14, pady=(0, 10))
-        frame.configure(height=260)
-        frame.grid_propagate(False)
-        frame.rowconfigure(0, weight=1)
-        frame.columnconfigure(0, weight=1)
-        self.txt_correcoes = Text(frame, wrap=WORD, font=FONTE_RESULTADO, padx=8, pady=6)
-        barra = ttk.Scrollbar(frame, orient="vertical", command=self.txt_correcoes.yview)
-        self.txt_correcoes.configure(yscrollcommand=barra.set)
-        self.txt_correcoes.grid(row=0, column=0, sticky="nsew")
-        barra.grid(row=0, column=1, sticky="ns")
-        self.txt_correcoes.insert(END, "As correções executadas serão apresentadas aqui.\n")
-
     def criar_painel_dere(self):
         self.painel_dere = PainelDeRE(self.aba_dere)
         self.painel_dere.pack(fill=BOTH, expand=True)
-
-    def criar_painel_relatorios(self):
-        self._cabecalho_pagina(
-            self.aba_relatorios,
-            "Relatórios do FiscalPro",
-            "Os relatórios gerados pelos módulos permanecem disponíveis nas respectivas telas.",
-        )
-        quadro = Frame(
-            self.aba_relatorios,
-            bg=COR_CARD,
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=COR_BORDA,
-            padx=18,
-            pady=18,
-        )
-        quadro.pack(fill=BOTH, expand=True, padx=14, pady=(0, 10))
-        Label(
-            quadro,
-            text="Central de relatórios em evolução",
-            bg=COR_CARD,
-            fg=COR_TEXTO,
-            font=("Segoe UI", 12, "bold"),
-        ).pack(anchor="w")
-        Label(
-            quadro,
-            text=(
-                "Nesta fase, continue gerando planilhas e pareceres diretamente pela Ficha Tributária, "
-                "SPED Inteligente e XML → ICMS-ST. A central unificada será conectada em uma sprint futura."
-            ),
-            bg=COR_CARD,
-            fg=COR_TEXTO_SUAVE,
-            font=FONTE_NORMAL,
-            wraplength=900,
-            justify=LEFT,
-        ).pack(anchor="w", pady=(8, 0))
 
     def criar_painel_empresas(self):
         self.painel_empresas = PainelEmpresas(self.aba_empresas, ao_alterar=self._empresas_atualizadas)
@@ -882,11 +787,6 @@ class JanelaPrincipal:
 
     def _empresas_atualizadas(self):
         """Atualiza os painéis persistentes após mudar o cadastro central."""
-        try:
-            self.painel_entregas.servico.sincronizar_estrutura_atual()
-            self.painel_entregas.atualizar()
-        except Exception:
-            pass
         try:
             self.painel_contas_pagar.atualizar()
         except Exception:
@@ -907,10 +807,6 @@ class JanelaPrincipal:
     def criar_painel_financeiro(self):
         self.painel_contas_pagar = PainelContasPagar(self.aba_financeiro)
         self.painel_contas_pagar.pack(fill=BOTH, expand=True)
-
-    def criar_painel_entregas(self):
-        self.painel_entregas = PainelEntregas(self.aba_entregas)
-        self.painel_entregas.pack(fill=BOTH, expand=True)
 
     def criar_painel_nfse(self):
         self.painel_nfse = PainelDocumentosFiscais(self.aba_nfse)

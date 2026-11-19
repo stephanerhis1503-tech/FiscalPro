@@ -1,0 +1,29 @@
+name: UI - Abas principais FiscalPro
+
+on:
+  push:
+    branches:
+      - feature/limpeza-modulos-principais-20261119
+  pull_request:
+    paths:
+      - src/ui/janela_principal.py
+      - tests/test_limpeza_abas_principais.py
+      - .github/workflows/ui-limpeza-abas.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar pytest
+        run: python -m pip install pytest
+      - name: Validar sintaxe e abas
+        run: |
+          python -m compileall -q src/ui/janela_principal.py
+          python -m pytest -q tests/test_limpeza_abas_principais.py
