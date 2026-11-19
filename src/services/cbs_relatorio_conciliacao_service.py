@@ -48,6 +48,14 @@ def _monetario(valor):
     return None if valor in (None, "") else float(Decimal(str(valor)))
 
 
+def _formatar_valor_pdf(valor) -> str:
+    """Formata valores no padrao brasileiro, sem transformar ausentes em zero."""
+    if valor is None:
+        return "-"
+    numero = f"{Decimal(str(valor)):,.2f}"
+    return numero.translate(str.maketrans({",": ".", ".": ","}))
+
+
 def _linha(doc: dict) -> tuple:
     return (
         doc["tipo"], doc["nf"], doc["chave"],
@@ -258,7 +266,7 @@ class ServicoRelatorioConciliacaoCBS:
         from reportlab.lib.enums import TA_LEFT
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-        from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import CondPageBreak, LongTable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         pagina = landscape(A4)
         documento_pdf = SimpleDocTemplate(
@@ -295,7 +303,7 @@ class ServicoRelatorioConciliacaoCBS:
         resum = [["Operacao", "XMLs", "Conferem", "Sem retorno", "Diferenca",
                   "Multiplos", "Oficiais raiz", "Candidatos raiz", "CBS XML (R$)"]]
         for lin in cls._resumos(dados):
-            resum.append([str(v) if i != 8 else f"{v:,.2f}" for i, v in enumerate(lin)])
+            resum.append([str(v) if i != 8 else _formatar_valor_pdf(v) for i, v in enumerate(lin)])
         tabela = Table(resum, colWidths=[80, 62, 67, 81, 70, 70, 90, 100, 92])
         tabela.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#164B78")),
@@ -316,6 +324,9 @@ class ServicoRelatorioConciliacaoCBS:
         for tipo, rotulo in (("debitos", "Debitos - saidas"),
                             ("creditos", "Creditos - entradas")):
             linhas = dados["grupos"][tipo]["linhas"]
+            # Reserva espaco para o titulo, cabecalho e primeira linha.
+            # Evita titulo de Creditos sozinho no final da folha.
+            story.append(CondPageBreak(85))
             story.append(Paragraph(
                 f"{rotulo} | {len(linhas)} XML(s) locais", secoes,
             ))
@@ -328,7 +339,7 @@ class ServicoRelatorioConciliacaoCBS:
             for doc in linhas:
                 valores = _linha(doc)
                 def v(item):
-                    return "-" if item is None else f"{item:,.2f}"
+                    return _formatar_valor_pdf(item)
                 conteudo.append([
                     str(valores[1]), str(valores[2]), v(valores[3]),
                     v(valores[4]), v(valores[5]), v(valores[6]),
