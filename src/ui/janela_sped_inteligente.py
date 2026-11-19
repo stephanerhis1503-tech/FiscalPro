@@ -175,8 +175,8 @@ class JanelaSPEDInteligente(Toplevel):
         vincular_wraplength(self.lbl_cte, margem=30, minimo=420)
 
         # Auditoria tributária.
-        ttk.Button(aba_comandos_aud, text="📁 Pasta NF-e", command=self.selecionar_pasta_xml_nfe).grid(row=0, column=0, sticky="ew")
-        ttk.Button(aba_comandos_aud, text="📦 XMLs NF-e ou ZIP", command=self.selecionar_xml_zip_nfe).grid(row=0, column=1, sticky="ew", padx=(7, 0))
+        ttk.Button(aba_comandos_aud, text="📁 Adicionar pasta NF-e/NFC-e", command=self.selecionar_pasta_xml_nfe).grid(row=0, column=0, sticky="ew")
+        ttk.Button(aba_comandos_aud, text="📦 Adicionar XMLs ou ZIP", command=self.selecionar_xml_zip_nfe).grid(row=0, column=1, sticky="ew", padx=(7, 0))
         self.btn_auditar_tributacao = ttk.Button(
             aba_comandos_aud, text="🧠 Cruzar Ficha Tributária",
             command=self.executar_auditoria_tributaria, state="disabled",
@@ -197,7 +197,12 @@ class JanelaSPEDInteligente(Toplevel):
             text="XML de NF-e opcional — a Ficha também pode ser cruzada somente com o SPED.",
             bg=COR_FUNDO, fg=COR_TEXTO, font=FONTE_NORMAL, anchor="w", justify="left",
         )
-        self.lbl_auditoria_xml.grid(row=1, column=0, columnspan=5, sticky="ew", pady=(6, 0))
+        self.lbl_auditoria_xml.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(6, 0))
+        self.btn_limpar_xmls_auditoria = ttk.Button(
+            aba_comandos_aud, text="🧹 Limpar XMLs",
+            command=self.limpar_xmls_auditoria,
+        )
+        self.btn_limpar_xmls_auditoria.grid(row=1, column=4, sticky="ew", padx=(7, 0), pady=(6, 0))
         ttk.Label(aba_comandos_aud, text="DIFAL", font=("Segoe UI", 8, "bold")).grid(
             row=2, column=0, sticky="w", pady=(6, 0)
         )
@@ -1731,16 +1736,16 @@ class JanelaSPEDInteligente(Toplevel):
 
     def selecionar_pasta_xml_nfe(self):
         pasta = filedialog.askdirectory(
-            title="Selecione a pasta com XMLs de NF-e", parent=self
+            title="Adicionar pasta com XMLs de NF-e ou NFC-e", parent=self
         )
         if pasta:
             self._importar_fontes_nfe([pasta])
 
     def selecionar_xml_zip_nfe(self):
         arquivos = filedialog.askopenfilenames(
-            title="Selecione XMLs de NF-e ou arquivos ZIP",
+            title="Adicionar XMLs de NF-e/NFC-e ou arquivos ZIP",
             filetypes=[
-                ("XML ou ZIP de NF-e", "*.xml *.zip"),
+                ("XML ou ZIP de NF-e/NFC-e", "*.xml *.zip"),
                 ("Arquivos XML", "*.xml"),
                 ("Arquivos ZIP", "*.zip"),
                 ("Todos os arquivos", "*.*"),
@@ -1767,13 +1772,17 @@ class JanelaSPEDInteligente(Toplevel):
             self.btn_preparar_tributaria.configure(state="disabled")
             self.btn_aplicar_tributaria.configure(state="disabled")
             total = self.importacao_nfe_xml.total_nfe_validas
+            nfce = self.importacao_nfe_xml.total_nfce_validas
+            fontes = self.importacao_nfe_xml.total_fontes
             erros = self.importacao_nfe_xml.total_erros
             ignoradas = self.importacao_nfe_xml.total_ignoradas
             self.lbl_auditoria_xml.config(
                 text=(
-                    f"{total:,} NF-e(s) carregada(s) • "
+                    f"{fontes:,} fonte(s) acumulada(s) • "
+                    f"{total:,} NF-e (55) • {nfce:,} NFC-e (65) • "
                     f"{self.importacao_nfe_xml.total_duplicadas:,} duplicada(s) • "
-                    f"{erros:,} erro(s) • {ignoradas:,} ignorada(s)"
+                    f"{erros:,} erro(s) • {ignoradas:,} ignorada(s). "
+                    "NFC-e 65 separada; o C100/C170 cruza apenas NF-e 55."
                 ).replace(",", ".")
             )
             if self.resultado is not None:
@@ -1783,13 +1792,16 @@ class JanelaSPEDInteligente(Toplevel):
             messagebox.showinfo(
                 "FiscalPro",
                 (
-                    "XMLs de NF-e importados com sucesso!\n\n"
-                    f"Arquivos XML encontrados: {self.importacao_nfe_xml.total_arquivos_xml:,}\n"
-                    f"NF-e válidas: {total:,}\n"
-                    f"Duplicadas ignoradas: {self.importacao_nfe_xml.total_duplicadas:,}\n"
+                    "XMLs adicionados à auditoria!\n\n"
+                    f"Pastas/arquivos selecionados: {fontes:,}\n"
+                    f"Arquivos XML lidos: {self.importacao_nfe_xml.total_arquivos_xml:,}\n"
+                    f"NF-e modelo 55: {total:,}\n"
+                    f"NFC-e modelo 65: {nfce:,} (separadas)\n"
+                    f"Chaves duplicadas ignoradas: {self.importacao_nfe_xml.total_duplicadas:,}\n"
                     f"Arquivos ignorados: {ignoradas:,}\n"
                     f"Erros de leitura: {erros:,}\n\n"
-                    "Agora clique em Cruzar Ficha Tributária."
+                    "Você pode adicionar outras pastas antes de cruzar. "
+                    "O C100/C170 será cruzado apenas com NF-e modelo 55."
                 ).replace(",", "."),
                 parent=self,
             )
@@ -1799,6 +1811,35 @@ class JanelaSPEDInteligente(Toplevel):
         finally:
             if self.resultado is not None:
                 self.btn_auditar_tributacao.configure(state="normal")
+
+    def limpar_xmls_auditoria(self):
+        """Zera os XMLs importados nesta sessao sem excluir os arquivos."""
+        if self.importacao_nfe_xml is None:
+            return
+        if not messagebox.askyesno(
+            "FiscalPro — Limpar XMLs",
+            "Remover da auditoria todas as pastas, NF-e e NFC-e carregadas?\n"
+            "Os arquivos originais no computador não serão excluídos.",
+            parent=self,
+        ):
+            return
+        self.motor.limpar_xmls_nfe_auditoria()
+        self.importacao_nfe_xml = None
+        self.auditoria_tributaria = None
+        self.auditoria_difal = None
+        self.preparacao_correcao_tributaria = None
+        self._limpar_auditoria_tributaria()
+        self._limpar_difal()
+        self._limpar_correcao_tributaria()
+        self.lbl_auditoria_xml.config(text="Nenhum XML de NF-e/NFC-e importado para este SPED.")
+        for botao in (
+            self.btn_relatorio_tributario,
+            self.btn_preparar_tributaria,
+            self.btn_aplicar_tributaria,
+            self.btn_relatorio_difal,
+            self.btn_excel_difal,
+        ):
+            botao.configure(state="disabled")
 
     def executar_auditoria_tributaria(self):
         if self.resultado is None:
