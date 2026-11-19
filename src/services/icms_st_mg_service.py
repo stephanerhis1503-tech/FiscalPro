@@ -821,7 +821,7 @@ class ICMSSTMGService:
         segmento 10 item 75.0; RFB NESH 83.01.
         """
         texto = cls._normalizar_texto(descricao)
-        descricao_e_cadeado = bool(re.search(r"\\bCADEAD(?:O|OS)\\b", texto))
+        descricao_e_cadeado = bool(re.search(r"\bCADEAD(?:O|OS)\b", texto))
         if not descricao_e_cadeado:
             # Descricao omitida ou incoerente com o NCM exige revisao
             # cadastral, mas nunca habilita a MVA do CEST 10.075.00.
