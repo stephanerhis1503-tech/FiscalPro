@@ -864,6 +864,12 @@ class AuditorTributarioSPED:
                 f"{resultado.total_itens} itens sem regra aplicavel. "
                 "Os itens sem cobertura exigem revisao individual."
             )
+        if resultado.total_itens and not _texto(resultado.contexto.get("regime")):
+            resultado.diagnostico_regras += (
+                " Regime tributario nao selecionado na tela da auditoria. "
+                "Informe o regime real da empresa antes de reexecutar; "
+                "isso nao cria regras tributarias ausentes no banco."
+            )
 
         meses = ", ".join(
             f"{mes} ({qtd})"
@@ -935,6 +941,47 @@ class AuditorTributarioSPED:
                 "sem itens C170. O Excel da auditoria relaciona as chaves "
                 "do SPED e as origens dos XMLs para conferencia."
             )
+            # Diferencie a importacao das saidas proprias de NF-e recebidas
+            # de fornecedores. Isso evita que 0 cruzamentos seja tratado como
+            # possivel corrupcao do SPED quando as colecoes sao distintas.
+            empresa_cnpj = ""
+            for linha_0000 in linhas:
+                if linha_0000.startswith("|0000|"):
+                    campos_0000 = linha_0000.rstrip("\r\n").split("|")
+                    empresa_cnpj = _digitos(
+                        campos_0000[7] if len(campos_0000) > 7 else ""
+                    )
+                    break
+            somente_saida_propria = (
+                len(empresa_cnpj) == 14
+                and bool(xmls)
+                and all(
+                    _digitos(doc.emitente_cnpj) == empresa_cnpj
+                    for doc in xmls.values()
+                )
+            )
+            somente_entradas_terceiros = (
+                bool(resultado.documentos_c170)
+                and resultado.c170_notas_saida == 0
+                and all(
+                    doc["operacao"] == "ENTRADA"
+                    and doc["cnpj_emitente"] != empresa_cnpj
+                    for doc in resultado.documentos_c170
+                )
+            )
+            if (
+                somente_saida_propria
+                and somente_entradas_terceiros
+                and resultado.notas_c170_chaves_coincidentes == 0
+            ):
+                resultado.diagnostico_xml += (
+                    " DIAGNOSTICO: os XMLs NF-e 55 importados foram emitidos "
+                    "pela propria empresa (saidas), mas as NF-e com itens C170 "
+                    "sao entradas emitidas por terceiros (fornecedores). "
+                    "Para cruzar essas entradas, importe os XMLs das compras "
+                    "e demais NF-e recebidas, inclusive as emitidas em meses "
+                    "anteriores que foram escrituradas na competencia."
+                )
         self._progresso(progresso, 100, "Auditoria tributária concluída.")
         return resultado
 
