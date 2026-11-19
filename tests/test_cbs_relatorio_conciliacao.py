@@ -82,3 +82,11 @@ def test_arquivo_sem_dados_nao_e_criado(tmp_path):
     else:
         raise AssertionError("Deveria bloquear exportacao vazia")
     assert not (tmp_path / "vazio.xlsx").exists()
+
+def test_pdf_valores_no_padrao_brasileiro():
+    from src.services.cbs_relatorio_conciliacao_service import _formatar_valor_pdf
+    assert _formatar_valor_pdf(2908.01) == "2.908,01"
+    assert _formatar_valor_pdf(0) == "0,00"
+    assert _formatar_valor_pdf(None) == "-"
+
+
