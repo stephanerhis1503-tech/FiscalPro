@@ -352,6 +352,22 @@ class MotorSPED:
         )
 
 
+    def exportar_relatorio_auditoria_tributaria(
+        self,
+        caminho_saida: str | Path,
+    ) -> Path:
+        """Gera PDF/Excel visual preservando o TXT legado."""
+        if self.resultado is None or self.auditoria_tributaria is None:
+            raise RuntimeError("Execute primeiro a auditoria tributaria integrada.")
+        from src.services.relatorio_auditoria_tributaria_service import (
+            ServicoRelatorioAuditoriaTributaria,
+        )
+        return ServicoRelatorioAuditoriaTributaria().gerar(
+            self.auditoria_tributaria,
+            self.resultado.caminho,
+            caminho_saida,
+        )
+
     def auditar_difal(
         self,
         progresso: ProgressoCallback | None = None,
