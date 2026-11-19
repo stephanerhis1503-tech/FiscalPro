@@ -156,6 +156,8 @@ class MotorSPED:
         self.analise_chaves_cte = None
         self.auditoria_tributaria = None
         self.preparacao_correcao_tributaria = None
+        # Uma nova EFD nao pode reutilizar XMLs da EFD anterior.
+        self.importacao_xml_nfe = None
         self.analise_estorno_icms = None
         self.analise_danfe_icms = None
         self.analise_exclusao_icms_creditos = None
@@ -314,10 +316,19 @@ class MotorSPED:
         fontes: list[str | Path],
         progresso: ProgressoCallback | None = None,
     ) -> ResultadoImportacaoXMLNFe:
-        self.importacao_xml_nfe = self.importador_xml_nfe.importar(fontes, progresso)
+        self.importacao_xml_nfe = self.importador_xml_nfe.importar(
+            fontes, progresso, anterior=self.importacao_xml_nfe,
+        )
         self.auditoria_tributaria = None
         self.preparacao_correcao_tributaria = None
         return self.importacao_xml_nfe
+
+    def limpar_xmls_nfe_auditoria(self) -> None:
+        """Limpa fontes NF-e/NFC-e acumuladas, sem apagar arquivos no disco."""
+        self.importacao_xml_nfe = None
+        self.auditoria_tributaria = None
+        self.auditoria_difal = None
+        self.preparacao_correcao_tributaria = None
 
     def auditar_tributacao(
         self,
@@ -349,6 +360,22 @@ class MotorSPED:
             self.resultado.caminho,
         )
 
+
+    def exportar_relatorio_auditoria_tributaria(
+        self,
+        caminho_saida: str | Path,
+    ) -> Path:
+        """Gera PDF/Excel visual preservando o TXT legado."""
+        if self.resultado is None or self.auditoria_tributaria is None:
+            raise RuntimeError("Execute primeiro a auditoria tributaria integrada.")
+        from src.services.relatorio_auditoria_tributaria_service import (
+            ServicoRelatorioAuditoriaTributaria,
+        )
+        return ServicoRelatorioAuditoriaTributaria().gerar(
+            self.auditoria_tributaria,
+            self.resultado.caminho,
+            caminho_saida,
+        )
 
     def auditar_difal(
         self,

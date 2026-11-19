@@ -234,6 +234,54 @@ class EmpresasRegimesService:
         return cls.regime_por_empresa(empresa, padrao=str(regime_informado or ""))
 
     @classmethod
+    def resolver_regime_sped(cls, empresa: Any, cnpj: Any = "") -> str:
+        """Resolve regime ao abrir EFD, sem exigir selecao manual.
+
+        Primeiro usa o CNPJ unico do cadastro central ativo, se houver regime
+        valido. Depois admite nome legal mais longo iniciado pelo nome cadastrado,
+        com correspondencia unica e em limite de palavra. Nao presume regime
+        de empresa desconhecida ou nome ambiguo.
+        """
+        documento = "".join(c for c in str(cnpj or "") if c.isdigit())
+        if len(documento) == 14:
+            por_cnpj = [
+                cls.normalizar_regime(cadastro.get("regime"))
+                for cadastro in cls.listar_cadastros()
+                if "".join(c for c in str(cadastro.get("cnpj") or "") if c.isdigit())
+                == documento
+            ]
+            regimes_validos = {
+                regime for regime in por_cnpj if regime in cls.REGIMES
+            }
+            if len(regimes_validos) == 1:
+                return next(iter(regimes_validos))
+            if len(regimes_validos) > 1:
+                return ""  # Cadastros conflitantes: exigir revisao.
+
+        nome = cls._normalizar_texto(empresa)
+        if not nome or nome in {"-", "TODAS AS EMPRESAS"}:
+            return ""
+        perfis = cls.listar_perfis()
+        correspondencias = [
+            perfil.regime
+            for perfil in perfis
+            if cls._normalizar_texto(perfil.nome) == nome
+        ]
+        if not correspondencias:
+            correspondencias = [
+                perfil.regime for perfil in perfis
+                if nome.startswith(cls._normalizar_texto(perfil.nome) + " ")
+                and len(cls._normalizar_texto(perfil.nome).split()) >= 3
+            ]
+        # Nao escolher automaticamente entre empresas com apelidos ambiguos.
+        return (
+            cls.normalizar_regime(correspondencias[0])
+            if len(correspondencias) == 1
+            and cls.normalizar_regime(correspondencias[0]) in cls.REGIMES
+            else ""
+        )
+
+    @classmethod
     def aplicar_contexto(cls, contexto: Dict[str, Any] | None) -> Dict[str, Any]:
         """Retorna uma cópia do contexto com regime coerente com a empresa."""
         saida: Dict[str, Any] = dict(contexto or {})

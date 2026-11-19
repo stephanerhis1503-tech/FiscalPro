@@ -151,14 +151,19 @@ class DocumentoXMLNFe:
     indicador_ie_dest: str = ""
     destinatario_contribuinte: Optional[bool] = None
     valor_nota: float = 0.0
+    modelo: str = "55"
 
     def localizar_item(self, numero_item: str, codigo: str) -> Optional[ItemXMLNFe]:
+        """Correlacao conservadora; evita fallback incorreto quando nItem diverge."""
         numero_item = _texto(numero_item)
         codigo = _texto(codigo).upper()
         if numero_item:
             encontrados = [item for item in self.itens if _texto(item.numero_item) == numero_item]
             if len(encontrados) == 1:
                 return encontrados[0]
+            # Se o item numerado nao existe no XML, nao presumir que um
+            # cProd identico (que pode ser reutilizado) representa a mesma linha.
+            return None
         if codigo:
             encontrados = [item for item in self.itens if _texto(item.codigo).upper() == codigo]
             if len(encontrados) == 1:
@@ -168,10 +173,14 @@ class DocumentoXMLNFe:
 
 @dataclass(slots=True)
 class ResultadoImportacaoXMLNFe:
+    """Lote acumulado de NF-e 55 e NFC-e 65, separado por modelo."""
     documentos: dict[str, DocumentoXMLNFe] = field(default_factory=dict)
+    documentos_nfce: dict[str, DocumentoXMLNFe] = field(default_factory=dict)
+    fontes_importadas: list[str] = field(default_factory=list)
     total_fontes: int = 0
     total_arquivos_xml: int = 0
     total_nfe_validas: int = 0
+    total_nfce_validas: int = 0
     total_duplicadas: int = 0
     total_ignoradas: int = 0
     total_erros: int = 0
@@ -214,6 +223,31 @@ class ResultadoAuditoriaTributaria:
     avisos: int = 0
     divergencias_ficha: int = 0
     divergencias_xml: int = 0
+    ncms_validos_unicos: int = 0
+    ncms_com_regra_cadastrada: int = 0
+    diagnostico_regras: str = ""
+    referencias_fiscais: list[dict[str, Any]] = field(default_factory=list)
+    itens_ncm_oficial_localizados: int = 0
+    itens_ncm_nao_localizados: int = 0
+    consultas_fiscais_com_falha: int = 0
+    xml_importado: bool = False
+    xml_validos_importados: int = 0
+    nfce_validas_importadas: int = 0
+    xml_ignorados_importacao: int = 0
+    xml_erros_importacao: int = 0
+    notas_sped_chaves_unicas: int = 0
+    notas_sped_chaves_por_mes: dict[str, int] = field(default_factory=dict)
+    notas_sped_chaves_coincidentes: int = 0
+    notas_c170_chaves_unicas: int = 0
+    notas_c170_chaves_coincidentes: int = 0
+    c170_notas_entrada: int = 0
+    c170_notas_saida: int = 0
+    c170_notas_entrada_com_xml: int = 0
+    c170_notas_saida_com_xml: int = 0
+    xml_importados_c100_sem_c170: int = 0
+    documentos_c170: list[dict[str, Any]] = field(default_factory=list)
+    documentos_xml_importados: list[dict[str, Any]] = field(default_factory=list)
+    diagnostico_xml: str = ""
     apontamentos: list[ApontamentoAuditoriaTributaria] = field(default_factory=list)
     contexto: dict[str, str] = field(default_factory=dict)
 
@@ -222,9 +256,26 @@ class ResultadoAuditoriaTributaria:
         return len(self.apontamentos)
 
     @property
-    def conformidade(self) -> float:
+    def cobertura_regras(self) -> float:
         if self.total_itens <= 0:
-            return 100.0
+            return 0.0
+        return round(100.0 * self.itens_com_regra / self.total_itens, 2)
+
+    @property
+    def auditoria_tributaria_inconclusiva(self) -> bool:
+        return self.total_itens == 0 or self.itens_com_regra == 0
+
+    @property
+    def conformidade_exibicao(self) -> str:
+        if self.auditoria_tributaria_inconclusiva:
+            return "NAO AVALIAVEL - sem regras tributarias aplicadas"
+        return f"{self.conformidade:.2f}% (cobertura de regras: {self.cobertura_regras:.2f}%)".replace(".", ",")
+
+    @property
+    def conformidade(self) -> float:
+        """Indicador parcial: nunca representa homologacao tributaria integral."""
+        if self.total_itens <= 0:
+            return 0.0
         itens_com_problema = len({(a.linha, a.codigo) for a in self.apontamentos if a.nivel == "ERRO"})
         return round(max(0.0, 100.0 - (itens_com_problema / self.total_itens * 100.0)), 2)
 
@@ -236,14 +287,24 @@ class ImportadorXMLNFe:
         self,
         fontes: Iterable[str | Path],
         progresso: ProgressoCallback | None = None,
+        anterior: ResultadoImportacaoXMLNFe | None = None,
     ) -> ResultadoImportacaoXMLNFe:
-        resultado = ResultadoImportacaoXMLNFe()
+        """Acumula pastas/ZIPs sem perder documentos da mesma sessao SPED.
+
+        Chaves duplicadas nao sao somadas duas vezes. NF-e modelo 55 fica em
+        documentos (usado pelo C100/DIFAL); NFC-e 65 fica isolada para nao
+        produzir falsos cruzamentos com C170.
+        """
+        resultado = anterior if anterior is not None else ResultadoImportacaoXMLNFe()
         fontes = [Path(fonte) for fonte in fontes]
-        resultado.total_fontes = len(fontes)
+        ja_importadas = set(resultado.fontes_importadas)
         candidatos: list[tuple[str, bytes]] = []
 
-        self._progresso(progresso, 5, "Localizando XMLs de NF-e...")
+        self._progresso(progresso, 5, "Localizando XMLs de NF-e e NFC-e...")
         for fonte in fontes:
+            chave_fonte = str(fonte.expanduser().resolve()).casefold()
+            if chave_fonte in ja_importadas:
+                continue
             if fonte.is_dir():
                 for arquivo in fonte.rglob("*"):
                     if arquivo.is_file() and arquivo.suffix.lower() in {".xml", ".zip"}:
@@ -253,7 +314,11 @@ class ImportadorXMLNFe:
             else:
                 resultado.total_erros += 1
                 resultado.erros.append(f"Fonte não encontrada: {fonte}")
+                continue
+            resultado.fontes_importadas.append(chave_fonte)
+            ja_importadas.add(chave_fonte)
 
+        resultado.total_fontes = len(resultado.fontes_importadas)
         total = max(1, len(candidatos))
         for indice, (origem, conteudo) in enumerate(candidatos, start=1):
             try:
@@ -262,18 +327,25 @@ class ImportadorXMLNFe:
                 if documento is None:
                     resultado.total_ignoradas += 1
                     continue
-                if documento.chave in resultado.documentos:
+                destino = (
+                    resultado.documentos_nfce
+                    if documento.modelo == "65" else resultado.documentos
+                )
+                if documento.chave in destino:
                     resultado.total_duplicadas += 1
                     continue
-                resultado.documentos[documento.chave] = documento
-                resultado.total_nfe_validas += 1
+                destino[documento.chave] = documento
+                if documento.modelo == "65":
+                    resultado.total_nfce_validas += 1
+                else:
+                    resultado.total_nfe_validas += 1
             except Exception as erro:  # XML inválido não deve interromper o lote.
                 resultado.total_erros += 1
                 resultado.erros.append(f"{origem}: {erro}")
             percentual = 15 + int(indice / total * 80)
-            self._progresso(progresso, percentual, f"NF-e lidas: {indice:,}/{total:,}")
+            self._progresso(progresso, percentual, f"XMLs lidos: {indice:,}/{total:,}")
 
-        self._progresso(progresso, 100, "XMLs de NF-e importados.")
+        self._progresso(progresso, 100, "XMLs acumulados na auditoria.")
         return resultado
 
     def _ler_fonte(
@@ -312,6 +384,12 @@ class ImportadorXMLNFe:
             return None
 
         ide = _filho(inf_nfe, "ide")
+        modelo_informado = _valor_filho(ide, "mod")
+        # Na ausencia da tag mod, usar apenas modelo conhecido na chave;
+        # manter o comportamento legado para documentos de teste sem modelo.
+        modelo = modelo_informado or (chave[20:22] if chave[20:22] in {"55", "65"} else "55")
+        if modelo not in {"55", "65"}:
+            return None
         emit = _filho(inf_nfe, "emit")
         dest = _filho(inf_nfe, "dest")
         ender_emit = _filho(emit, "enderEmit")
@@ -338,6 +416,7 @@ class ImportadorXMLNFe:
             indicador_ie_dest=ind_ie_dest,
             destinatario_contribuinte=contribuinte_dest,
             valor_nota=_numero(_valor_descendente(_filho(inf_nfe, "total"), "vNF")),
+            modelo=modelo,
         )
 
         for det in list(inf_nfe):
@@ -476,6 +555,89 @@ class AuditorTributarioSPED:
         notas = self._carregar_notas_itens(linhas)
         total = max(1, sum(len(nota["itens"]) for nota in notas))
         xmls = importacao_xml.documentos if importacao_xml else {}
+        resultado.xml_importado = importacao_xml is not None
+        if importacao_xml is not None:
+            resultado.xml_validos_importados = importacao_xml.total_nfe_validas
+            resultado.nfce_validas_importadas = importacao_xml.total_nfce_validas
+            resultado.xml_ignorados_importacao = importacao_xml.total_ignoradas
+            resultado.xml_erros_importacao = importacao_xml.total_erros
+        chaves_sped = {
+            chave
+            for nota in notas
+            for chave in [_digitos(nota.get("chave"))]
+            if len(chave) == 44
+        }
+        resultado.notas_sped_chaves_unicas = len(chaves_sped)
+        resultado.notas_sped_chaves_coincidentes = len(chaves_sped.intersection(xmls))
+        # A cobertura dos C170 precisa considerar apenas C100 com itens e
+        # modelo NF-e 55. O C100 inteiro pode trazer documentos sem C170
+        # e nao indica milhares de itens obrigatoriamente sem XML.
+        chaves_c170 = {
+            chave
+            for nota in notas
+            if nota.get("itens") and str(nota.get("modelo") or "").zfill(2) == "55"
+            for chave in [_digitos(nota.get("chave"))]
+            if len(chave) == 44
+        }
+        resultado.notas_c170_chaves_unicas = len(chaves_c170)
+        resultado.notas_c170_chaves_coincidentes = len(chaves_c170.intersection(xmls))
+        # Relatorio de rastreabilidade: chaves C100 com itens C170 versus XMLs
+        # importados. Nao inferir que um documento sem C170 tenha XML faltante.
+        vistos_c170: set[str] = set()
+        for nota in notas:
+            chave = _digitos(nota.get("chave"))
+            if (
+                str(nota.get("modelo") or "").zfill(2) != "55"
+                or not nota.get("itens") or len(chave) != 44
+                or chave in vistos_c170
+            ):
+                continue
+            vistos_c170.add(chave)
+            entrada = nota.get("ind_oper") == "0"
+            xml = xmls.get(chave)
+            if entrada:
+                resultado.c170_notas_entrada += 1
+                if xml:
+                    resultado.c170_notas_entrada_com_xml += 1
+            else:
+                resultado.c170_notas_saida += 1
+                if xml:
+                    resultado.c170_notas_saida_com_xml += 1
+            resultado.documentos_c170.append({
+                "operacao": "ENTRADA" if entrada else "SAIDA",
+                "numero": str(nota.get("numero") or ""),
+                "serie": str(nota.get("serie") or ""),
+                "chave": chave,
+                "mes_chave": f"20{chave[2:4]}-{chave[4:6]}",
+                "cnpj_emitente": chave[6:20],
+                "itens_c170": len(nota.get("itens") or []),
+                "situacao": "LOCALIZADO" if xml else "SEM XML CORRESPONDENTE",
+                "origem_xml": xml.arquivo_origem if xml else "",
+            })
+        for chave, xml in sorted(xmls.items()):
+            if chave in chaves_c170:
+                situacao = "CORRESPONDE A C170"
+            elif chave in chaves_sped:
+                situacao = "NO C100 SEM C170"
+                resultado.xml_importados_c100_sem_c170 += 1
+            else:
+                situacao = "SEM CHAVE C100 NO SPED"
+            resultado.documentos_xml_importados.append({
+                "numero": xml.numero,
+                "serie": xml.serie,
+                "chave": chave,
+                "mes_chave": f"20{chave[2:4]}-{chave[4:6]}",
+                "emitente": xml.emitente_cnpj,
+                "destinatario": xml.destinatario_cnpj,
+                "itens_xml": len(xml.itens),
+                "situacao": situacao,
+                "origem_xml": xml.arquivo_origem,
+            })
+        por_mes: dict[str, int] = {}
+        for chave in chaves_sped:
+            mes = f"20{chave[2:4]}-{chave[4:6]}"
+            por_mes[mes] = por_mes.get(mes, 0) + 1
+        resultado.notas_sped_chaves_por_mes = dict(sorted(por_mes.items()))
         ncms_usados = {
             cadastro.ncm
             for nota in notas
@@ -485,7 +647,19 @@ class AuditorTributarioSPED:
             if cadastro is not None and len(cadastro.ncm) == 8
         }
         regras_contexto, regras_produto, ncms_com_base_legal = self._carregar_regras_lote(ncms_usados)
+        resultado.ncms_validos_unicos = len(ncms_usados)
+        resultado.ncms_com_regra_cadastrada = sum(
+            1 for ncm in ncms_usados
+            if regras_contexto.get(ncm)
+            or any(chave[0] == ncm for chave in regras_produto)
+        )
         cache_selecao: dict[tuple[str, ...], Any] = {}
+        # Consultas oficiais em camada separada de regras operacionais.
+        # Nao converte resultados em ERRO nem em sugestoes de correcao.
+        from src.services.referencias_auditoria_sped_service import (
+            ReferenciasAuditoriaSPEDService,
+        )
+        consulta_referencial = ReferenciasAuditoriaSPEDService()
         notas_xml_localizadas: set[str] = set()
         notas_xml_ausentes: set[str] = set()
         xml_ausente_emitido: set[str] = set()
@@ -546,7 +720,26 @@ class AuditorTributarioSPED:
                 item_xml = documento_xml.localizar_item(item.numero_item, item.codigo) if documento_xml else None
                 if item_xml:
                     resultado.itens_com_xml += 1
-                    self._comparar_xml(resultado, numero_linha, nota, item, item_xml)
+                    # cProd do fornecedor pode diferir do codigo interno, mas
+                    # quando AMBOS codigo e NCM divergem, nItem isolado nao
+                    # comprova que este e o mesmo produto.
+                    vinculo_duvidoso = bool(
+                        _texto(item.codigo).upper() != _texto(item_xml.codigo).upper()
+                        and item.ncm and item_xml.ncm
+                        and _digitos(item.ncm) != _digitos(item_xml.ncm)
+                    )
+                    if vinculo_duvidoso:
+                        self._adicionar(
+                            resultado, "AVISO", "XML NF-e", numero_linha, nota, item,
+                            "Vinculo XML", item.codigo, item_xml.codigo, "", 0,
+                            "Numero do item coincide, mas codigo e NCM divergem; vinculo nao confirmado.",
+                            "Confira fisicamente a correspondencia antes de comparar ou corrigir NCM/CST.",
+                        )
+                    else:
+                        self._comparar_xml(
+                            resultado, numero_linha, nota, item, item_xml,
+                            entrada=nota.get("ind_oper") == "0",
+                        )
                 elif importacao_xml is not None:
                     resultado.itens_sem_xml += 1
                     origem = "XML NF-e"
@@ -565,6 +758,36 @@ class AuditorTributarioSPED:
                         xml_ausente_emitido.add(chave_aviso)
 
                 if ncm and len(ncm) == 8:
+                    # Referencias isoladas da Ficha: fontes oficiais sao
+                    # evidencia documental, nunca regras operacionais criadas.
+                    descricao_consulta = (
+                        (cadastro.descricao if cadastro else "")
+                        or item.descricao_complementar
+                        or (item_xml.descricao if item_xml else "")
+                    )
+                    referencia = consulta_referencial.consultar_item(
+                        ncm=ncm, descricao=descricao_consulta,
+                        contexto=contexto_nota,
+                        ex_tipi=cadastro.ex_ipi if cadastro else "",
+                    )
+                    referencia.update({
+                        "linha_sped": numero_linha,
+                        "nota": str(nota.get("numero") or ""),
+                        "chave": str(nota.get("chave") or ""),
+                        "item": str(item.numero_item or ""),
+                        "codigo_produto": str(item.codigo or ""),
+                        "cfop_sped": str(item.cfop or ""),
+                        "descricao_sped": str(descricao_consulta or ""),
+                    })
+                    resultado.referencias_fiscais.append(referencia)
+                    if referencia.get("ncm_status") == "NAO LOCALIZADO NA BASE INSTALADA":
+                        resultado.itens_ncm_nao_localizados += 1
+                    elif referencia.get("ncm_status") not in {
+                        "FALHA NA CONSULTA DA BASE NCM", "NCM INVALIDO PARA CONSULTA",
+                    }:
+                        resultado.itens_ncm_oficial_localizados += 1
+                    if referencia.get("falha_tecnica"):
+                        resultado.consultas_fiscais_com_falha += 1
                     contexto_motor = MotorParecer._contexto_normalizado(contexto_nota)
                     chave_selecao = (
                         ncm,
@@ -589,9 +812,19 @@ class AuditorTributarioSPED:
                     if selecao.regra:
                         resultado.itens_com_regra += 1
                         self._comparar_regra(
-                            resultado, numero_linha, nota, item, cadastro, selecao.regra, selecao.aderencia
+                            resultado, numero_linha, nota, item, cadastro, selecao.regra,
+                            selecao.aderencia,
+                            confiavel=selecao.aderencia >= 60 and selecao.empatadas <= 1
                         )
                         regra_id = str(selecao.regra.get("id") or "")
+                        if selecao.empatadas > 1:
+                            self._adicionar(
+                                resultado, "AVISO", "FICHA TRIBUTÁRIA", numero_linha, nota, item,
+                                "Empate entre regras", str(selecao.empatadas), "Revisão manual",
+                                regra_id, selecao.aderencia,
+                                "Duas ou mais regras tributarias possuem a mesma pontuacao.",
+                                "Verifique a vigencia e o contexto antes de corrigir os valores do SPED.",
+                            )
                         if selecao.aderencia < 60 and (ncm, regra_id, "ADERENCIA") not in avisos_regra_emitidos:
                             self._adicionar(
                                 resultado, "AVISO", "FICHA TRIBUTÁRIA", numero_linha, nota, item,
@@ -647,6 +880,158 @@ class AuditorTributarioSPED:
         resultado.avisos = sum(1 for item in resultado.apontamentos if item.nivel == "AVISO")
         resultado.divergencias_ficha = sum(1 for item in resultado.apontamentos if item.origem == "FICHA TRIBUTÁRIA" and item.campo not in {"Regra tributária", "Aderência da regra"})
         resultado.divergencias_xml = sum(1 for item in resultado.apontamentos if item.origem == "XML NF-e" and item.campo != "XML")
+        if resultado.total_itens and not resultado.itens_com_regra:
+            if not resultado.ncms_validos_unicos:
+                resultado.diagnostico_regras = (
+                    "Nenhum NCM valido de 8 digitos foi obtido dos cadastros 0200 dos itens C170. "
+                    "Confira a vinculacao entre C170 e 0200 e o cadastro de NCM."
+                )
+            elif not resultado.ncms_com_regra_cadastrada:
+                resultado.diagnostico_regras = (
+                    f"Nenhuma regra da Ficha Tributaria foi localizada no banco fiscalpro.db "
+                    f"para os {resultado.ncms_validos_unicos} NCM(s) distintos do SPED. "
+                    "Bases NCM/TIPI e ST oficiais nao substituem regras de operacao cadastradas."
+                )
+            else:
+                resultado.diagnostico_regras = (
+                    f"Ha regras cadastradas para {resultado.ncms_com_regra_cadastrada} "
+                    f"de {resultado.ncms_validos_unicos} NCM(s), mas nenhuma foi aplicavel. "
+                    "Confira empresa, regime, UF, finalidade e vigencia na Ficha Tributaria."
+                )
+        elif resultado.itens_sem_regra:
+            resultado.diagnostico_regras = (
+                f"Auditoria parcial: {resultado.itens_sem_regra} de "
+                f"{resultado.total_itens} itens sem regra aplicavel. "
+                "Os itens sem cobertura exigem revisao individual."
+            )
+        if resultado.referencias_fiscais:
+            resultado.diagnostico_regras += (
+                f" Camada referencial independente: "
+                f"{len(resultado.referencias_fiscais)} itens consultados; "
+                f"{resultado.itens_ncm_oficial_localizados} NCMs de itens localizados "
+                f"na base oficial instalada e "
+                f"{resultado.itens_ncm_nao_localizados} nao localizados. "
+                "Consultas de PIS/Cofins e ICMS/MG estao na aba Referencias "
+                "do Excel, sem gerar CST, creditos ou ajustes automaticos."
+            )
+        if resultado.total_itens and not _texto(resultado.contexto.get("regime")):
+            resultado.diagnostico_regras += (
+                " Regime tributario nao selecionado na tela da auditoria. "
+                "Informe o regime real da empresa antes de reexecutar; "
+                "isso nao cria regras tributarias ausentes no banco."
+            )
+
+        meses = ", ".join(
+            f"{mes} ({qtd})"
+            for mes, qtd in resultado.notas_sped_chaves_por_mes.items()
+        ) or "nenhum periodo identificado"
+        operacoes_c170 = (
+            f"NF-e com C170: entrada {resultado.c170_notas_entrada} "
+            f"(com XML {resultado.c170_notas_entrada_com_xml}), "
+            f"saida {resultado.c170_notas_saida} "
+            f"(com XML {resultado.c170_notas_saida_com_xml}). "
+        )
+        if not resultado.xml_importado:
+            resultado.diagnostico_xml = (
+                "Nenhum XML de NF-e foi importado nesta sessao do SPED Inteligente. "
+                "Use Pasta NF-e ou XML/ZIP NF-e antes de cruzar, se desejar conferencia documental."
+            )
+        elif not resultado.xml_validos_importados and resultado.nfce_validas_importadas:
+            resultado.diagnostico_xml = (
+                f"{resultado.nfce_validas_importadas} NFC-e(s) modelo 65 importada(s), "
+                "mas nenhuma NF-e modelo 55. O cruzamento atual de C100/C170 "
+                "usa somente NF-e; NFC-e permanece separada e nao integra "
+                "os totais de XML localizado no C170. "
+                "Adicione a pasta de NF-e para esta auditoria, se houver."
+            )
+        elif not resultado.xml_validos_importados:
+            resultado.diagnostico_xml = (
+                "Importacao sem NF-e valida para confronto. "
+                f"Arquivos ignorados: {resultado.xml_ignorados_importacao}; "
+                f"erros de leitura: {resultado.xml_erros_importacao}. "
+                "Verifique se a pasta/ZIP contem NF-e autorizadas com chave de 44 digitos."
+            )
+        elif resultado.notas_c170_chaves_unicas == 0:
+            resultado.diagnostico_xml = (
+                f"O SPED contem {resultado.notas_sped_chaves_unicas} chaves C100, "
+                "mas nao foi localizada NF-e modelo 55 com itens C170 e chave valida. "
+                "Confira quais registros precisam de confronto de XML. "
+                f"Meses das chaves C100: {meses}."
+            )
+        elif not resultado.notas_c170_chaves_coincidentes:
+            resultado.diagnostico_xml = (
+                f"Foram importadas {resultado.xml_validos_importados} NF-e 55, mas "
+                f"nenhuma das {resultado.notas_c170_chaves_unicas} chaves C100 "
+                "com itens C170 coincidiu com os XMLs. "
+                f"O arquivo contem {resultado.notas_sped_chaves_unicas} chaves C100 "
+                "no total, inclusive documentos sem C170. "
+                f"Meses das chaves C100: {meses}."
+            )
+        elif resultado.notas_c170_chaves_coincidentes < resultado.notas_c170_chaves_unicas:
+            resultado.diagnostico_xml = (
+                f"Cruzamento parcial: {resultado.notas_c170_chaves_coincidentes} de "
+                f"{resultado.notas_c170_chaves_unicas} NF-e 55 com itens C170 "
+                f"localizadas entre {resultado.xml_validos_importados} XML(s) importado(s). "
+                f"O SPED possui {resultado.notas_sped_chaves_unicas} chaves C100 "
+                "no total, inclusive notas sem C170; nao use esse total como "
+                f"denominador dos itens auditados. Meses do C100: {meses}."
+            )
+        else:
+            resultado.diagnostico_xml = (
+                f"Todas as {resultado.notas_c170_chaves_unicas} NF-e modelo 55 "
+                "com C170 e chave valida foram localizadas nos XMLs importados. "
+                f"Ha {resultado.notas_sped_chaves_unicas} chaves C100 no SPED "
+                "no total, incluindo documentos que nao possuem C170."
+            )
+        if resultado.xml_importado:
+            resultado.diagnostico_xml += (
+                " " + operacoes_c170
+                + f"Das {resultado.xml_validos_importados} NF-e importadas, "
+                + f"{resultado.xml_importados_c100_sem_c170} estao no C100 "
+                "sem itens C170. O Excel da auditoria relaciona as chaves "
+                "do SPED e as origens dos XMLs para conferencia."
+            )
+            # Diferencie a importacao das saidas proprias de NF-e recebidas
+            # de fornecedores. Isso evita que 0 cruzamentos seja tratado como
+            # possivel corrupcao do SPED quando as colecoes sao distintas.
+            empresa_cnpj = ""
+            for linha_0000 in linhas:
+                if linha_0000.startswith("|0000|"):
+                    campos_0000 = linha_0000.rstrip("\r\n").split("|")
+                    empresa_cnpj = _digitos(
+                        campos_0000[7] if len(campos_0000) > 7 else ""
+                    )
+                    break
+            somente_saida_propria = (
+                len(empresa_cnpj) == 14
+                and bool(xmls)
+                and all(
+                    _digitos(doc.emitente_cnpj) == empresa_cnpj
+                    for doc in xmls.values()
+                )
+            )
+            somente_entradas_terceiros = (
+                bool(resultado.documentos_c170)
+                and resultado.c170_notas_saida == 0
+                and all(
+                    doc["operacao"] == "ENTRADA"
+                    and doc["cnpj_emitente"] != empresa_cnpj
+                    for doc in resultado.documentos_c170
+                )
+            )
+            if (
+                somente_saida_propria
+                and somente_entradas_terceiros
+                and resultado.notas_c170_chaves_coincidentes == 0
+            ):
+                resultado.diagnostico_xml += (
+                    " DIAGNOSTICO: os XMLs NF-e 55 importados foram emitidos "
+                    "pela propria empresa (saidas), mas as NF-e com itens C170 "
+                    "sao entradas emitidas por terceiros (fornecedores). "
+                    "Para cruzar essas entradas, importe os XMLs das compras "
+                    "e demais NF-e recebidas, inclusive as emitidas em meses "
+                    "anteriores que foram escrituradas na competencia."
+                )
         self._progresso(progresso, 100, "Auditoria tributária concluída.")
         return resultado
 
@@ -861,6 +1246,8 @@ class AuditorTributarioSPED:
         cadastro: Registro0200,
         regra: dict[str, Any],
         aderencia: float,
+        *,
+        confiavel: bool = True,
     ) -> None:
         regra_id = str(regra.get("id") or "")
         for nome, atributo_item, campo_regra, tipo in self.CAMPOS_REGRA:
@@ -868,7 +1255,8 @@ class AuditorTributarioSPED:
             esperado = regra.get(campo_regra)
             if self._divergente(atual, esperado, tipo):
                 self._adicionar(
-                    resultado, "ERRO", "FICHA TRIBUTÁRIA", linha, nota, item, nome,
+                    resultado, "ERRO" if confiavel else "AVISO",
+                    "FICHA TRIBUTÁRIA", linha, nota, item, nome,
                     self._formatar(atual, tipo), self._formatar(esperado, tipo), regra_id, aderencia,
                     f"{nome} do C170 diverge da regra tributária selecionada.",
                     "Confira a operação e a base legal. Depois corrija o SPED ou ajuste a regra, conforme o caso.",
@@ -876,7 +1264,7 @@ class AuditorTributarioSPED:
         cest_esperado = regra.get("cest")
         if cest_esperado and self._divergente(cadastro.cest, cest_esperado, "texto"):
             self._adicionar(
-                resultado, "ERRO", "FICHA TRIBUTÁRIA", linha, nota, item, "CEST",
+                resultado, "ERRO" if confiavel else "AVISO", "FICHA TRIBUTÁRIA", linha, nota, item, "CEST",
                 cadastro.cest, _digitos(cest_esperado), regra_id, aderencia,
                 "CEST do cadastro 0200 diverge da regra tributária selecionada.",
                 "Revise o cadastro do produto e confirme o enquadramento legal de ICMS-ST.",
@@ -902,8 +1290,16 @@ class AuditorTributarioSPED:
         nota: dict[str, Any],
         item: RegistroC170,
         xml: ItemXMLNFe,
+        *,
+        entrada: bool = False,
     ) -> None:
         for nome, atributo_item, atributo_xml, tipo in self.CAMPOS_XML:
+            # Na entrada, CFOP, CST e aliquotas de escrituracao do adquirente
+            # nao sao necessariamente iguais aos de emissao do fornecedor.
+            # Comparar NCM/CEST como cadastro documental; nao criar sugestao
+            # automatica de alteracao fiscal a partir do XML de compra.
+            if entrada and nome not in {"NCM", "CEST"}:
+                continue
             atual = getattr(item, atributo_item, "")
             if nome == "NCM":
                 atual = item.ncm
@@ -912,10 +1308,16 @@ class AuditorTributarioSPED:
             esperado = getattr(xml, atributo_xml, "")
             if self._divergente(atual, esperado, tipo):
                 self._adicionar(
-                    resultado, "ERRO", "XML NF-e", linha, nota, item, nome,
+                    resultado, "AVISO" if entrada else "ERRO", "XML NF-e", linha, nota, item, nome,
                     self._formatar(atual, tipo), self._formatar(esperado, tipo), "", 0,
-                    f"{nome} do SPED diverge do XML da NF-e.",
-                    "Confira o XML autorizado e corrija a escrituração para refletir o documento fiscal.",
+                    (
+                        f"{nome} do cadastro da entrada difere do XML do fornecedor; revisar classificacao."
+                        if entrada else f"{nome} do SPED diverge do XML da NF-e."
+                    ),
+                    (
+                        "Confronte o cadastro com o documento e a classificacao fiscal; nao corrija o SPED automaticamente."
+                        if entrada else "Confira o XML autorizado antes de corrigir a escrituracao."
+                    ),
                 )
 
     @staticmethod
@@ -997,7 +1399,14 @@ class AuditorTributarioSPED:
             f"Itens sem correspondência XML: {resultado.itens_sem_xml}",
             f"Erros: {resultado.erros}",
             f"Avisos: {resultado.avisos}",
-            f"Conformidade por item: {resultado.conformidade:.2f}%".replace(".", ","),
+            f"Cobertura das regras: {resultado.cobertura_regras:.2f}%".replace(".", ","),
+            f"Conformidade parcial: {resultado.conformidade_exibicao}",
+            f"Diagnostico da cobertura: {resultado.diagnostico_regras or 'Sem ressalvas de cobertura identificadas'}",
+            f"NF-e validas importadas: {resultado.xml_validos_importados}",
+            f"NFC-e validas importadas: {resultado.nfce_validas_importadas}",
+            f"Chaves C100 totais / com XML localizado: {resultado.notas_sped_chaves_unicas} / {resultado.notas_sped_chaves_coincidentes}",
+            f"NF-e 55 com C170 / com XML localizado: {resultado.notas_c170_chaves_unicas} / {resultado.notas_c170_chaves_coincidentes}",
+            f"Diagnostico do XML: {resultado.diagnostico_xml or 'Sem ressalvas de XML identificadas'}",
             "",
             "APONTAMENTOS",
             "-" * 96,
