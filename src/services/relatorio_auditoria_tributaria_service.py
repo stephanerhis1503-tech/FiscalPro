@@ -359,10 +359,8 @@ class ServicoRelatorioAuditoriaTributaria:
             ("st_cest", "CEST referencial (NAO automatico)"),
             ("icms_fonte", "Fonte ICMS/MG"),
             ("falha_tecnica", "Falha tecnica na consulta"),
-            ("nota", "Nota fiscal"),
+            ("restricao_uso", "Restricoes de uso"),
         )
-        # A nota de cautela tem coluna dedicada, sem substituir a NF.
-        colunas_ref = colunas_ref[:-1] + (("nota_cautela", "Restricoes de uso"),)
         for col, (_chave, titulo_celula) in enumerate(colunas_ref, 1):
             celula = ws_ref.cell(1, col, titulo_celula)
             celula.font = Font(bold=True, color="FFFFFF", size=10)
@@ -371,9 +369,7 @@ class ServicoRelatorioAuditoriaTributaria:
         ws_ref.row_dimensions[1].height = 38
         for indice, ref in enumerate(resultado.referencias_fiscais, start=2):
             for col, (chave, _titulo) in enumerate(colunas_ref, start=1):
-                valor = ref.get("nota") if chave == "linha_sped" and False else ref.get(chave)
-                if chave == "nota_cautela":
-                    valor = ref.get("nota") if False else ref.get("nota_cautela") or ref.get("nota_legal") or ref.get("nota_uso") or ref.get("nota_aviso") or ref.get("nota_referencial") or ref.get("nota_fiscalizacao") or ref.get("nota_contexto") or ref.get("nota_tributaria") or ref.get("nota_status") or ref.get("nota_complementar") or ref.get("nota_base") or ref.get("nota_alerta") or ref.get("nota_observacao") or "Referencia nao equivale a regra da Ficha; revisar operacao."
+                valor = ref.get(chave)
                 if isinstance(valor, bool):
                     valor = "SIM" if valor else "NAO"
                 celula = ws_ref.cell(
