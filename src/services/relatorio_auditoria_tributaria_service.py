@@ -170,6 +170,7 @@ class ServicoRelatorioAuditoriaTributaria:
             ("Itens com XML localizado", resultado.itens_com_xml),
             ("Itens sem XML correspondente", resultado.itens_sem_xml),
             ("NF-e validas importadas", resultado.xml_validos_importados),
+            ("NFC-e validas (sem C170)", resultado.nfce_validas_importadas),
             ("Chaves C100 com XML", resultado.notas_sped_chaves_coincidentes),
             ("Cobertura das regras (%)", resultado.cobertura_regras),
             ("Conformidade avaliavel", resultado.conformidade_exibicao),
@@ -368,6 +369,7 @@ class ServicoRelatorioAuditoriaTributaria:
             ("Com / sem regra tributaria", f"{resultado.itens_com_regra} / {resultado.itens_sem_regra}"),
             ("Itens com / sem XML associado", f"{resultado.itens_com_xml} / {resultado.itens_sem_xml}"),
             ("NF-e importadas / chaves coincidentes", f"{resultado.xml_validos_importados} / {resultado.notas_sped_chaves_coincidentes}"),
+            ("NFC-e separadas (modelo 65)", str(resultado.nfce_validas_importadas)),
             ("Cobertura de regras", f"{resultado.cobertura_regras:.2f}%".replace(".", ",")),
             ("Conformidade parcial", resultado.conformidade_exibicao),
         ]
