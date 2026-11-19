@@ -1373,6 +1373,16 @@ class JanelaSPEDInteligente(Toplevel):
             self.lbl_pva.config(text="SPED carregado. Clique em Validar antes do PVA.")
             self.lbl_assistida.config(text="SPED carregado. Prepare as correções após a pré-validação.")
             self.aud_empresa_var.set(self.resultado.estatisticas.empresa if self.resultado else "")
+            from src.services.empresas_regimes_service import EmpresasRegimesService
+            regime_sped = EmpresasRegimesService.resolver_regime_sped(
+                self.resultado.estatisticas.empresa,
+                self.resultado.estatisticas.cnpj,
+            )
+            self.aud_regime_var.set(regime_sped)
+            if regime_sped:
+                self.lbl_status.config(
+                    text=f"Regime da Auditoria Tributaria identificado no cadastro: {regime_sped}."
+                )
         except Exception as erro:
             messagebox.showerror("FiscalPro", str(erro), parent=self)
             self.lbl_status.config(text="Falha ao carregar o arquivo.")
@@ -1853,6 +1863,15 @@ class JanelaSPEDInteligente(Toplevel):
             "finalidade": self.aud_finalidade_var.get().strip(),
             "contribuinte": self.aud_contribuinte_var.get().strip(),
         }
+        if not contexto["regime"]:
+            from src.services.empresas_regimes_service import EmpresasRegimesService
+            regime_sped = EmpresasRegimesService.resolver_regime_sped(
+                contexto["empresa"] or self.resultado.estatisticas.empresa,
+                self.resultado.estatisticas.cnpj,
+            )
+            if regime_sped:
+                contexto["regime"] = regime_sped
+                self.aud_regime_var.set(regime_sped)
         if not contexto["regime"]:
             continuar = messagebox.askyesno(
                 "FiscalPro",
