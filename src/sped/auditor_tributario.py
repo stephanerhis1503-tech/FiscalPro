@@ -221,6 +221,14 @@ class ResultadoAuditoriaTributaria:
     ncms_validos_unicos: int = 0
     ncms_com_regra_cadastrada: int = 0
     diagnostico_regras: str = ""
+    xml_importado: bool = False
+    xml_validos_importados: int = 0
+    xml_ignorados_importacao: int = 0
+    xml_erros_importacao: int = 0
+    notas_sped_chaves_unicas: int = 0
+    notas_sped_chaves_por_mes: dict[str, int] = field(default_factory=dict)
+    notas_sped_chaves_coincidentes: int = 0
+    diagnostico_xml: str = ""
     apontamentos: list[ApontamentoAuditoriaTributaria] = field(default_factory=list)
     contexto: dict[str, str] = field(default_factory=dict)
 
@@ -500,6 +508,24 @@ class AuditorTributarioSPED:
         notas = self._carregar_notas_itens(linhas)
         total = max(1, sum(len(nota["itens"]) for nota in notas))
         xmls = importacao_xml.documentos if importacao_xml else {}
+        resultado.xml_importado = importacao_xml is not None
+        if importacao_xml is not None:
+            resultado.xml_validos_importados = importacao_xml.total_nfe_validas
+            resultado.xml_ignorados_importacao = importacao_xml.total_ignoradas
+            resultado.xml_erros_importacao = importacao_xml.total_erros
+        chaves_sped = {
+            chave
+            for nota in notas
+            for chave in [_digitos(nota.get("chave"))]
+            if len(chave) == 44
+        }
+        resultado.notas_sped_chaves_unicas = len(chaves_sped)
+        resultado.notas_sped_chaves_coincidentes = len(chaves_sped.intersection(xmls))
+        por_mes: dict[str, int] = {}
+        for chave in chaves_sped:
+            mes = f"20{chave[2:4]}-{chave[4:6]}"
+            por_mes[mes] = por_mes.get(mes, 0) + 1
+        resultado.notas_sped_chaves_por_mes = dict(sorted(por_mes.items()))
         ncms_usados = {
             cadastro.ncm
             for nota in notas
@@ -729,6 +755,37 @@ class AuditorTributarioSPED:
                 f"Auditoria parcial: {resultado.itens_sem_regra} de "
                 f"{resultado.total_itens} itens sem regra aplicavel. "
                 "Os itens sem cobertura exigem revisao individual."
+            )
+
+        meses = ", ".join(
+            f"{mes} ({qtd})"
+            for mes, qtd in resultado.notas_sped_chaves_por_mes.items()
+        ) or "nenhum periodo identificado"
+        if not resultado.xml_importado:
+            resultado.diagnostico_xml = (
+                "Nenhum XML de NF-e foi importado nesta sessao do SPED Inteligente. "
+                "Use Pasta NF-e ou XML/ZIP NF-e antes de cruzar, se desejar conferencia documental."
+            )
+        elif not resultado.xml_validos_importados:
+            resultado.diagnostico_xml = (
+                "Importacao sem NF-e valida para confronto. "
+                f"Arquivos ignorados: {resultado.xml_ignorados_importacao}; "
+                f"erros de leitura: {resultado.xml_erros_importacao}. "
+                "Verifique se a pasta/ZIP contem NF-e autorizadas com chave de 44 digitos."
+            )
+        elif not resultado.notas_sped_chaves_coincidentes:
+            resultado.diagnostico_xml = (
+                f"Foram importadas {resultado.xml_validos_importados} NF-e, mas nenhuma das "
+                f"{resultado.notas_sped_chaves_unicas} chaves distintas do C100 coincidiu. "
+                f"Meses das chaves presentes no SPED: {meses}. "
+                "Confira empresa, periodo, origens e arquivos XML, sem assumir erro na NF-e."
+            )
+        elif resultado.notas_sem_xml:
+            resultado.diagnostico_xml = (
+                f"Cruzamento parcial: {resultado.notas_sped_chaves_coincidentes} de "
+                f"{resultado.notas_sped_chaves_unicas} chaves C100 localizadas entre "
+                f"{resultado.xml_validos_importados} NF-e importadas. "
+                f"Meses do SPED: {meses}. Revise apenas os documentos restantes."
             )
         self._progresso(progresso, 100, "Auditoria tributária concluída.")
         return resultado
@@ -1100,6 +1157,9 @@ class AuditorTributarioSPED:
             f"Cobertura das regras: {resultado.cobertura_regras:.2f}%".replace(".", ","),
             f"Conformidade parcial: {resultado.conformidade_exibicao}",
             f"Diagnostico da cobertura: {resultado.diagnostico_regras or 'Sem ressalvas de cobertura identificadas'}",
+            f"NF-e validas importadas: {resultado.xml_validos_importados}",
+            f"Chaves C100 unicas / com XML localizado: {resultado.notas_sped_chaves_unicas} / {resultado.notas_sped_chaves_coincidentes}",
+            f"Diagnostico do XML: {resultado.diagnostico_xml or 'Sem ressalvas de XML identificadas'}",
             "",
             "APONTAMENTOS",
             "-" * 96,
