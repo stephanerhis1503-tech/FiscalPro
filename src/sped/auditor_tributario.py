@@ -151,6 +151,7 @@ class DocumentoXMLNFe:
     indicador_ie_dest: str = ""
     destinatario_contribuinte: Optional[bool] = None
     valor_nota: float = 0.0
+    modelo: str = "55"
 
     def localizar_item(self, numero_item: str, codigo: str) -> Optional[ItemXMLNFe]:
         """Correlacao conservadora; evita fallback incorreto quando nItem diverge."""
@@ -172,10 +173,14 @@ class DocumentoXMLNFe:
 
 @dataclass(slots=True)
 class ResultadoImportacaoXMLNFe:
+    """Lote acumulado de NF-e 55 e NFC-e 65, separado por modelo."""
     documentos: dict[str, DocumentoXMLNFe] = field(default_factory=dict)
+    documentos_nfce: dict[str, DocumentoXMLNFe] = field(default_factory=dict)
+    fontes_importadas: list[str] = field(default_factory=list)
     total_fontes: int = 0
     total_arquivos_xml: int = 0
     total_nfe_validas: int = 0
+    total_nfce_validas: int = 0
     total_duplicadas: int = 0
     total_ignoradas: int = 0
     total_erros: int = 0
@@ -223,6 +228,7 @@ class ResultadoAuditoriaTributaria:
     diagnostico_regras: str = ""
     xml_importado: bool = False
     xml_validos_importados: int = 0
+    nfce_validas_importadas: int = 0
     xml_ignorados_importacao: int = 0
     xml_erros_importacao: int = 0
     notas_sped_chaves_unicas: int = 0
@@ -268,14 +274,24 @@ class ImportadorXMLNFe:
         self,
         fontes: Iterable[str | Path],
         progresso: ProgressoCallback | None = None,
+        anterior: ResultadoImportacaoXMLNFe | None = None,
     ) -> ResultadoImportacaoXMLNFe:
-        resultado = ResultadoImportacaoXMLNFe()
+        """Acumula pastas/ZIPs sem perder documentos da mesma sessao SPED.
+
+        Chaves duplicadas nao sao somadas duas vezes. NF-e modelo 55 fica em
+        documentos (usado pelo C100/DIFAL); NFC-e 65 fica isolada para nao
+        produzir falsos cruzamentos com C170.
+        """
+        resultado = anterior if anterior is not None else ResultadoImportacaoXMLNFe()
         fontes = [Path(fonte) for fonte in fontes]
-        resultado.total_fontes = len(fontes)
+        ja_importadas = set(resultado.fontes_importadas)
         candidatos: list[tuple[str, bytes]] = []
 
-        self._progresso(progresso, 5, "Localizando XMLs de NF-e...")
+        self._progresso(progresso, 5, "Localizando XMLs de NF-e e NFC-e...")
         for fonte in fontes:
+            chave_fonte = str(fonte.expanduser().resolve()).casefold()
+            if chave_fonte in ja_importadas:
+                continue
             if fonte.is_dir():
                 for arquivo in fonte.rglob("*"):
                     if arquivo.is_file() and arquivo.suffix.lower() in {".xml", ".zip"}:
@@ -285,7 +301,11 @@ class ImportadorXMLNFe:
             else:
                 resultado.total_erros += 1
                 resultado.erros.append(f"Fonte não encontrada: {fonte}")
+                continue
+            resultado.fontes_importadas.append(chave_fonte)
+            ja_importadas.add(chave_fonte)
 
+        resultado.total_fontes = len(resultado.fontes_importadas)
         total = max(1, len(candidatos))
         for indice, (origem, conteudo) in enumerate(candidatos, start=1):
             try:
@@ -294,18 +314,25 @@ class ImportadorXMLNFe:
                 if documento is None:
                     resultado.total_ignoradas += 1
                     continue
-                if documento.chave in resultado.documentos:
+                destino = (
+                    resultado.documentos_nfce
+                    if documento.modelo == "65" else resultado.documentos
+                )
+                if documento.chave in destino:
                     resultado.total_duplicadas += 1
                     continue
-                resultado.documentos[documento.chave] = documento
-                resultado.total_nfe_validas += 1
+                destino[documento.chave] = documento
+                if documento.modelo == "65":
+                    resultado.total_nfce_validas += 1
+                else:
+                    resultado.total_nfe_validas += 1
             except Exception as erro:  # XML inválido não deve interromper o lote.
                 resultado.total_erros += 1
                 resultado.erros.append(f"{origem}: {erro}")
             percentual = 15 + int(indice / total * 80)
-            self._progresso(progresso, percentual, f"NF-e lidas: {indice:,}/{total:,}")
+            self._progresso(progresso, percentual, f"XMLs lidos: {indice:,}/{total:,}")
 
-        self._progresso(progresso, 100, "XMLs de NF-e importados.")
+        self._progresso(progresso, 100, "XMLs acumulados na auditoria.")
         return resultado
 
     def _ler_fonte(
@@ -344,6 +371,12 @@ class ImportadorXMLNFe:
             return None
 
         ide = _filho(inf_nfe, "ide")
+        modelo_informado = _valor_filho(ide, "mod")
+        # Na ausencia da tag mod, usar apenas modelo conhecido na chave;
+        # manter o comportamento legado para documentos de teste sem modelo.
+        modelo = modelo_informado or (chave[20:22] if chave[20:22] in {"55", "65"} else "55")
+        if modelo not in {"55", "65"}:
+            return None
         emit = _filho(inf_nfe, "emit")
         dest = _filho(inf_nfe, "dest")
         ender_emit = _filho(emit, "enderEmit")
@@ -370,6 +403,7 @@ class ImportadorXMLNFe:
             indicador_ie_dest=ind_ie_dest,
             destinatario_contribuinte=contribuinte_dest,
             valor_nota=_numero(_valor_descendente(_filho(inf_nfe, "total"), "vNF")),
+            modelo=modelo,
         )
 
         for det in list(inf_nfe):
@@ -511,6 +545,7 @@ class AuditorTributarioSPED:
         resultado.xml_importado = importacao_xml is not None
         if importacao_xml is not None:
             resultado.xml_validos_importados = importacao_xml.total_nfe_validas
+            resultado.nfce_validas_importadas = importacao_xml.total_nfce_validas
             resultado.xml_ignorados_importacao = importacao_xml.total_ignoradas
             resultado.xml_erros_importacao = importacao_xml.total_erros
         chaves_sped = {
@@ -765,6 +800,14 @@ class AuditorTributarioSPED:
             resultado.diagnostico_xml = (
                 "Nenhum XML de NF-e foi importado nesta sessao do SPED Inteligente. "
                 "Use Pasta NF-e ou XML/ZIP NF-e antes de cruzar, se desejar conferencia documental."
+            )
+        elif not resultado.xml_validos_importados and resultado.nfce_validas_importadas:
+            resultado.diagnostico_xml = (
+                f"{resultado.nfce_validas_importadas} NFC-e(s) modelo 65 importada(s), "
+                "mas nenhuma NF-e modelo 55. O cruzamento atual de C100/C170 "
+                "usa somente NF-e; NFC-e permanece separada e nao integra "
+                "os totais de XML localizado no C170. "
+                "Adicione a pasta de NF-e para esta auditoria, se houver."
             )
         elif not resultado.xml_validos_importados:
             resultado.diagnostico_xml = (
@@ -1158,6 +1201,7 @@ class AuditorTributarioSPED:
             f"Conformidade parcial: {resultado.conformidade_exibicao}",
             f"Diagnostico da cobertura: {resultado.diagnostico_regras or 'Sem ressalvas de cobertura identificadas'}",
             f"NF-e validas importadas: {resultado.xml_validos_importados}",
+            f"NFC-e validas importadas: {resultado.nfce_validas_importadas}",
             f"Chaves C100 unicas / com XML localizado: {resultado.notas_sped_chaves_unicas} / {resultado.notas_sped_chaves_coincidentes}",
             f"Diagnostico do XML: {resultado.diagnostico_xml or 'Sem ressalvas de XML identificadas'}",
             "",
