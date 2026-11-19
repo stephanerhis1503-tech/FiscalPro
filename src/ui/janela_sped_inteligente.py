@@ -1854,9 +1854,18 @@ class JanelaSPEDInteligente(Toplevel):
                 f"Itens sem regra: {resumo.itens_sem_regra:,}\n"
                 f"Erros: {resumo.erros:,}\n"
                 f"Avisos: {resumo.avisos:,}\n"
-                f"Conformidade por item: {resumo.conformidade:.2f}%"
+                f"Cobertura de regras: {resumo.cobertura_regras:.2f}%\n"
+                f"Conformidade: {resumo.conformidade_exibicao}"
             ).replace(",", ".")
-            if resumo.erros:
+            if resumo.diagnostico_regras:
+                mensagem += "\n\n" + resumo.diagnostico_regras
+            if resumo.auditoria_tributaria_inconclusiva:
+                messagebox.showwarning(
+                    "FiscalPro — Auditoria inconclusiva",
+                    mensagem + "\n\nNao prepare correcoes enquanto a cobertura de regras estiver zerada.",
+                    parent=self,
+                )
+            elif resumo.erros:
                 messagebox.showwarning(
                     "FiscalPro — Auditoria Tributária",
                     mensagem + "\n\nRevise os apontamentos antes de corrigir o SPED.",
@@ -3882,7 +3891,9 @@ class JanelaSPEDInteligente(Toplevel):
             text=(
                 f"{a.total_itens:,} item(ns) auditado(s) • {a.itens_com_regra:,} com regra • "
                 f"{a.itens_sem_regra:,} sem regra • {a.erros:,} erro(s) • {a.avisos:,} aviso(s) • "
-                f"conformidade {a.conformidade:.2f}%. {xml_texto} "
+                f"cobertura de regras {a.cobertura_regras:.2f}% • "
+                f"conformidade {a.conformidade_exibicao}. {xml_texto} "
+                f"{a.diagnostico_regras} "
                 f"Filtro atual: {filtro} ({len(apontamentos):,} linha(s))."
             ).replace(",", ".")
         )
