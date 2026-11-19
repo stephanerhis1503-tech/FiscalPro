@@ -261,6 +261,79 @@ class ServicoRelatorioAuditoriaTributaria:
             ws.sheet_properties.pageSetUpPr.fitToPage = True
             ws.print_title_rows = "1:8"
 
+        # Rastreabilidade documental detalhada: somente dados existentes
+        # no SPED e nos XMLs. Nao pressupoe ausencia fiscal nem atualiza EFD.
+        planilhas_documentos = (
+            (
+                "NF-e com C170",
+                (
+                    "Operacao", "Numero NF", "Serie", "Chave de acesso",
+                    "Mes da chave", "CNPJ emitente", "Itens C170",
+                    "Conferencia", "Origem do XML",
+                ),
+                (
+                    (
+                        item.get("operacao"), item.get("numero"), item.get("serie"),
+                        item.get("chave"), item.get("mes_chave"),
+                        item.get("cnpj_emitente"), item.get("itens_c170"),
+                        item.get("situacao"), item.get("origem_xml"),
+                    )
+                    for item in resultado.documentos_c170
+                ),
+                (7,),
+            ),
+            (
+                "XMLs importados",
+                (
+                    "Numero NF", "Serie", "Chave de acesso", "Mes da chave",
+                    "CNPJ emitente", "CNPJ destinatario", "Itens no XML",
+                    "Conferencia no SPED", "Pasta ou arquivo de origem",
+                ),
+                (
+                    (
+                        item.get("numero"), item.get("serie"), item.get("chave"),
+                        item.get("mes_chave"), item.get("emitente"),
+                        item.get("destinatario"), item.get("itens_xml"),
+                        item.get("situacao"), item.get("origem_xml"),
+                    )
+                    for item in resultado.documentos_xml_importados
+                ),
+                (7,),
+            ),
+        )
+        for nome, cabecalhos, linhas, numericas in planilhas_documentos:
+            ws = wb.create_sheet(nome)
+            ws.sheet_view.showGridLines = False
+            ws.append(cabecalhos)
+            for celula in ws[1]:
+                celula.font = Font(color="FFFFFF", bold=True)
+                celula.fill = PatternFill("solid", fgColor=AZUL)
+                celula.alignment = Alignment(wrap_text=True, vertical="center")
+            ws.row_dimensions[1].height = 28
+            for linha in linhas:
+                linha_excel = ws.max_row + 1
+                for coluna, valor in enumerate(linha, start=1):
+                    valor_seguro = (
+                        valor if coluna in numericas else _texto_seguro(valor)
+                    )
+                    celula = ws.cell(linha_excel, coluna, valor_seguro)
+                    celula.font = Font(size=10, color=TEXTO)
+                    if linha_excel % 2 == 0:
+                        celula.fill = PatternFill("solid", fgColor="F5F9FC")
+                    # Números, CNPJs e chaves sao documentos, nao quantidades.
+                    if coluna not in numericas:
+                        celula.number_format = "@"
+            widths = (15, 18, 52, 17, 23, 23, 17, 28, 73)
+            if nome == "NF-e com C170":
+                widths = (17, 18, 13, 52, 17, 23, 17, 28, 73)
+            for coluna, largura in enumerate(widths, 1):
+                ws.column_dimensions[get_column_letter(coluna)].width = largura
+            ws.freeze_panes = "D2"
+            ws.auto_filter.ref = f"A1:I{max(2, ws.max_row)}"
+            ws.print_title_rows = "1:1"
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
+            ws.page_setup.orientation = "landscape"
+
         wb.properties.title = "FiscalPro | Auditoria Tributaria SPED"
         wb.properties.subject = "Conferencia documental de regras e XMLs - sem correcao automatica"
         wb.properties.creator = "FiscalPro"
