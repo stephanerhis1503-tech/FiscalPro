@@ -45,7 +45,7 @@ def test_excel_profissional_completo_e_sem_formulas(tmp_path):
         _resultado(), "SPED 11-2026.txt", tmp_path / "auditoria.xlsx",
     )
     wb = load_workbook(destino)
-    assert wb.sheetnames == ["Resumo", "Todos", "Erros", "Avisos"]
+    assert wb.sheetnames == ["Resumo", "Todos", "Erros", "Avisos", "NF-e com C170", "XMLs importados"]
     assert wb["Resumo"]["A9"].value == 5
     assert wb["Resumo"]["E9"].value == 1
     assert wb["Resumo"]["I9"].value == 1
@@ -56,6 +56,8 @@ def test_excel_profissional_completo_e_sem_formulas(tmp_path):
     assert wb["Avisos"].max_row == 9
     assert wb["Todos"].auto_filter.ref == "A8:P10"
     assert wb["Todos"]["P9"].value == "Conferir nota e classificacao."
+    assert wb["NF-e com C170"]["A1"].value == "Operacao"
+    assert wb["XMLs importados"]["I1"].value == "Pasta ou arquivo de origem"
 
 
 def test_pdf_profissional_gera_cabecalho_e_paginas(tmp_path):
@@ -77,5 +79,5 @@ def test_pdf_e_excel_sem_apontamentos(tmp_path):
     arquivo_xlsx = servico.gerar(vazio, "sped.txt", tmp_path / "vazio.xlsx")
     arquivo_pdf = servico.gerar(vazio, "sped.txt", tmp_path / "vazio.pdf")
     wb = load_workbook(arquivo_xlsx)
-    assert wb.sheetnames == ["Resumo", "Todos", "Erros", "Avisos"]
+    assert wb.sheetnames == ["Resumo", "Todos", "Erros", "Avisos", "NF-e com C170", "XMLs importados"]
     assert arquivo_pdf.read_bytes().startswith(b"%PDF")
