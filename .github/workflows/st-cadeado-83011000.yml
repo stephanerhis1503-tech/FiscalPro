@@ -1,0 +1,30 @@
+name: ST MG - Cadeados 8301.10.00
+
+on:
+  push:
+    branches:
+      - fix/st-mg-cadeado-83011000-20261119
+  pull_request:
+    paths:
+      - src/services/icms_st_mg_service.py
+      - src/services/xml_icms_st_service.py
+      - tests/test_cadeado_83011000_nao_st_mg.py
+      - .github/workflows/st-cadeado-83011000.yml
+
+permissions:
+  contents: read
+
+jobs:
+  conferir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Dependencias
+        run: python -m pip install -r requirements.txt pytest
+      - name: Testes especificos e regressoes
+        run: |
+          python -m compileall -q src/services/icms_st_mg_service.py src/services/xml_icms_st_service.py
+          python -m pytest -q tests/test_cadeado_83011000_nao_st_mg.py tests/test_motor_st_contextual_17_8_127.py tests/test_motor_st_contextual_17_8_128.py tests/test_icms_st_descricao_obrigatoria_17_8_115.py
