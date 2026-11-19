@@ -18,7 +18,7 @@ on:
       - tests/test_auditoria_sem_regras_18_3_5.py
       - tests/test_auditoria_diagnostico_xml_18_3_5.py
       - tests/test_auditoria_multiplas_pastas_nfe_nfce.py
-      - tests/test_auditoria_cobertura_xml_c170.py tests/test_referencias_auditoria_sped.py
+      - tests/test_auditoria_cobertura_xml_c170.py
       - .github/workflows/sped-auditoria-segura.yml
 
 permissions:
@@ -37,4 +37,4 @@ jobs:
       - name: Verificar sintaxe e regressao
         run: |
           python -m compileall -q src/sped/auditor_tributario.py src/sped/corretor_tributario_assistido.py src/sped/motor_sped.py src/ui/janela_sped_inteligente.py src/services/relatorio_auditoria_tributaria_service.py src/services/referencias_auditoria_sped_service.py
-          python -m pytest -q tests/test_auditoria_sped_segura_18_3_5.py tests/test_relatorio_auditoria_tributaria_visual.py tests/test_auditoria_sem_regras_18_3_5.py tests/test_auditoria_diagnostico_xml_18_3_5.py tests/test_auditoria_multiplas_pastas_nfe_nfce.py tests/test_auditoria_cobertura_xml_c170.py
+          python -m pytest -q tests/test_auditoria_sped_segura_18_3_5.py tests/test_relatorio_auditoria_tributaria_visual.py tests/test_auditoria_sem_regras_18_3_5.py tests/test_auditoria_diagnostico_xml_18_3_5.py tests/test_auditoria_multiplas_pastas_nfe_nfce.py tests/test_auditoria_cobertura_xml_c170.py tests/test_referencias_auditoria_sped.py
