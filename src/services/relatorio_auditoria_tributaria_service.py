@@ -264,7 +264,7 @@ class ServicoRelatorioAuditoriaTributaria:
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.platypus import (
-            CondPageBreak, Image, KeepTogether, LongTable, Paragraph,
+            CondPageBreak, LongTable, Paragraph,
             SimpleDocTemplate, Spacer, Table, TableStyle,
         )
 
@@ -295,9 +295,13 @@ class ServicoRelatorioAuditoriaTributaria:
             "NotaAudit", parent=corpo, fontSize=8.5, leading=12,
             textColor=colors.HexColor("#825312"),
         )
-        def p(texto: Any, *, strong: bool = False):
+        def p(texto: Any, *, strong: bool = False, branco: bool = False):
             s = escape(str(texto if texto not in (None, "") else "-"))
-            return Paragraph(f"<b>{s}</b>" if strong else s, celula)
+            if strong:
+                s = f"<b>{s}</b>"
+            if branco:
+                s = f'<font color="#FFFFFF">{s}</font>'
+            return Paragraph(s, celula)
 
         r = _resumo(resultado)
         c = resultado.contexto
@@ -378,10 +382,10 @@ class ServicoRelatorioAuditoriaTributaria:
             ))
         else:
             cab = [
-                p("Nivel / origem", strong=True),
-                p("Documento / produto", strong=True),
-                p("Campo / valores", strong=True),
-                p("Problema / orientacao", strong=True),
+                p("Nivel / origem", strong=True, branco=True),
+                p("Documento / produto", strong=True, branco=True),
+                p("Campo / valores", strong=True, branco=True),
+                p("Problema / orientacao", strong=True, branco=True),
             ]
             linhas = [cab]
             for a in resultado.apontamentos:
