@@ -1837,8 +1837,15 @@ class JanelaSPEDInteligente(Toplevel):
             self._exibir_auditoria_tributaria()
             self.abas.select(self.aba_tributaria)
             self.btn_relatorio_tributario.configure(state="normal")
+            ha_correcoes_seguras = any(
+                a.nivel == "ERRO"
+                and a.origem in {"FICHA TRIBUTÁRIA", "XML NF-e"}
+                and a.campo in self.motor.corretor_tributario.CAMPOS
+                and (a.origem != "FICHA TRIBUTÁRIA" or a.aderencia >= 60)
+                for a in self.auditoria_tributaria.apontamentos
+            )
             self.btn_preparar_tributaria.configure(
-                state="normal" if self.auditoria_tributaria.apontamentos else "disabled"
+                state="normal" if ha_correcoes_seguras else "disabled"
             )
             resumo = self.auditoria_tributaria
             mensagem = (
