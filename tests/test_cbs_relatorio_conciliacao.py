@@ -90,3 +90,31 @@ def test_pdf_valores_no_padrao_brasileiro():
     assert _formatar_valor_pdf(None) == "-"
 
 
+
+def test_triagem_valores_positivos_zeros_e_divergencias():
+    from src.services.cbs_relatorio_conciliacao_service import _triagem_pendencia
+    assert _triagem_pendencia({"status": "SEM_DADO_NESTE_RETORNO", "cbs_xml": "8.40"}) == "SEM_RETORNO_CBS_POSITIVA"
+    assert _triagem_pendencia({"status": "SEM_DADO_NESTE_RETORNO", "cbs_xml": "0.00"}) == "SEM_RETORNO_CBS_ZERO"
+    assert _triagem_pendencia({"status": "SEM_DADO_NESTE_RETORNO", "cbs_xml": ""}) == "SEM_RETORNO_VALOR_INDISPONIVEL"
+    assert _triagem_pendencia({"status": "DIFERENCA_REVISAR", "cbs_xml": "2.00"}) == "REVISAR_DIVERGENCIA"
+    assert _triagem_pendencia({"status": "MULTIPLOS_OFICIAIS_REVISAR", "cbs_xml": "2.00"}) == "REVISAR_MULTIPLOS"
+    assert _triagem_pendencia({"status": "CONFERE", "cbs_xml": "0.00"}) == "CONFERE"
+
+
+def test_triagem_excel_preserva_quatro_abas_e_pendencias(tmp_path):
+    gerador = _preparar(tmp_path)
+    caminho = gerador.gerar(CNPJ, "2026-11", tmp_path / "triagem.xlsx")
+    wb = load_workbook(caminho)
+    assert wb.sheetnames == ["Resumo", "Debitos", "Creditos", "Pendencias"]
+    assert wb["Pendencias"]["I10"].value == "SEM_DADO_NESTE_RETORNO"
+    assert wb["Pendencias"]["J10"].value == "SEM_RETORNO_CBS_POSITIVA"
+    assert wb["Resumo"]["B19"].value == 1
+    assert wb["Resumo"]["B20"].value == 0
+    assert wb["Resumo"]["B23"].value == 0
+
+
+def test_triagem_pdf_documenta_incompletude(tmp_path):
+    gerador = _preparar(tmp_path)
+    pdf = gerador.gerar(CNPJ, "2026-11", tmp_path / "triagem.pdf")
+    assert pdf.read_bytes().startswith(b"%PDF")
+    assert pdf.stat().st_size > 1000
