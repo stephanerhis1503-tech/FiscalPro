@@ -1,5 +1,7 @@
 """Metadados centrais do FiscalPro.
 
+Versao 18.3.3 — Triagem documental CBS (valor positivo/zero/sem retorno) e interface principal enxuta, sem apagar registros ou relatorios de modulos existentes.
+
 Versão 18.3.2 — Status cadastral consistente na Auditoria Excel:
 - conflitos do mesmo código com NCM/CEST diferentes passam a marcar Status Cadastro = REVISAR;
 - mantém separada a pendência operacional sem esconder inconsistência do cadastro.
@@ -876,9 +878,9 @@ DESCRICAO_APP = (
 SLOGAN = "Simples, seguro e rastreável"
 
 # Versão exibida no sistema e versão numérica reservada ao instalador do Windows.
-VERSAO_APP = "18.3.2"
+VERSAO_APP = "18.3.3"
 VERSAO_INTERFACE = VERSAO_APP
-VERSAO_ARQUIVO_WINDOWS = "18.3.2.0"
+VERSAO_ARQUIVO_WINDOWS = "18.3.3.0"
 
 PUBLICADOR = "Stephane Rhis"
 CREDITOS = "Stephane Rhis + ChatGPT"
