@@ -19,7 +19,7 @@ def test_cobertura_parcial_continua_visivel():
     )
     assert a.cobertura_regras == 40.0
     assert not a.auditoria_tributaria_inconclusiva
-    assert "cobertura de regras: 40.00%" in a.conformidade_exibicao
+    assert "cobertura de regras: 40,00%" in a.conformidade_exibicao
 
 
 def test_sem_itens_nao_marca_conformidade_integral():
