@@ -21,6 +21,7 @@ on:
     branches:
       - "feature/rtc1-base-apuracao-assistida-20261110"
       - "feature/cbs-conciliacao-relatorios-20261118"
+      - "feature/cbs-pendencias-inteligentes-20261119"
 
 jobs:
   testar-rtc1-rtc2:
