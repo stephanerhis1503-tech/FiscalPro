@@ -328,15 +328,13 @@ class ServicoRelatorioAuditoriaTributaria:
                 "<b>COBERTURA INSUFICIENTE:</b> " + escape(resultado.diagnostico_regras),
                 aviso,
             ))
-        story.extend([
-            Paragraph("Resumo da auditoria", titulo),
-        ]
+        story.append(Paragraph("Resumo da auditoria", titulo))
         kpis = [
             ("Itens C170", str(r["itens"])),
             ("Erros", str(r["erros"])),
             ("Avisos", str(r["avisos"])),
             ("Total de apontamentos", str(r["total"])),
-        ])
+        ]
         quadro = Table(
             [
                 [p(nome, strong=True) for nome, _ in kpis],
