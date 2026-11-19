@@ -183,7 +183,7 @@ class JanelaSPEDInteligente(Toplevel):
         )
         self.btn_auditar_tributacao.grid(row=0, column=2, sticky="ew", padx=(7, 0))
         self.btn_relatorio_tributario = ttk.Button(
-            aba_comandos_aud, text="💾 Salvar relatório",
+            aba_comandos_aud, text="📄 Relatório PDF / Excel",
             command=self.salvar_relatorio_tributario, state="disabled",
         )
         self.btn_relatorio_tributario.grid(row=0, column=3, sticky="ew", padx=(7, 0))
@@ -1881,17 +1881,25 @@ class JanelaSPEDInteligente(Toplevel):
             )
             return
         caminho = filedialog.asksaveasfilename(
-            title="Salvar relatório da auditoria tributária",
-            defaultextension=".txt",
+            title="Exportar auditoria tributaria FiscalPro",
+            defaultextension=".pdf",
             initialdir=str(self.resultado.caminho.parent),
-            initialfile=f"{self.resultado.caminho.stem}_AUDITORIA_TRIBUTARIA.txt",
-            filetypes=[("Relatório de texto", "*.txt")],
+            initialfile=f"{self.resultado.caminho.stem}_AUDITORIA_TRIBUTARIA.pdf",
+            filetypes=[
+                ("Relatório PDF", "*.pdf"),
+                ("Planilha Excel", "*.xlsx"),
+                ("Relatorio TXT (legado)", "*.txt"),
+            ],
             parent=self,
         )
         if not caminho:
             return
         try:
-            destino = self.motor.salvar_relatorio_auditoria_tributaria(caminho)
+            from pathlib import Path
+            if Path(caminho).suffix.lower() == ".txt":
+                destino = self.motor.salvar_relatorio_auditoria_tributaria(caminho)
+            else:
+                destino = self.motor.exportar_relatorio_auditoria_tributaria(caminho)
             messagebox.showinfo(
                 "FiscalPro", f"Relatório salvo com sucesso!\n\n{destino}", parent=self
             )
