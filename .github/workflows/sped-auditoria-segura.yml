@@ -12,7 +12,7 @@ on:
       - src/ui/janela_sped_inteligente.py
       - src/services/relatorio_auditoria_tributaria_service.py
       - tests/test_auditoria_sped_segura_18_3_5.py
-      - tests/test_relatorio_auditoria_tributaria_visual.py tests/test_auditoria_sem_regras_18_3_5.py
+      - tests/test_relatorio_auditoria_tributaria_visual.py
       - tests/test_auditoria_sem_regras_18_3_5.py
       - .github/workflows/sped-auditoria-segura.yml
 
