@@ -236,6 +236,13 @@ class ResultadoAuditoriaTributaria:
     notas_sped_chaves_coincidentes: int = 0
     notas_c170_chaves_unicas: int = 0
     notas_c170_chaves_coincidentes: int = 0
+    c170_notas_entrada: int = 0
+    c170_notas_saida: int = 0
+    c170_notas_entrada_com_xml: int = 0
+    c170_notas_saida_com_xml: int = 0
+    xml_importados_c100_sem_c170: int = 0
+    documentos_c170: list[dict[str, Any]] = field(default_factory=list)
+    documentos_xml_importados: list[dict[str, Any]] = field(default_factory=list)
     diagnostico_xml: str = ""
     apontamentos: list[ApontamentoAuditoriaTributaria] = field(default_factory=list)
     contexto: dict[str, str] = field(default_factory=dict)
@@ -570,6 +577,58 @@ class AuditorTributarioSPED:
         }
         resultado.notas_c170_chaves_unicas = len(chaves_c170)
         resultado.notas_c170_chaves_coincidentes = len(chaves_c170.intersection(xmls))
+        # Relatorio de rastreabilidade: chaves C100 com itens C170 versus XMLs
+        # importados. Nao inferir que um documento sem C170 tenha XML faltante.
+        vistos_c170: set[str] = set()
+        for nota in notas:
+            chave = _digitos(nota.get("chave"))
+            if (
+                str(nota.get("modelo") or "").zfill(2) != "55"
+                or not nota.get("itens") or len(chave) != 44
+                or chave in vistos_c170
+            ):
+                continue
+            vistos_c170.add(chave)
+            entrada = nota.get("ind_oper") == "0"
+            xml = xmls.get(chave)
+            if entrada:
+                resultado.c170_notas_entrada += 1
+                if xml:
+                    resultado.c170_notas_entrada_com_xml += 1
+            else:
+                resultado.c170_notas_saida += 1
+                if xml:
+                    resultado.c170_notas_saida_com_xml += 1
+            resultado.documentos_c170.append({
+                "operacao": "ENTRADA" if entrada else "SAIDA",
+                "numero": str(nota.get("numero") or ""),
+                "serie": str(nota.get("serie") or ""),
+                "chave": chave,
+                "mes_chave": f"20{chave[2:4]}-{chave[4:6]}",
+                "cnpj_emitente": chave[6:20],
+                "itens_c170": len(nota.get("itens") or []),
+                "situacao": "LOCALIZADO" if xml else "SEM XML CORRESPONDENTE",
+                "origem_xml": xml.arquivo_origem if xml else "",
+            })
+        for chave, xml in sorted(xmls.items()):
+            if chave in chaves_c170:
+                situacao = "CORRESPONDE A C170"
+            elif chave in chaves_sped:
+                situacao = "NO C100 SEM C170"
+                resultado.xml_importados_c100_sem_c170 += 1
+            else:
+                situacao = "SEM CHAVE C100 NO SPED"
+            resultado.documentos_xml_importados.append({
+                "numero": xml.numero,
+                "serie": xml.serie,
+                "chave": chave,
+                "mes_chave": f"20{chave[2:4]}-{chave[4:6]}",
+                "emitente": xml.emitente_cnpj,
+                "destinatario": xml.destinatario_cnpj,
+                "itens_xml": len(xml.itens),
+                "situacao": situacao,
+                "origem_xml": xml.arquivo_origem,
+            })
         por_mes: dict[str, int] = {}
         for chave in chaves_sped:
             mes = f"20{chave[2:4]}-{chave[4:6]}"
@@ -810,6 +869,12 @@ class AuditorTributarioSPED:
             f"{mes} ({qtd})"
             for mes, qtd in resultado.notas_sped_chaves_por_mes.items()
         ) or "nenhum periodo identificado"
+        operacoes_c170 = (
+            f"NF-e com C170: entrada {resultado.c170_notas_entrada} "
+            f"(com XML {resultado.c170_notas_entrada_com_xml}), "
+            f"saida {resultado.c170_notas_saida} "
+            f"(com XML {resultado.c170_notas_saida_com_xml}). "
+        )
         if not resultado.xml_importado:
             resultado.diagnostico_xml = (
                 "Nenhum XML de NF-e foi importado nesta sessao do SPED Inteligente. "
@@ -861,6 +926,14 @@ class AuditorTributarioSPED:
                 "com C170 e chave valida foram localizadas nos XMLs importados. "
                 f"Ha {resultado.notas_sped_chaves_unicas} chaves C100 no SPED "
                 "no total, incluindo documentos que nao possuem C170."
+            )
+        if resultado.xml_importado:
+            resultado.diagnostico_xml += (
+                " " + operacoes_c170
+                + f"Das {resultado.xml_validos_importados} NF-e importadas, "
+                + f"{resultado.xml_importados_c100_sem_c170} estao no C100 "
+                "sem itens C170. O Excel da auditoria relaciona as chaves "
+                "do SPED e as origens dos XMLs para conferencia."
             )
         self._progresso(progresso, 100, "Auditoria tributária concluída.")
         return resultado
