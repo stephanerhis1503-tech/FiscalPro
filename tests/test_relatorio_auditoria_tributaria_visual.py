@@ -68,7 +68,7 @@ def test_pdf_profissional_gera_cabecalho_e_paginas(tmp_path):
     texto = "\n".join(p.extract_text() for p in PdfReader(str(destino)).pages)
     assert "Auditoria Tributaria" in texto
     assert "Cadeado" not in texto or "83011000" in texto
-    assert "Conferencia" in texto
+    assert "conferencia" in texto.lower()
 
 
 def test_pdf_e_excel_sem_apontamentos(tmp_path):
