@@ -226,6 +226,10 @@ class ResultadoAuditoriaTributaria:
     ncms_validos_unicos: int = 0
     ncms_com_regra_cadastrada: int = 0
     diagnostico_regras: str = ""
+    referencias_fiscais: list[dict[str, Any]] = field(default_factory=list)
+    itens_ncm_oficial_localizados: int = 0
+    itens_ncm_nao_localizados: int = 0
+    consultas_fiscais_com_falha: int = 0
     xml_importado: bool = False
     xml_validos_importados: int = 0
     nfce_validas_importadas: int = 0
@@ -650,6 +654,12 @@ class AuditorTributarioSPED:
             or any(chave[0] == ncm for chave in regras_produto)
         )
         cache_selecao: dict[tuple[str, ...], Any] = {}
+        # Consultas oficiais em camada separada de regras operacionais.
+        # Nao converte resultados em ERRO nem em sugestoes de correcao.
+        from src.services.referencias_auditoria_sped_service import (
+            ReferenciasAuditoriaSPEDService,
+        )
+        consulta_referencial = ReferenciasAuditoriaSPEDService()
         notas_xml_localizadas: set[str] = set()
         notas_xml_ausentes: set[str] = set()
         xml_ausente_emitido: set[str] = set()
@@ -748,6 +758,36 @@ class AuditorTributarioSPED:
                         xml_ausente_emitido.add(chave_aviso)
 
                 if ncm and len(ncm) == 8:
+                    # Referencias isoladas da Ficha: fontes oficiais sao
+                    # evidencia documental, nunca regras operacionais criadas.
+                    descricao_consulta = (
+                        (cadastro.descricao if cadastro else "")
+                        or item.descricao_complementar
+                        or (item_xml.descricao if item_xml else "")
+                    )
+                    referencia = consulta_referencial.consultar_item(
+                        ncm=ncm, descricao=descricao_consulta,
+                        contexto=contexto_nota,
+                        ex_tipi=cadastro.ex_ipi if cadastro else "",
+                    )
+                    referencia.update({
+                        "linha_sped": numero_linha,
+                        "nota": str(nota.get("numero") or ""),
+                        "chave": str(nota.get("chave") or ""),
+                        "item": str(item.numero_item or ""),
+                        "codigo_produto": str(item.codigo or ""),
+                        "cfop_sped": str(item.cfop or ""),
+                        "descricao_sped": str(descricao_consulta or ""),
+                    })
+                    resultado.referencias_fiscais.append(referencia)
+                    if referencia.get("ncm_status") == "NAO LOCALIZADO NA BASE INSTALADA":
+                        resultado.itens_ncm_nao_localizados += 1
+                    elif referencia.get("ncm_status") not in {
+                        "FALHA NA CONSULTA DA BASE NCM", "NCM INVALIDO PARA CONSULTA",
+                    }:
+                        resultado.itens_ncm_oficial_localizados += 1
+                    if referencia.get("falha_tecnica"):
+                        resultado.consultas_fiscais_com_falha += 1
                     contexto_motor = MotorParecer._contexto_normalizado(contexto_nota)
                     chave_selecao = (
                         ncm,
@@ -863,6 +903,16 @@ class AuditorTributarioSPED:
                 f"Auditoria parcial: {resultado.itens_sem_regra} de "
                 f"{resultado.total_itens} itens sem regra aplicavel. "
                 "Os itens sem cobertura exigem revisao individual."
+            )
+        if resultado.referencias_fiscais:
+            resultado.diagnostico_regras += (
+                f" Camada referencial independente: "
+                f"{len(resultado.referencias_fiscais)} itens consultados; "
+                f"{resultado.itens_ncm_oficial_localizados} NCMs de itens localizados "
+                f"na base oficial instalada e "
+                f"{resultado.itens_ncm_nao_localizados} nao localizados. "
+                "Consultas de PIS/Cofins e ICMS/MG estao na aba Referencias "
+                "do Excel, sem gerar CST, creditos ou ajustes automaticos."
             )
         if resultado.total_itens and not _texto(resultado.contexto.get("regime")):
             resultado.diagnostico_regras += (
