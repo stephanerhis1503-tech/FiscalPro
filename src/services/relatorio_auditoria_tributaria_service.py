@@ -334,6 +334,69 @@ class ServicoRelatorioAuditoriaTributaria:
             ws.sheet_properties.pageSetUpPr.fitToPage = True
             ws.page_setup.orientation = "landscape"
 
+        # Referencias oficiais ficam em aba independente da Ficha.
+        # Nao sao regras operacionais nem autorizam credito/correcao.
+        ws_ref = wb.create_sheet("Referencias fiscais")
+        ws_ref.sheet_view.showGridLines = False
+        colunas_ref = (
+            ("linha_sped", "Linha SPED"), ("nota", "NF"),
+            ("chave", "Chave NF-e"), ("item", "Item C170"),
+            ("codigo_produto", "Codigo produto"), ("descricao_sped", "Descricao"),
+            ("ncm", "NCM"), ("ncm_status", "NCM na base oficial"),
+            ("ncm_descricao_oficial", "Descricao NCM oficial"),
+            ("ncm_fonte", "Fonte NCM"), ("tipi_status", "Referencia TIPI"),
+            ("regime", "Regime"), ("operacao", "Operacao"),
+            ("finalidade", "Finalidade"), ("uf_origem", "UF origem"),
+            ("uf_destino", "UF destino"), ("data_operacao", "Data operacao"),
+            ("pis_status", "PIS/Cofins: status referencial"),
+            ("pis_confirmado", "Enquadramento PIS/Cofins confirmado"),
+            ("pis_fundamento", "Fundamento PIS/Cofins"),
+            ("pis_fonte", "Fonte PIS/Cofins"),
+            ("icms_status", "ICMS/MG: status referencial"),
+            ("icms_confirmado", "Aliquota ICMS confirmada"),
+            ("st_status", "ST/MG: status referencial"),
+            ("st_decisao_confirmada", "Decisao ST confirmada"),
+            ("st_cest", "CEST referencial (NAO automatico)"),
+            ("icms_fonte", "Fonte ICMS/MG"),
+            ("falha_tecnica", "Falha tecnica na consulta"),
+            ("nota", "Nota fiscal"),
+        )
+        # A nota de cautela tem coluna dedicada, sem substituir a NF.
+        colunas_ref = colunas_ref[:-1] + (("nota_cautela", "Restricoes de uso"),)
+        for col, (_chave, titulo_celula) in enumerate(colunas_ref, 1):
+            celula = ws_ref.cell(1, col, titulo_celula)
+            celula.font = Font(bold=True, color="FFFFFF", size=10)
+            celula.fill = PatternFill("solid", fgColor=AZUL)
+            celula.alignment = Alignment(vertical="center", wrap_text=True)
+        ws_ref.row_dimensions[1].height = 38
+        for indice, ref in enumerate(resultado.referencias_fiscais, start=2):
+            for col, (chave, _titulo) in enumerate(colunas_ref, start=1):
+                valor = ref.get("nota") if chave == "linha_sped" and False else ref.get(chave)
+                if chave == "nota_cautela":
+                    valor = ref.get("nota") if False else ref.get("nota_cautela") or ref.get("nota_legal") or ref.get("nota_uso") or ref.get("nota_aviso") or ref.get("nota_referencial") or ref.get("nota_fiscalizacao") or ref.get("nota_contexto") or ref.get("nota_tributaria") or ref.get("nota_status") or ref.get("nota_complementar") or ref.get("nota_base") or ref.get("nota_alerta") or ref.get("nota_observacao") or "Referencia nao equivale a regra da Ficha; revisar operacao."
+                if isinstance(valor, bool):
+                    valor = "SIM" if valor else "NAO"
+                celula = ws_ref.cell(
+                    indice, col, valor if col == 1 and isinstance(valor, int)
+                    else _texto_seguro(valor),
+                )
+                celula.font = Font(size=10, color=TEXTO)
+                if indice % 2 == 0:
+                    celula.fill = PatternFill("solid", fgColor="F5F9FC")
+                if col in (3, 5, 7, 26):
+                    celula.number_format = "@"
+                if chave == "falha_tecnica" and valor == "SIM":
+                    celula.fill = PatternFill("solid", fgColor=AMARELO)
+        for col, largura in enumerate((
+            13, 15, 51, 12, 24, 48, 15, 29, 55, 19, 32,
+            20, 16, 20, 14, 14, 17, 48, 20, 68, 62, 44,
+            18, 48, 18, 17, 58, 16, 90,
+        ), start=1):
+            ws_ref.column_dimensions[get_column_letter(col)].width = largura
+        ws_ref.freeze_panes = "H2"
+        ws_ref.auto_filter.ref = f"A1:AC{max(ws_ref.max_row, 2)}"
+        ws_ref.print_title_rows = "1:1"
+
         wb.properties.title = "FiscalPro | Auditoria Tributaria SPED"
         wb.properties.subject = "Conferencia documental de regras e XMLs - sem correcao automatica"
         wb.properties.creator = "FiscalPro"
