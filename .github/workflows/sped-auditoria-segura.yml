@@ -9,8 +9,8 @@ on:
       - src/sped/auditor_tributario.py
       - src/sped/corretor_tributario_assistido.py
       - src/sped/motor_sped.py
-      - src/ui/janela_sped_inteligente.py
-      - tests/test_auditoria_sped_segura_18_3_5.py
+      - src/ui/janela_sped_inteligente.py src/services/relatorio_auditoria_tributaria_service.py
+      - tests/test_auditoria_sped_segura_18_3_5.py tests/test_relatorio_auditoria_tributaria_visual.py
       - .github/workflows/sped-auditoria-segura.yml
 
 permissions:
@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Instalar dependencias
-        run: python -m pip install -r requirements.txt pytest
+        run: python -m pip install -r requirements.txt pytest openpyxl reportlab pillow pypdf
       - name: Verificar sintaxe e regressao
         run: |
           python -m compileall -q src/sped/auditor_tributario.py src/sped/corretor_tributario_assistido.py src/sped/motor_sped.py src/ui/janela_sped_inteligente.py
