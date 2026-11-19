@@ -131,7 +131,11 @@ class ReferenciasAuditoriaSPEDService:
                         "pis_fundamento": "", "pis_fonte": "",
                         "falha_tecnica": True,
                     }
+            falha_anterior = bool(referencia.get("falha_tecnica"))
             referencia.update(self._cache_pis[chave])
+            referencia["falha_tecnica"] = (
+                falha_anterior or bool(self._cache_pis[chave].get("falha_tecnica"))
+            )
             # Mesmo quando o enquadramento legal e confirmado, nenhum credito
             # ou CST da entrada pode ser inferido por esta consulta isolada.
 
@@ -175,5 +179,9 @@ class ReferenciasAuditoriaSPEDService:
                         "st_decisao_confirmada": False,
                         "st_cest": "", "icms_fonte": "", "falha_tecnica": True,
                     }
+            falha_anterior = bool(referencia.get("falha_tecnica"))
             referencia.update(self._cache_icms[chave_icms])
+            referencia["falha_tecnica"] = (
+                falha_anterior or bool(self._cache_icms[chave_icms].get("falha_tecnica"))
+            )
         return referencia
