@@ -612,9 +612,19 @@ class AuditorTributarioSPED:
                     if selecao.regra:
                         resultado.itens_com_regra += 1
                         self._comparar_regra(
-                            resultado, numero_linha, nota, item, cadastro, selecao.regra, selecao.aderencia
+                            resultado, numero_linha, nota, item, cadastro, selecao.regra,
+                            selecao.aderencia,
+                            confiavel=selecao.aderencia >= 60 and selecao.empatadas <= 1
                         )
                         regra_id = str(selecao.regra.get("id") or "")
+                        if selecao.empatadas > 1:
+                            self._adicionar(
+                                resultado, "AVISO", "FICHA TRIBUTÁRIA", numero_linha, nota, item,
+                                "Empate entre regras", str(selecao.empatadas), "Revisão manual",
+                                regra_id, selecao.aderencia,
+                                "Duas ou mais regras tributarias possuem a mesma pontuacao.",
+                                "Verifique a vigencia e o contexto antes de corrigir os valores do SPED.",
+                            )
                         if selecao.aderencia < 60 and (ncm, regra_id, "ADERENCIA") not in avisos_regra_emitidos:
                             self._adicionar(
                                 resultado, "AVISO", "FICHA TRIBUTÁRIA", numero_linha, nota, item,
@@ -884,6 +894,8 @@ class AuditorTributarioSPED:
         cadastro: Registro0200,
         regra: dict[str, Any],
         aderencia: float,
+        *,
+        confiavel: bool = True,
     ) -> None:
         regra_id = str(regra.get("id") or "")
         for nome, atributo_item, campo_regra, tipo in self.CAMPOS_REGRA:
@@ -891,7 +903,7 @@ class AuditorTributarioSPED:
             esperado = regra.get(campo_regra)
             if self._divergente(atual, esperado, tipo):
                 self._adicionar(
-                    resultado, "ERRO" if aderencia >= 60 else "AVISO",
+                    resultado, "ERRO" if confiavel else "AVISO",
                     "FICHA TRIBUTÁRIA", linha, nota, item, nome,
                     self._formatar(atual, tipo), self._formatar(esperado, tipo), regra_id, aderencia,
                     f"{nome} do C170 diverge da regra tributária selecionada.",
@@ -900,7 +912,7 @@ class AuditorTributarioSPED:
         cest_esperado = regra.get("cest")
         if cest_esperado and self._divergente(cadastro.cest, cest_esperado, "texto"):
             self._adicionar(
-                resultado, "ERRO", "FICHA TRIBUTÁRIA", linha, nota, item, "CEST",
+                resultado, "ERRO" if confiavel else "AVISO", "FICHA TRIBUTÁRIA", linha, nota, item, "CEST",
                 cadastro.cest, _digitos(cest_esperado), regra_id, aderencia,
                 "CEST do cadastro 0200 diverge da regra tributária selecionada.",
                 "Revise o cadastro do produto e confirme o enquadramento legal de ICMS-ST.",
