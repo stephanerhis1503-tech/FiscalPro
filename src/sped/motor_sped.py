@@ -156,6 +156,8 @@ class MotorSPED:
         self.analise_chaves_cte = None
         self.auditoria_tributaria = None
         self.preparacao_correcao_tributaria = None
+        # Uma nova EFD nao pode reutilizar XMLs da EFD anterior.
+        self.importacao_xml_nfe = None
         self.analise_estorno_icms = None
         self.analise_danfe_icms = None
         self.analise_exclusao_icms_creditos = None
