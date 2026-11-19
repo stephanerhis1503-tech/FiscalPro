@@ -218,6 +218,9 @@ class ResultadoAuditoriaTributaria:
     avisos: int = 0
     divergencias_ficha: int = 0
     divergencias_xml: int = 0
+    ncms_validos_unicos: int = 0
+    ncms_com_regra_cadastrada: int = 0
+    diagnostico_regras: str = ""
     apontamentos: list[ApontamentoAuditoriaTributaria] = field(default_factory=list)
     contexto: dict[str, str] = field(default_factory=dict)
 
@@ -226,9 +229,26 @@ class ResultadoAuditoriaTributaria:
         return len(self.apontamentos)
 
     @property
-    def conformidade(self) -> float:
+    def cobertura_regras(self) -> float:
         if self.total_itens <= 0:
-            return 100.0
+            return 0.0
+        return round(100.0 * self.itens_com_regra / self.total_itens, 2)
+
+    @property
+    def auditoria_tributaria_inconclusiva(self) -> bool:
+        return self.total_itens == 0 or self.itens_com_regra == 0
+
+    @property
+    def conformidade_exibicao(self) -> str:
+        if self.auditoria_tributaria_inconclusiva:
+            return "NAO AVALIAVEL - sem regras tributarias aplicadas"
+        return f"{self.conformidade:.2f}% (cobertura de regras: {self.cobertura_regras:.2f}%)".replace(".", ",")
+
+    @property
+    def conformidade(self) -> float:
+        """Indicador parcial: nunca representa homologacao tributaria integral."""
+        if self.total_itens <= 0:
+            return 0.0
         itens_com_problema = len({(a.linha, a.codigo) for a in self.apontamentos if a.nivel == "ERRO"})
         return round(max(0.0, 100.0 - (itens_com_problema / self.total_itens * 100.0)), 2)
 
@@ -489,6 +509,12 @@ class AuditorTributarioSPED:
             if cadastro is not None and len(cadastro.ncm) == 8
         }
         regras_contexto, regras_produto, ncms_com_base_legal = self._carregar_regras_lote(ncms_usados)
+        resultado.ncms_validos_unicos = len(ncms_usados)
+        resultado.ncms_com_regra_cadastrada = sum(
+            1 for ncm in ncms_usados
+            if regras_contexto.get(ncm)
+            or any(chave[0] == ncm for chave in regras_produto)
+        )
         cache_selecao: dict[tuple[str, ...], Any] = {}
         notas_xml_localizadas: set[str] = set()
         notas_xml_ausentes: set[str] = set()
@@ -680,6 +706,30 @@ class AuditorTributarioSPED:
         resultado.avisos = sum(1 for item in resultado.apontamentos if item.nivel == "AVISO")
         resultado.divergencias_ficha = sum(1 for item in resultado.apontamentos if item.origem == "FICHA TRIBUTÁRIA" and item.campo not in {"Regra tributária", "Aderência da regra"})
         resultado.divergencias_xml = sum(1 for item in resultado.apontamentos if item.origem == "XML NF-e" and item.campo != "XML")
+        if resultado.total_itens and not resultado.itens_com_regra:
+            if not resultado.ncms_validos_unicos:
+                resultado.diagnostico_regras = (
+                    "Nenhum NCM valido de 8 digitos foi obtido dos cadastros 0200 dos itens C170. "
+                    "Confira a vinculacao entre C170 e 0200 e o cadastro de NCM."
+                )
+            elif not resultado.ncms_com_regra_cadastrada:
+                resultado.diagnostico_regras = (
+                    f"Nenhuma regra da Ficha Tributaria foi localizada no banco fiscalpro.db "
+                    f"para os {resultado.ncms_validos_unicos} NCM(s) distintos do SPED. "
+                    "Bases NCM/TIPI e ST oficiais nao substituem regras de operacao cadastradas."
+                )
+            else:
+                resultado.diagnostico_regras = (
+                    f"Ha regras cadastradas para {resultado.ncms_com_regra_cadastrada} "
+                    f"de {resultado.ncms_validos_unicos} NCM(s), mas nenhuma foi aplicavel. "
+                    "Confira empresa, regime, UF, finalidade e vigencia na Ficha Tributaria."
+                )
+        elif resultado.itens_sem_regra:
+            resultado.diagnostico_regras = (
+                f"Auditoria parcial: {resultado.itens_sem_regra} de "
+                f"{resultado.total_itens} itens sem regra aplicavel. "
+                "Os itens sem cobertura exigem revisao individual."
+            )
         self._progresso(progresso, 100, "Auditoria tributária concluída.")
         return resultado
 
@@ -1047,7 +1097,9 @@ class AuditorTributarioSPED:
             f"Itens sem correspondência XML: {resultado.itens_sem_xml}",
             f"Erros: {resultado.erros}",
             f"Avisos: {resultado.avisos}",
-            f"Conformidade por item: {resultado.conformidade:.2f}%".replace(".", ","),
+            f"Cobertura das regras: {resultado.cobertura_regras:.2f}%".replace(".", ","),
+            f"Conformidade parcial: {resultado.conformidade_exibicao}",
+            f"Diagnostico da cobertura: {resultado.diagnostico_regras or 'Sem ressalvas de cobertura identificadas'}",
             "",
             "APONTAMENTOS",
             "-" * 96,
