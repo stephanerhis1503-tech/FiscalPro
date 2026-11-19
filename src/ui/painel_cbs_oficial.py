@@ -13,6 +13,7 @@ import threading
 from time import monotonic
 
 from src.services.cbs_apuracao_oficial_service import ServicoCBSOficial
+from src.services.cbs_relatorio_conciliacao_service import ServicoRelatorioConciliacaoCBS
 from src.services.cbs_apuracao_api_client import ClienteCBSReceita
 from src.services.receita_integra_auth import AutenticadorReceitaIntegra
 from src.services.empresas_regimes_service import EmpresasRegimesService
@@ -92,6 +93,12 @@ class PainelCBSOficial(ttk.Frame):
         ttk.Button(
             acoes, text="Ver documentos oficiais", command=self._ver_documentos_oficiais
         ).pack(side=LEFT)
+        ttk.Button(
+            acoes, text="Relatorio CBS Excel", command=lambda: self._exportar_conciliacao(".xlsx")
+        ).pack(side=LEFT, padx=(6, 0))
+        ttk.Button(
+            acoes, text="Relatorio CBS PDF", command=lambda: self._exportar_conciliacao(".pdf")
+        ).pack(side=LEFT, padx=(6, 0))
         ttk.Label(filtros, textvariable=self.var_status, wraplength=1050).pack(
             anchor="w", pady=(8, 2)
         )
@@ -187,6 +194,37 @@ class PainelCBSOficial(ttk.Frame):
         )
         tipo = self.TIPOS[self.var_tipo.get()]
         return cnpj_completo, cnpj, pa, tipo
+
+    def _exportar_conciliacao(self, extensao: str):
+        """Exporta dados ja salvos, sem usar token ou requisitar nova consulta."""
+        try:
+            cnpj, _, competencia, _ = self._filtros()
+            empresa = self.empresas.get(self.var_empresa.get()) or {}
+        except ValueError as exc:
+            messagebox.showerror("CBS | Relatorio", str(exc), parent=self)
+            return
+        destino = filedialog.asksaveasfilename(
+            parent=self,
+            title="Salvar relatorio de conciliacao CBS",
+            defaultextension=extensao,
+            initialfile=f"FiscalPro_CBS_Conciliacao_{cnpj}_{competencia}{extensao}",
+            filetypes=(("Planilha Excel", "*.xlsx"),) if extensao == ".xlsx"
+                      else (("Documento PDF", "*.pdf"),),
+        )
+        if not destino:
+            return
+        try:
+            arquivo = ServicoRelatorioConciliacaoCBS(self.servico).gerar(
+                cnpj, competencia, destino, str(empresa.get("nome") or ""),
+            )
+        except (ValueError, OSError, ImportError) as exc:
+            messagebox.showerror("CBS | Relatorio", str(exc), parent=self)
+            return
+        self.var_status.set(
+            "Relatorio CBS exportado usando dados locais e retornos incrementais "
+            "ja importados. Nao representa apuracao definitiva."
+        )
+        messagebox.showinfo("CBS | Relatorio", f"Arquivo salvo:\\n{arquivo}", parent=self)
 
     def _importar_json(self):
         try:

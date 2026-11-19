@@ -1,0 +1,90 @@
+name: Windows - FiscalPro teste isolado CBS PR21
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/cbs-conciliacao-relatorios-20261118
+    paths:
+      - src/services/cbs_relatorio_conciliacao_service.py
+      - src/ui/painel_cbs_oficial.py
+      - TESTAR_CBS_PR21.bat
+      - .github/workflows/windows-cbs-pr21-portatil.yml
+
+permissions:
+  contents: read
+
+jobs:
+  testar-e-empacotar:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar dependencias
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pyinstaller pillow
+      - name: Testar relatorio e autenticacao sinteticos
+        shell: pwsh
+        run: |
+          python -m pytest -q tests/test_cbs_relatorio_conciliacao.py tests/test_rtc2_cbs_oficial.py
+      - name: Empacotar versao portatil
+        shell: pwsh
+        run: |
+          $parametros = @(
+            "--noconfirm", "--clean", "--windowed", "--onedir",
+            "--name", "FiscalPro_PR21",
+            "--icon", "assets/fiscalpro.ico",
+            "--paths", ".",
+            "--add-data", "assets;assets",
+            "--add-data", "templates;templates",
+            "--add-data", "dados/bases_oficiais;dados/bases_oficiais",
+            "--collect-all", "reportlab",
+            "--collect-all", "cryptography",
+            "--hidden-import", "cryptography.hazmat.bindings._rust",
+            "--hidden-import", "googleapiclient.discovery",
+            "--hidden-import", "googleapiclient.errors",
+            "--hidden-import", "google.auth.transport.requests",
+            "--hidden-import", "google.oauth2.credentials",
+            "--hidden-import", "google_auth_oauthlib.flow",
+            "main.py"
+          )
+          python -m PyInstaller @parametros
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "dist/FiscalPro_PR21/FiscalPro_PR21.exe")) {
+            throw "Exe de teste nao encontrado"
+          }
+      - name: Preparar ZIP sem dados fiscais
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "teste_pr21" | Out-Null
+          Copy-Item "dist/FiscalPro_PR21" "teste_pr21/FiscalPro_PR21" -Recurse
+          Copy-Item "TESTAR_CBS_PR21.bat" "teste_pr21/"
+          @'
+          TESTE PR21 - SOMENTE VALIDACAO LOCAL
+
+          1. Feche o FiscalPro instalado.
+          2. Extraia TODO o ZIP numa pasta.
+          3. Execute TESTAR_CBS_PR21.bat.
+          4. O teste copia o banco e documentos locais para
+             %LOCALAPPDATA%\FiscalPro_TESTE_PR21 na primeira execucao.
+             A base oficial em %LOCALAPPDATA%\FiscalPro nao e alterada.
+          5. Abra NF-e/NFS-e > CBS Oficial e teste Relatorio CBS Excel / PDF.
+          6. NAO transmita apuracoes nem utilize a versao de teste para trabalho.
+          7. Ao encerrar, use seu FiscalPro instalado normalmente.
+
+          Se o FiscalPro nao estiver instalado em %LOCALAPPDATA%\FiscalPro,
+          pare e consulte a origem dos dados antes de testar.
+          '@ | Set-Content "teste_pr21/LEIA_ME_TESTE.txt" -Encoding UTF8
+          Compress-Archive -Path "teste_pr21/*" -DestinationPath "FiscalPro_CBS_PR21_Teste_Portatil.zip" -Force
+      - name: Disponibilizar ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: FiscalPro_CBS_PR21_Teste_Portatil
+          path: FiscalPro_CBS_PR21_Teste_Portatil.zip
+          retention-days: 7
+          if-no-files-found: error
