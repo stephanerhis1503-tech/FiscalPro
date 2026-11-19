@@ -1,0 +1,53 @@
+name: Windows - Instalador FiscalPro 18.3.4 CBS, Interface e Cadeados
+
+on:
+  push:
+    branches:
+      - release/fiscalpro-18.3.4-cadeado-st-20261119
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gerar-instalador:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar dependencias para testes
+        shell: pwsh
+        run: |
+          python -m pip install pytest openpyxl reportlab pillow
+      - name: Validar CBS, interface e cadeados
+        shell: pwsh
+        run: |
+          python -m compileall -q src/ui/janela_principal.py src/services/cbs_relatorio_conciliacao_service.py src/ui/painel_cbs_oficial.py src/services/icms_st_mg_service.py src/services/xml_icms_st_service.py
+          python -m pytest -q tests/test_cbs_relatorio_conciliacao.py tests/test_rtc2_cbs_oficial.py tests/test_limpeza_abas_principais.py tests/test_cadeado_83011000_nao_st_mg.py
+          if ($LASTEXITCODE -ne 0) { throw "Testes falharam; build bloqueado" }
+      - name: Inno Setup 6
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Gerar instalador oficial
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "build/windows/build_installer.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "Falha no instalador" }
+      - name: Validar nome e conteudo
+        shell: pwsh
+        run: |
+          $instalador = "instalador/saida/FiscalPro_Setup_18.3.4.exe"
+          if (-not (Test-Path $instalador)) { throw "Instalador 18.3.4 nao encontrado" }
+          if (-not (Test-Path "dist/FiscalPro/FiscalPro.exe")) { throw "Executavel nao encontrado" }
+      - name: Salvar instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: FiscalPro_Setup_18.3.4_CBS_Cadeados
+          path: instalador/saida/FiscalPro_Setup_18.3.4.exe
+          retention-days: 7
+          if-no-files-found: error
