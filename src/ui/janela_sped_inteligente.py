@@ -1986,14 +1986,15 @@ class JanelaSPEDInteligente(Toplevel):
 
         area = ttk.Frame(janela)
         area.pack(fill=BOTH, expand=True, padx=12, pady=5)
-        cols = ("status", "ncm", "produto", "empresa", "operacao", "uf", "itens", "vigencia")
+        cols = ("status", "ncm", "produto", "empresa", "operacao", "uf", "itens", "vigencia", "finalidade")
         tabela = ttk.Treeview(area, columns=cols, show="headings", selectmode="browse")
         titles = {
             "status": "Status", "ncm": "NCM", "produto": "Produto SPED",
             "empresa": "Empresa", "operacao": "Operacao", "uf": "UF origem/destino",
             "itens": "Itens", "vigencia": "Datas de operacao",
+            "finalidade": "Revisao finalidade",
         }
-        widths = (190, 90, 160, 220, 110, 120, 70, 210)
+        widths = (190, 90, 160, 220, 110, 120, 70, 210, 270)
         for key, width in zip(cols, widths):
             tabela.heading(key, text=titles[key])
             tabela.column(key, width=width, stretch=key in {"empresa", "vigencia"})
@@ -2013,6 +2014,7 @@ class JanelaSPEDInteligente(Toplevel):
                         p.situacao, p.ncm, p.codigo_produto, p.empresa,
                         p.operacao, f"{p.uf_origem} / {p.uf_destino}",
                         p.itens, f"{p.primeira_data} a {p.ultima_data}",
+                        p.aviso_finalidade,
                     )
                 )
             if chave_atual and tabela.exists(chave_atual):
@@ -2102,6 +2104,13 @@ class JanelaSPEDInteligente(Toplevel):
                 f"Codigos SPED identificados para esse NCM: {proposta.produtos_no_ncm}."
             ), wraplength=900,
         ).pack(anchor="w", pady=(0, 8))
+        ttk.Label(
+            base,
+            text=f"FINALIDADE: {proposta.aviso_finalidade}. Indicios: "
+                 f"{'; '.join(sorted(proposta.indicios_cfop))}. "
+                 "CFOP observado nao e prova de direito a credito ou ST.",
+            wraplength=900, justify="left",
+        ).pack(anchor="w", pady=(0, 8))
         area = ttk.Frame(base)
         area.pack(fill=BOTH, expand=True)
         canvas = __import__("tkinter").Canvas(area, highlightthickness=0)
@@ -2136,6 +2145,27 @@ class JanelaSPEDInteligente(Toplevel):
             ttk.Entry(conteudo, textvariable=var, width=54).grid(
                 row=indice, column=1, sticky="ew", pady=4
             )
+        linha_finalidade = len(campos)
+        ttk.Label(conteudo, text="Finalidade REVISADA (obrigatoria se houver divergencia)").grid(
+            row=linha_finalidade, column=0, sticky="w", padx=(4, 8), pady=4
+        )
+        finalidade_var = StringVar(
+            master=janela,
+            value="" if proposta.requer_revisao_finalidade else proposta.finalidade,
+        )
+        ttk.Combobox(
+            conteudo, state="readonly", textvariable=finalidade_var,
+            values=("", "REVENDA", "USO E CONSUMO", "INSUMO",
+                    "INDUSTRIALIZAÇÃO", "ATIVO IMOBILIZADO", "SERVIÇO", "OUTRA"),
+            width=52,
+        ).grid(row=linha_finalidade, column=1, sticky="ew", pady=4)
+        ttk.Label(
+            conteudo, text="Justificativa da finalidade (obrigatoria em outras entradas)"
+        ).grid(row=linha_finalidade+1, column=0, sticky="w", padx=(4, 8), pady=4)
+        justificativa_var = StringVar(master=janela, value="")
+        ttk.Entry(
+            conteudo, textvariable=justificativa_var, width=54
+        ).grid(row=linha_finalidade+1, column=1, sticky="ew", pady=4)
         conteudo.grid_columnconfigure(1, weight=1)
         confirmacao_revisao = BooleanVar(master=janela, value=False)
         confirmacao_abrangencia = BooleanVar(master=janela, value=False)
@@ -2154,7 +2184,11 @@ class JanelaSPEDInteligente(Toplevel):
             try:
                 regra_id = FichaAssistidaSPEDService.aprovar(
                     proposta,
-                    {campo: var.get() for campo, var in variaveis.items()},
+                    {
+                        **{campo: var.get() for campo, var in variaveis.items()},
+                        "finalidade_revisada": finalidade_var.get(),
+                        "justificativa_finalidade": justificativa_var.get(),
+                    },
                     confirmar_revisao=confirmacao_revisao.get(),
                     confirmar_abrangencia_ncm=confirmacao_abrangencia.get(),
                 )
