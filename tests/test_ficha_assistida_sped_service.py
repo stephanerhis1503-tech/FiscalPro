@@ -203,3 +203,43 @@ def test_contexto_sem_data_nao_permite_aprovacao():
             p, _campos(), confirmar_revisao=True,
             confirmar_abrangencia_ncm=True,
         )
+
+
+def test_finalidade_cfop_substitui_padrao_na_planilha(tmp_path):
+    ref = _ref(
+        cfop_sped="1556", finalidade="USO E CONSUMO",
+        finalidade_informada="REVENDA",
+        finalidade_status="INDICIO_CFOP",
+        finalidade_motivo="CFOP de uso e consumo",
+    )
+    proposta = modulo.FichaAssistidaSPEDService.preparar(
+        SimpleNamespace(referencias_fiscais=[ref])
+    )[0]
+    assert proposta.finalidade == "USO E CONSUMO"
+    assert proposta.requer_revisao_finalidade
+    destino = modulo.FichaAssistidaSPEDService.exportar(
+        [proposta], tmp_path / "classificacao.xlsx"
+    )
+    ws = load_workbook(destino, read_only=True).active
+    assert ws["H2"].value == "USO E CONSUMO"
+    assert ws["Z2"].value == "REVENDA"
+    assert ws["AA2"].value == "INDICIO_CFOP"
+    assert "REVISAR" in ws["Y2"].value
+
+
+def test_finalidade_desconhecida_nao_pode_ser_aprovada():
+    p = modulo.FichaAssistidaSPEDService.preparar(
+        SimpleNamespace(referencias_fiscais=[
+            _ref(
+                cfop_sped="1949", finalidade="",
+                finalidade_informada="REVENDA", finalidade_status="REVISAR"
+            ),
+        ])
+    )[0]
+    assert p.requer_revisao_finalidade
+    assert p.finalidade == ""
+    with pytest.raises(ValueError, match="finalidade"):
+        modulo.FichaAssistidaSPEDService.aprovar(
+            p, _campos(finalidade_revisada="REVENDA"),
+            confirmar_revisao=True, confirmar_abrangencia_ncm=True,
+        )
