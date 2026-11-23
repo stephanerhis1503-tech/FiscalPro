@@ -119,6 +119,7 @@ class MotorSPED:
         self.importacao_xml_nfe: ResultadoImportacaoXMLNFe | None = None
         self.auditoria_tributaria: ResultadoAuditoriaTributaria | None = None
         self.preparacao_correcao_tributaria: ResultadoPreparacaoCorrecaoTributaria | None = None
+        self.propostas_ficha_assistida = []
         self.analise_estorno_icms: ResultadoAnaliseEstornoICMS | None = None
         self.analise_danfe_icms: ResultadoAnaliseDANFEICMS | None = None
         self.analise_exclusao_icms_creditos: ResultadoAnaliseExclusaoICMS | None = None
@@ -156,6 +157,7 @@ class MotorSPED:
         self.analise_chaves_cte = None
         self.auditoria_tributaria = None
         self.preparacao_correcao_tributaria = None
+        self.propostas_ficha_assistida = []
         # Uma nova EFD nao pode reutilizar XMLs da EFD anterior.
         self.importacao_xml_nfe = None
         self.analise_estorno_icms = None
@@ -321,6 +323,7 @@ class MotorSPED:
         )
         self.auditoria_tributaria = None
         self.preparacao_correcao_tributaria = None
+        self.propostas_ficha_assistida = []
         return self.importacao_xml_nfe
 
     def limpar_xmls_nfe_auditoria(self) -> None:
@@ -329,6 +332,29 @@ class MotorSPED:
         self.auditoria_tributaria = None
         self.auditoria_difal = None
         self.preparacao_correcao_tributaria = None
+
+    def preparar_fichas_assistidas(self):
+        """Gerar propostas para revisao, sem alterar a Ficha Tributaria."""
+        if self.resultado is None or self.auditoria_tributaria is None:
+            raise RuntimeError("Execute primeiro o cruzamento tributario do SPED.")
+        from src.services.ficha_assistida_sped_service import (
+            FichaAssistidaSPEDService,
+        )
+        self.propostas_ficha_assistida = FichaAssistidaSPEDService.preparar(
+            self.auditoria_tributaria
+        )
+        return self.propostas_ficha_assistida
+
+    def exportar_fichas_assistidas(self, destino: str | Path):
+        """Planilha de propostas, apenas para conferencia."""
+        from src.services.ficha_assistida_sped_service import (
+            FichaAssistidaSPEDService,
+        )
+        if not self.propostas_ficha_assistida:
+            raise RuntimeError("Prepare as fichas antes de exportar.")
+        return FichaAssistidaSPEDService.exportar(
+            self.propostas_ficha_assistida, destino
+        )
 
     def auditar_tributacao(
         self,
@@ -346,6 +372,7 @@ class MotorSPED:
             progresso,
         )
         self.preparacao_correcao_tributaria = None
+        self.propostas_ficha_assistida = []
         return self.auditoria_tributaria
 
     def salvar_relatorio_auditoria_tributaria(
