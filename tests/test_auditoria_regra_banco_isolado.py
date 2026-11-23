@@ -145,8 +145,8 @@ def test_c170_regra_ficticia_aparece_so_apos_cadastro(ambiente):
     ],
     ids=[
         "regime_incompativel", "operacao_incompativel", "origem_incompativel",
-        "destino_incompativel", "empresa_incompativel", "fora_da_vigencia",
-        "rascunho_nao_aplicavel",
+        "destino_incompativel", "empresa_incompativel", "vigencia_futura",
+        "vigencia_encerrada", "rascunho_nao_aplicavel",
     ],
 )
 def test_regra_incompativel_nao_gera_conformidade(ambiente, alteracoes):
