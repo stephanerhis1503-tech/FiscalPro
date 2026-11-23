@@ -225,6 +225,7 @@ class ResultadoAuditoriaTributaria:
     divergencias_xml: int = 0
     ncms_validos_unicos: int = 0
     ncms_com_regra_cadastrada: int = 0
+    regras_operacionais_banco: dict[str, int] = field(default_factory=dict)
     diagnostico_regras: str = ""
     referencias_fiscais: list[dict[str, Any]] = field(default_factory=list)
     itens_ncm_oficial_localizados: int = 0
@@ -887,10 +888,36 @@ class AuditorTributarioSPED:
                     "Confira a vinculacao entre C170 e 0200 e o cadastro de NCM."
                 )
             elif not resultado.ncms_com_regra_cadastrada:
+                resultado.regras_operacionais_banco = self._diagnosticar_cadastro_regras()
+                dados = resultado.regras_operacionais_banco
+                total_atual = dados.get("tributacao_atual", -1)
+                total_produto = dados.get("tributacao_base_ativa", -1)
+                if total_atual == 0 and total_produto == 0:
+                    causa = (
+                        "As tabelas operacionais da Ficha estao vazias "
+                        "(0 regras por operacao e 0 cadastros por produto ativos). "
+                        "O motor nao deve inventar CST, credito ou ST a partir do NCM."
+                    )
+                elif total_atual >= 0 and total_produto >= 0:
+                    causa = (
+                        f"Existem {total_atual} regra(s) por operacao "
+                        f"e {total_produto} cadastro(s) por produto ativo(s) "
+                        "no banco, mas nenhum deles possui os NCMs do SPED. "
+                        "Confira o cadastro da Ficha e se os dados homologados "
+                        "foram salvos no mesmo banco utilizado pela auditoria."
+                    )
+                else:
+                    causa = (
+                        "Nao foi possivel consultar a quantidade de regras "
+                        "salvas. Revise o banco local e suas tabelas antes "
+                        "de considerar a auditoria concluida."
+                    )
                 resultado.diagnostico_regras = (
-                    f"Nenhuma regra da Ficha Tributaria foi localizada no banco fiscalpro.db "
-                    f"para os {resultado.ncms_validos_unicos} NCM(s) distintos do SPED. "
-                    "Bases NCM/TIPI e ST oficiais nao substituem regras de operacao cadastradas."
+                    f"Nenhuma regra da Ficha Tributaria no banco fiscalpro.db "
+                    f"corresponde aos {resultado.ncms_validos_unicos} NCM(s) distintos. "
+                    + causa
+                    + " NCM/TIPI e outros motores oficiais fornecem referencias "
+                    "independentes, nao regras prontas da operacao."
                 )
             else:
                 resultado.diagnostico_regras = (
@@ -1034,6 +1061,29 @@ class AuditorTributarioSPED:
                 )
         self._progresso(progresso, 100, "Auditoria tributária concluída.")
         return resultado
+
+    @staticmethod
+    def _diagnosticar_cadastro_regras() -> dict[str, int]:
+        """Somente leitura: explica ausencia de regras sem gravar nenhum dado."""
+        conn = None
+        try:
+            conn = Banco.conectar()
+            atual = int(conn.execute(
+                "SELECT COUNT(*) FROM tributacao_atual"
+            ).fetchone()[0])
+            ativos = int(conn.execute(
+                "SELECT COUNT(*) FROM tributacao_base WHERE ativo = 1"
+            ).fetchone()[0])
+            return {
+                "tributacao_atual": atual,
+                "tributacao_base_ativa": ativos,
+            }
+        except Exception:
+            # Nao transformar falha de diagnostico em sucesso tributario.
+            return {}
+        finally:
+            if conn is not None:
+                conn.close()
 
     @staticmethod
     def _carregar_regras_lote(
