@@ -708,7 +708,7 @@ class AuditorTributarioSPED:
                 contexto_item = dict(contexto_nota)
                 classificacao_cfop = (
                     classificar_finalidade_entrada(item.cfop)
-                    if entrada else None
+                    if nota.get("ind_oper") == "0" else None
                 )
                 if classificacao_cfop is not None:
                     contexto_item["finalidade"] = classificacao_cfop.finalidade
