@@ -63,6 +63,23 @@ def _iso(v: Any) -> str:
         return ""
 
 
+
+def _conclusao_st_xml(status: str) -> tuple[str, str]:
+    """Triagem documental, nunca conclusao de imposto a recolher."""
+    texto = _texto(status).upper()
+    if texto.startswith("DIVERGENCIA"):
+        return ("1 - PRIORIDADE", "Rever vinculo do item C170 com a NF-e: produto e NCM divergentes.")
+    if "ST DESTACADA" in texto:
+        return ("2 - CONFERIR", "ST destacada no XML: conferir responsabilidade e recolhimento; nao gerar guia.")
+    if "RETIDA ANTERIORMENTE" in texto:
+        return ("3 - CONFERIR", "ST informada como retida anteriormente: nao presumir novo recolhimento.")
+    if "SEM VALOR ICMS-ST POSITIVO" in texto:
+        return ("4 - REVISAR", "XML com tags ST zeradas: nao presumir imposto devido ou dispensa.")
+    if "SEM TAG ST" in texto:
+        return ("5 - REVISAR", "Item XML sem tags ST: conferir documento e enquadramento legal.")
+    return ("1 - VERIFICAR XML", "Falta evidencia documental suficiente; revisar sem alterar o SPED.")
+
+
 @dataclass
 class PropostaFichaAssistida:
     identificador: int
@@ -445,6 +462,7 @@ class FichaAssistidaSPEDService:
             "Arquivo XML", "NCM XML", "CEST XML", "CFOP XML",
             "CST/CSOSN XML", "Codigo XML", "nItem XML",
             *CAMPOS_XML_ST_PLANILHA,
+            "Prioridade de revisao", "Conclusao pratica",
         ]
         evidencias.append(colunas_xml)
         for p in propostas:
@@ -458,6 +476,7 @@ class FichaAssistidaSPEDService:
                     ev["st_xml_ncm"], ev["st_xml_cest"], ev["st_xml_cfop"],
                     ev["st_xml_cst"], ev["st_xml_codigo"], ev["st_xml_item"],
                     *(ev["st_xml_" + campo] for campo in CAMPOS_XML_ST_PLANILHA),
+                    *_conclusao_st_xml(ev["st_xml_status"]),
                 ])
         for cell in evidencias[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -474,12 +493,13 @@ class FichaAssistidaSPEDService:
                     cell.fill = PatternFill("solid", fgColor="F2F6FA")
         for col in range(1, len(colunas_xml) + 1):
             evidencias.column_dimensions[get_column_letter(col)].width = (
-                64 if col in (13, 14, 15, 16)
+                64 if col in (13, 14, 15, 16, 30)
                 else 48 if col == 5
+                else 29 if col == 29
                 else 46 if col == 9
                 else 22
             )
-        evidencias.auto_filter.ref = f"A1:AB{max(evidencias.max_row, 2)}"
+        evidencias.auto_filter.ref = f"A1:AD{max(evidencias.max_row, 2)}"
         evidencias.freeze_panes = "M2"
         evidencias.sheet_view.showGridLines = False
         destino.parent.mkdir(parents=True, exist_ok=True)
