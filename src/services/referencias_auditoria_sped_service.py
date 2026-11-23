@@ -195,4 +195,44 @@ class ReferenciasAuditoriaSPEDService:
             referencia["falha_tecnica"] = (
                 falha_anterior or bool(self._cache_icms[chave_icms].get("falha_tecnica"))
             )
+
+        # Operação interna MG->MG para uso e consumo:
+        # o enquadramento da mercadoria no Anexo VII e a MVA do catalogo
+        # NAO demonstram retencao ou obrigacao de recolhimento pelo adquirente.
+        # O ST-DIFAL do art. 22, II, da Parte 1 do Anexo VII pressupoe
+        # AQUISICAO INTERESTADUAL e nao se aplica ao caso interno.
+        if (
+            operacao == "ENTRADA"
+            and finalidade == "USO E CONSUMO"
+            and origem == "MG"
+            and destino == "MG"
+        ):
+            status_original = _texto(referencia.get("st_status"))
+            referencia["st_enquadramento_mercadoria_status"] = status_original
+            referencia["st_status"] = (
+                "REVISAR ST NA NOTA: COMPRA INTERNA MG->MG PARA USO/CONSUMO; "
+                "ENQUADRAMENTO DO PRODUTO/MVA NAO COMPROVA ICMS-ST A "
+                "RECOLHER PELO ADQUIRENTE"
+            )
+            referencia["st_decisao_confirmada"] = False
+            referencia["st_recolhimento_status"] = (
+                "NAO CONCLUIDO: conferir XML, retencao pelo fornecedor, "
+                "responsabilidade e eventual regime especial"
+            )
+            referencia["st_difal_status"] = (
+                "NAO SE APLICA ST-DIFAL DO ART. 22, II, DO ANEXO VII "
+                "DO RICMS/MG (ENTRADA INTERNA)"
+            )
+            referencia["icms_credito_status"] = (
+                "REGRA GERAL: VEDADO CREDITO DO ICMS PARA USO/CONSUMO "
+                "(ART. 39, III, RICMS/MG); REVISAR HIPOTESES LEGAIS ESPECIFICAS"
+            )
+            referencia["restricao_uso"] += (
+                " Entrada interna MG->MG destinada a uso/consumo. "
+                "A MVA do catalogo nao e uma apuracao de ICMS-ST. "
+                "Sem destaque/retencao/responsabilidade verificados na nota, "
+                "nao atribuir recolhimento nem credito. "
+                "Fundamento: RICMS/MG 2023, Anexo VII, art. 22, II, "
+                "e Regulamento, art. 39, III."
+            )
         return referencia
