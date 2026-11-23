@@ -25,6 +25,22 @@ CAMPOS_MANUAIS = (
     "cst_ipi", "ipi",
 )
 CAMPOS_NUMERICOS = {"icms", "fcp", "aliquota_pis", "aliquota_cofins", "ipi"}
+# Indicios da finalidade declarada no CFOP; nunca sao prova da
+# tributacao material nem autorizam credito de PIS/Cofins ou ICMS.
+CFOP_USO_CONSUMO = {"1407", "2407", "1556", "2556", "1653", "2653"}
+CFOP_REVENDA = {"1102", "2102", "1403", "2403"}
+CFOP_OUTROS = {"1910", "2910", "1949", "2949"}
+
+
+def _indicio_cfop(cfop: str) -> str:
+    codigo = _texto(cfop).replace(".", "")
+    if codigo in CFOP_USO_CONSUMO:
+        return "USO E CONSUMO"
+    if codigo in CFOP_REVENDA:
+        return "REVENDA"
+    if codigo in CFOP_OUTROS:
+        return "OUTRAS ENTRADAS - REVISAR"
+    return "SEM CLASSIFICACAO AUTOMATICA"
 
 
 def _texto(v: Any) -> str:
@@ -76,6 +92,28 @@ class PropostaFichaAssistida:
         return "APROVADA MANUALMENTE" if self.regra_id else "PENDENTE DE REVISAO"
 
     @property
+    def indicios_cfop(self) -> set[str]:
+        return {_indicio_cfop(cfop) for cfop in self.cfops_sped} or {
+            "SEM CLASSIFICACAO AUTOMATICA"
+        }
+
+    @property
+    def aviso_finalidade(self) -> str:
+        indicios = self.indicios_cfop
+        if len(indicios) != 1:
+            return "REVISAR FINALIDADE: CFOPs de operacoes distintas"
+        indicio = next(iter(indicios))
+        if indicio in {"OUTRAS ENTRADAS - REVISAR", "SEM CLASSIFICACAO AUTOMATICA"}:
+            return f"REVISAR FINALIDADE: {indicio}"
+        if indicio != self.finalidade:
+            return f"REVISAR FINALIDADE: informada {self.finalidade or '-'}; CFOP indica {indicio}"
+        return "COMPATIVEL COM CFOP (ainda exige revisao)"
+
+    @property
+    def requer_revisao_finalidade(self) -> bool:
+        return self.aviso_finalidade.startswith("REVISAR")
+
+    @property
     def contexto_completo(self) -> bool:
         return bool(
             self.empresa and self.regime and self.operacao and self.finalidade
@@ -98,6 +136,7 @@ class FichaAssistidaSPEDService:
             chave = tuple(_texto(ref.get(campo)) for campo in (
                 "ncm", "codigo_produto", "descricao_sped", "empresa", "regime",
                 "operacao", "finalidade", "uf_origem", "uf_destino", "contribuinte",
+                "cfop_sped",
             ))
             if chave not in grupos:
                 grupos[chave] = PropostaFichaAssistida(
@@ -167,6 +206,39 @@ class FichaAssistidaSPEDService:
                 "Empresa, regime, operacao, finalidade, UFs, contribuinte "
                 "e datas sao obrigatorios para aprovar."
             )
+        finalidade_revisada = _texto(campos.get("finalidade_revisada")).upper()
+        indicios = proposta.indicios_cfop
+        if proposta.requer_revisao_finalidade and not finalidade_revisada:
+            raise ValueError(
+                "A finalidade informada nao corresponde ao CFOP ou exige "
+                "classificacao especifica. Selecione a finalidade revisada "
+                "manualmente antes de aprovar."
+            )
+        if not finalidade_revisada:
+            finalidade_revisada = proposta.finalidade
+        if finalidade_revisada not in {
+            "REVENDA", "USO E CONSUMO", "INSUMO", "INDUSTRIALIZAÇÃO",
+            "ATIVO IMOBILIZADO", "SERVIÇO", "OUTRA",
+        }:
+            raise ValueError("Selecione uma finalidade tributaria valida.")
+        if len(indicios) != 1:
+            raise ValueError(
+                "A proposta contem CFOPs de naturezas distintas. "
+                "Separe as operacoes e revise a finalidade antes de aprovar."
+            )
+        indicio = next(iter(indicios))
+        if indicio in {"USO E CONSUMO", "REVENDA"} and finalidade_revisada != indicio:
+            raise ValueError(
+                f"O CFOP indica {indicio}, mas a finalidade revisada e "
+                f"{finalidade_revisada}. Corrija a classificacao documental "
+                "ou cadastre uma regra individual pela Ficha, apos fundamentar."
+            )
+        justificativa = _texto(campos.get("justificativa_finalidade"))
+        if indicio not in {"USO E CONSUMO", "REVENDA"} and len(justificativa) < 20:
+            raise ValueError(
+                "CFOP de outras entradas/sem classificacao: informe "
+                "justificativa de pelo menos 20 caracteres para a finalidade."
+            )
         fonte = _texto(campos.get("fonte"))
         if len(fonte) < 15:
             raise ValueError(
@@ -211,6 +283,9 @@ class FichaAssistidaSPEDService:
             "Regra assistida revisada individualmente; todos os produtos do "
             f"NCM {proposta.ncm} no contexto declarado. "
             "SPED/XML utilizados somente como evidencia.\n"
+            f"Finalidade revisada: {finalidade_revisada}; "
+            f"CFOP observado: {','.join(sorted(proposta.cfops_sped))}; "
+            f"justificativa: {justificativa or 'CFOP compativel'}\n"
             f"[{MARCADOR_CAMPOS}{','.join(sorted(aprovados))}]\n"
             + obs
         )
@@ -219,7 +294,7 @@ class FichaAssistidaSPEDService:
             "empresa": proposta.empresa,
             "regime": proposta.regime,
             "operacao": proposta.operacao,
-            "finalidade": proposta.finalidade,
+            "finalidade": finalidade_revisada,
             "uf_origem": proposta.uf_origem,
             "uf_destino": proposta.uf_destino,
             "contribuinte": proposta.contribuinte,
@@ -255,7 +330,8 @@ class FichaAssistidaSPEDService:
             "Situacao PIS/Cofins", "Situacao ICMS-ST",
             "Fontes referenciais (NAO aprovadas)",
             "Qtde codigos do mesmo NCM", "Falha consulta", "ID regra aprovada",
-            "Orientacao",
+            "Orientacao", "Indicio de finalidade pelo CFOP",
+            "Conferencia da finalidade",
         ]
         ws.append(colunas)
         for p in propostas:
@@ -269,6 +345,7 @@ class FichaAssistidaSPEDService:
                 p.produtos_no_ncm, "SIM" if p.falha_tecnica else "NAO",
                 p.regra_id or "",
                 "Revisar enquadramento legal e campos. Nunca copiar do XML como regra.",
+                "; ".join(sorted(p.indicios_cfop)), p.aviso_finalidade,
             ])
         for cell in ws[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -284,10 +361,14 @@ class FichaAssistidaSPEDService:
                 if cell.row % 2 == 0:
                     cell.fill = PatternFill("solid", fgColor="F2F6FA")
         for col in range(1, len(colunas) + 1):
-            largura = 42 if col in (4, 19, 23) else 26 if col in (5, 16, 17, 18) else 18
+            largura = 42 if col in (4, 19, 23, 25) else 26 if col in (5, 16, 17, 18, 24) else 18
             ws.column_dimensions[get_column_letter(col)].width = largura
         ws.freeze_panes = "E2"
-        ws.auto_filter.ref = f"A1:W{max(ws.max_row, 2)}"
+        ws.auto_filter.ref = f"A1:Y{max(ws.max_row, 2)}"
+        for linha in ws.iter_rows(min_row=2):
+            if linha[24].value and str(linha[24].value).startswith("REVISAR"):
+                for col in (7, 8, 15, 24, 25):
+                    linha[col - 1].fill = PatternFill("solid", fgColor="FFF0D5")
         ws.sheet_view.showGridLines = False
         destino.parent.mkdir(parents=True, exist_ok=True)
         wb.save(destino)
