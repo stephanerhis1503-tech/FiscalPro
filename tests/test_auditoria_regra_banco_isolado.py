@@ -39,6 +39,24 @@ def ambiente(monkeypatch, tmp_path):
         },
     )
     FichaTributariaRepository.preparar_banco()
+    # A base por produto e criada normalmente pelo bootstrap geral do app;
+    # criar seu esquema minimo SOMENTE no DB de teste temporario.
+    conn = conexao.Banco.conectar()
+    conn.execute("""
+        CREATE TABLE tributacao_base (
+            id INTEGER PRIMARY KEY, empresa TEXT, codigo_produto TEXT,
+            descricao_produto TEXT, ncm TEXT, cest TEXT, cfop TEXT,
+            cst_icms TEXT, icms REAL, icms_st TEXT, fcp REAL,
+            cst_pis TEXT, aliquota_pis REAL,
+            cst_cofins TEXT, aliquota_cofins REAL,
+            cst_ipi TEXT, ipi REAL, ibs REAL, cbs REAL,
+            classificacao TEXT, beneficio TEXT, fonte TEXT,
+            confiabilidade INTEGER, ultima_validacao TEXT,
+            observacoes TEXT, atualizado_em TEXT, ativo INTEGER DEFAULT 1
+        )
+    """)
+    conn.commit()
+    conn.close()
     assert caminho_teste.is_file()
     assert conexao.DB == caminho_teste
     yield caminho_teste, tmp_path
