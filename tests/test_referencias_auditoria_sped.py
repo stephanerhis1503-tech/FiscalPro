@@ -72,3 +72,88 @@ def test_sem_data_nao_invoca_pis_nem_icms(monkeypatch):
     )
     assert "INFORME" in r["pis_status"]
     assert "INFORME" in r["st_status"]
+
+
+def test_uso_consumo_interno_separa_st_mercadoria_de_recolhimento(monkeypatch):
+    """Motor pode enquadrar mercadoria, mas isso nao prova imposto devido."""
+    monkeypatch.setattr(
+        modulo.BaseOficialRepository, "buscar_ncm_oficial",
+        lambda codigo: {"status": "ATIVO", "fonte_codigo": "CATALOGO TESTE"},
+    )
+    monkeypatch.setattr(
+        modulo.BaseOficialRepository, "buscar_tipi", lambda codigo: []
+    )
+    monkeypatch.setattr(
+        modulo.PISCOFINSNacionalService, "analisar",
+        lambda *_a, **_kw: {"status": "REVISAR OPERAÇÃO", "confirmado": False},
+    )
+    monkeypatch.setattr(
+        modulo.ICMSMGLoteIntegracaoService, "analisar",
+        lambda *_a, **_kw: {
+            "st_status": "ICMS-ST/MG CONFIRMADO — MVA ORIGINAL APLICADA",
+            "st_decisao_confirmada": True,
+            "aliquota_operacao_confirmada": True, "cest": "0107600",
+        },
+    )
+    ctx = _ctx()
+    ctx.update({"finalidade": "USO E CONSUMO", "uf_origem": "MG"})
+    r = modulo.ReferenciasAuditoriaSPEDService().consultar_item(
+        "87141000", "TESTE USO CONSUMO", ctx,
+    )
+    assert "MVA ORIGINAL APLICADA" in r["st_enquadramento_mercadoria_status"]
+    assert "REVISAR ST NA NOTA" in r["st_status"]
+    assert r["st_decisao_confirmada"] is False
+    assert "NAO CONCLUIDO" in r["st_recolhimento_status"]
+    assert "ENTRADA INTERNA" in r["st_difal_status"]
+    assert "VEDADO CREDITO" in r["icms_credito_status"]
+    assert "MG->MG" in r["restricao_uso"]
+
+
+def test_uso_consumo_interno_nao_aplica_bloqueio_de_st_difal_interestadual(monkeypatch):
+    monkeypatch.setattr(modulo.BaseOficialRepository, "buscar_ncm_oficial", lambda _n: None)
+    monkeypatch.setattr(modulo.BaseOficialRepository, "buscar_tipi", lambda _n: [])
+    monkeypatch.setattr(modulo.PISCOFINSNacionalService, "analisar", lambda *_a, **_kw: {})
+    monkeypatch.setattr(modulo.ICMSMGLoteIntegracaoService, "analisar", lambda *_a, **_kw: {
+        "st_status": "ICMS-ST/MG APLICÁVEL — RESPONSABILIDADE A REVISAR",
+        "st_decisao_confirmada": False,
+    })
+    ctx = _ctx()
+    ctx["finalidade"] = "USO E CONSUMO"
+    r = modulo.ReferenciasAuditoriaSPEDService().consultar_item(
+        "87141000", "TESTE", ctx
+    )
+    assert "st_difal_status" not in r
+    assert "enquadramento_mercadoria_status" not in r
+
+
+def test_uso_consumo_interno_gera_colunas_especificas_no_excel(tmp_path):
+    from types import SimpleNamespace
+    from openpyxl import load_workbook
+    from src.services.ficha_assistida_sped_service import FichaAssistidaSPEDService
+
+    r = {
+        "ncm": "87141000", "codigo_produto": "PROD-TESTE",
+        "descricao_sped": "MATERIAL DE USO", "empresa": "EMPRESA TESTE",
+        "regime": "LUCRO REAL", "operacao": "ENTRADA",
+        "finalidade": "USO E CONSUMO", "finalidade_informada": "REVENDA",
+        "finalidade_status": "INDICIO_CFOP", "uf_origem": "MG", "uf_destino": "MG",
+        "contribuinte": "CONTRIBUINTE", "data_operacao": "2026-10-12",
+        "cfop_sped": "1556", "st_status": "REVISAR ST NA NOTA",
+        "st_enquadramento_mercadoria_status": "ST ORIGINAL DO MOTOR",
+        "st_recolhimento_status": "NAO CONCLUIDO",
+        "st_difal_status": "NAO SE APLICA ENTRADA INTERNA",
+        "icms_credito_status": "VEDADO CREDITO - REGRA GERAL",
+    }
+    propostas = FichaAssistidaSPEDService.preparar(
+        SimpleNamespace(referencias_fiscais=[r])
+    )
+    ws = load_workbook(
+        FichaAssistidaSPEDService.exportar(propostas, tmp_path / "teste_st.xlsx"),
+        read_only=True,
+    ).active
+    assert ws["H2"].value == "USO E CONSUMO"
+    assert ws["R2"].value == "REVISAR ST NA NOTA"
+    assert ws["AC2"].value == "ST ORIGINAL DO MOTOR"
+    assert ws["AD2"].value == "NAO CONCLUIDO"
+    assert ws["AE2"].value == "NAO SE APLICA ENTRADA INTERNA"
+    assert ws["AF2"].value == "VEDADO CREDITO - REGRA GERAL"
