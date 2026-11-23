@@ -67,6 +67,8 @@ def _iso(v: Any) -> str:
 def _conclusao_st_xml(status: str) -> tuple[str, str]:
     """Triagem documental, nunca conclusao de imposto a recolher."""
     texto = _texto(status).upper()
+    if texto.startswith("INFORMATIVO - CFOP 5929"):
+        return ("6 - INFORMATIVO", "NF-e vinculada a cupom: ST nao exigida novamente apenas pela falta de tag; conferir documento de origem.")
     if texto.startswith("DIVERGENCIA"):
         return ("1 - PRIORIDADE", "Rever vinculo do item C170 com a NF-e: produto e NCM divergentes.")
     if "ST DESTACADA" in texto:
