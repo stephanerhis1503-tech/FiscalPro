@@ -86,6 +86,9 @@ class PropostaFichaAssistida:
     falha_tecnica: bool = False
     produtos_no_ncm: int = 0
     regra_id: int | None = None
+    finalidade_informada: str = ""
+    finalidade_status: str = ""
+    finalidade_motivos: set[str] = field(default_factory=set)
 
     @property
     def situacao(self) -> str:
@@ -105,13 +108,25 @@ class PropostaFichaAssistida:
         indicio = next(iter(indicios))
         if indicio in {"OUTRAS ENTRADAS - REVISAR", "SEM CLASSIFICACAO AUTOMATICA"}:
             return f"REVISAR FINALIDADE: {indicio}"
+        if self.finalidade_status == "REVISAR":
+            return "REVISAR FINALIDADE: CFOP sem classificação segura"
+        if self.finalidade_status == "INDICIO_CFOP" and (
+            self.finalidade_informada != self.finalidade
+        ):
+            return (
+                f"REVISAR FINALIDADE: padrao {self.finalidade_informada or '-'}; "
+                f"CFOP indica {self.finalidade or indicio}"
+            )
         if indicio != self.finalidade:
             return f"REVISAR FINALIDADE: informada {self.finalidade or '-'}; CFOP indica {indicio}"
-        return "COMPATIVEL COM CFOP (ainda exige revisao)"
+        return "INDICIO PELO CFOP (ainda exige revisao fiscal)"
 
     @property
     def requer_revisao_finalidade(self) -> bool:
-        return self.aviso_finalidade.startswith("REVISAR")
+        return (
+            self.aviso_finalidade.startswith("REVISAR")
+            or self.finalidade_status == "INDICIO_CFOP"
+        )
 
     @property
     def contexto_completo(self) -> bool:
@@ -145,6 +160,8 @@ class FichaAssistidaSPEDService:
                     empresa=chave[3], regime=chave[4], operacao=chave[5],
                     finalidade=chave[6], uf_origem=chave[7],
                     uf_destino=chave[8], contribuinte=chave[9],
+                    finalidade_informada=_texto(ref.get("finalidade_informada")),
+                    finalidade_status=_texto(ref.get("finalidade_status")),
                 )
             proposta = grupos[chave]
             proposta.itens += 1
@@ -171,6 +188,8 @@ class FichaAssistidaSPEDService:
                 if _texto(ref.get(campo)):
                     destino.add(_texto(ref[campo]))
             proposta.falha_tecnica |= bool(ref.get("falha_tecnica"))
+            if _texto(ref.get("finalidade_motivo")):
+                proposta.finalidade_motivos.add(_texto(ref["finalidade_motivo"]))
 
         grupos_por_ncm: dict[str, set[str]] = {}
         for proposta in grupos.values():
@@ -332,6 +351,8 @@ class FichaAssistidaSPEDService:
             "Qtde codigos do mesmo NCM", "Falha consulta", "ID regra aprovada",
             "Orientacao", "Indicio de finalidade pelo CFOP",
             "Conferencia da finalidade",
+            "Finalidade padrão da tela", "Status da classificação",
+            "Explicação da classificação",
         ]
         ws.append(colunas)
         for p in propostas:
@@ -346,6 +367,8 @@ class FichaAssistidaSPEDService:
                 p.regra_id or "",
                 "Revisar enquadramento legal e campos. Nunca copiar do XML como regra.",
                 "; ".join(sorted(p.indicios_cfop)), p.aviso_finalidade,
+                p.finalidade_informada, p.finalidade_status,
+                "; ".join(sorted(p.finalidade_motivos)),
             ])
         for cell in ws[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -361,10 +384,10 @@ class FichaAssistidaSPEDService:
                 if cell.row % 2 == 0:
                     cell.fill = PatternFill("solid", fgColor="F2F6FA")
         for col in range(1, len(colunas) + 1):
-            largura = 42 if col in (4, 19, 23, 25) else 26 if col in (5, 16, 17, 18, 24) else 18
+            largura = 42 if col in (4, 19, 23, 25, 28) else 26 if col in (5, 16, 17, 18, 24, 26) else 18
             ws.column_dimensions[get_column_letter(col)].width = largura
         ws.freeze_panes = "E2"
-        ws.auto_filter.ref = f"A1:Y{max(ws.max_row, 2)}"
+        ws.auto_filter.ref = f"A1:AB{max(ws.max_row, 2)}"
         for linha in ws.iter_rows(min_row=2):
             if linha[24].value and str(linha[24].value).startswith("REVISAR"):
                 for col in (7, 8, 15, 24, 25):
