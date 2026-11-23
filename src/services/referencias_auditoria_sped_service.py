@@ -103,6 +103,17 @@ class ReferenciasAuditoriaSPEDService:
         except ValueError:
             data_valida = False
 
+        if operacao == "ENTRADA" and not finalidade:
+            # CFOP sem natureza confirmavel: consultar apenas NCM/TIPI.
+            # Sem finalidade não se conclui PIS/COFINS, ICMS nem ST.
+            referencia["pis_status"] = "REVISAR FINALIDADE ANTES DE PIS/COFINS"
+            referencia["icms_status"] = "REVISAR FINALIDADE ANTES DE ICMS"
+            referencia["st_status"] = "REVISAR FINALIDADE ANTES DE ICMS-ST"
+            referencia["restricao_uso"] = (
+                "Finalidade de entrada nao classificada pelo CFOP. "
+                "Sem decisao de CST, credito ou ST; exige revisao documental."
+            )
+            return referencia
         if not regime or not operacao or not data_valida:
             referencia["pis_status"] = "REVISAR: INFORME REGIME/OPERACAO/DATA"
         else:
