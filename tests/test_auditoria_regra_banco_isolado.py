@@ -197,3 +197,55 @@ def test_divergencia_sintetica_so_gera_proposta_desmarcada(ambiente):
     assert all(not proposta.selecionada for proposta in preparadas.propostas)
     assert linhas == copia
     # Nenhuma chamada a aplicar() e feita no teste.
+
+
+def test_entrada_uso_consumo_corrige_contexto_antes_de_consultar_motores(ambiente, monkeypatch):
+    from src.services.referencias_auditoria_sped_service import (
+        ReferenciasAuditoriaSPEDService,
+    )
+    contextos = []
+
+    def consultar(self, ncm, descricao, contexto, ex_tipi=""):
+        contextos.append(dict(contexto))
+        return {"ncm_status": "CONSULTA SINTETICA", "falha_tecnica": False}
+
+    monkeypatch.setattr(ReferenciasAuditoriaSPEDService, "consultar_item", consultar)
+    FichaTributariaRepository.salvar_tributacao_atual(
+        regra_ficticia(finalidade="USO E CONSUMO", cfop="1556"),
+        encerrar_anterior=False,
+    )
+    resultado = executar(sped_ficticio(cfop="1556"))
+    assert resultado.itens_com_regra == 1
+    assert resultado.itens_sem_regra == 0
+    assert contextos[0]["finalidade"] == "USO E CONSUMO"
+    ref = resultado.referencias_fiscais[0]
+    assert ref["finalidade_informada"] == "REVENDA"
+    assert ref["finalidade"] == "USO E CONSUMO"
+    assert ref["finalidade_status"] == "INDICIO_CFOP"
+
+
+def test_cfop_outras_entradas_nao_aplica_regra_generica(ambiente):
+    FichaTributariaRepository.salvar_tributacao_atual(
+        regra_ficticia(finalidade="TODOS", cfop="1949"),
+        encerrar_anterior=False,
+    )
+    resultado = executar(sped_ficticio(cfop="1949"))
+    assert resultado.itens_com_regra == 0
+    assert resultado.itens_sem_regra == 1
+    ref = resultado.referencias_fiscais[0]
+    assert ref["finalidade"] == ""
+    assert ref["finalidade_status"] == "REVISAR"
+    assert any(
+        a.origem == "FINALIDADE"
+        for a in resultado.apontamentos
+    )
+
+
+def test_entrada_revenda_preserva_contexto_e_evidencia(ambiente):
+    FichaTributariaRepository.salvar_tributacao_atual(
+        regra_ficticia(), encerrar_anterior=False,
+    )
+    resultado = executar(sped_ficticio(cfop="2102"))
+    assert resultado.itens_com_regra == 1
+    assert resultado.referencias_fiscais[0]["finalidade"] == "REVENDA"
+    assert resultado.referencias_fiscais[0]["finalidade_status"] == "INDICIO_CFOP"
