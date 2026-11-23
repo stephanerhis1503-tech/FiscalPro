@@ -117,3 +117,35 @@ def test_excel_mantem_item_por_nota_com_status(tmp_path):
     assert detalhes["M2"].value != detalhes["M3"].value
     assert detalhes["X2"].value == "12.30"
     assert detalhes["X3"].value == "0"
+
+
+def test_cfop_5929_vinculado_a_cupom_nao_acusa_falta_de_st():
+    from src.services.ficha_assistida_sped_service import _conclusao_st_xml
+    sem_tags = conferir_item_st_xml(
+        CTX, doc(), item(cfop="5929"), xml_importado=True
+    )
+    assert sem_tags["st_xml_status"].startswith("INFORMATIVO - CFOP 5929")
+    assert "cupom" in sem_tags["st_xml_acao"].lower()
+    assert _conclusao_st_xml(sem_tags["st_xml_status"])[0] == "6 - INFORMATIVO"
+
+
+def test_cfop_5929_preserva_st_retida_sem_gerar_alerta():
+    r = conferir_item_st_xml(
+        CTX, doc(), item(cfop="5929", valores_st_xml={"vICMSSTRet": "33.09"}),
+        xml_importado=True,
+    )
+    assert r["st_xml_status"].startswith("INFORMATIVO - CFOP 5929")
+    assert r["st_xml_vICMSSTRet"] == "33.09"
+    assert "novo recolhimento" in r["st_xml_acao"].lower()
+
+
+def test_cfop_5929_nao_oculta_divergencia_ncm_nem_st_destacada():
+    ncm = conferir_item_st_xml(
+        CTX, doc(), item(cfop="5929", ncm="83011000"), xml_importado=True
+    )
+    destaque = conferir_item_st_xml(
+        CTX, doc(), item(cfop="5929", valores_st_xml={"vICMSST": "10.00"}),
+        xml_importado=True,
+    )
+    assert ncm["st_xml_status"].startswith("DIVERGENCIA")
+    assert destaque["st_xml_status"].startswith("REVISAR")
