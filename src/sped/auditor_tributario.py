@@ -779,6 +779,9 @@ class AuditorTributarioSPED:
                         "codigo_produto": str(item.codigo or ""),
                         "cfop_sped": str(item.cfop or ""),
                         "descricao_sped": str(descricao_consulta or ""),
+                        "empresa": contexto_nota.get("empresa", ""),
+                        "contribuinte": contexto_nota.get("contribuinte", ""),
+                        "finalidade": contexto_nota.get("finalidade", ""),
                     })
                     resultado.referencias_fiscais.append(referencia)
                     if referencia.get("ncm_status") == "NAO LOCALIZADO NA BASE INSTALADA":
@@ -1300,7 +1303,19 @@ class AuditorTributarioSPED:
         confiavel: bool = True,
     ) -> None:
         regra_id = str(regra.get("id") or "")
+        # Regras da Ficha Assistida possuem lista explicita de campos
+        # conferidos. Repositorio antigo normaliza numericos em branco
+        # como 0.0: NAO comparar campos omitidos como alíquota zero.
+        marcador = "FISCALPRO_ASSISTIDA_CAMPOS:"
+        observacoes = _texto(regra.get("observacoes"))
+        campos_aprovados = None
+        if marcador in observacoes:
+            campos_aprovados = set(
+                observacoes.split(marcador, 1)[1].split("]", 1)[0].split(",")
+            )
         for nome, atributo_item, campo_regra, tipo in self.CAMPOS_REGRA:
+            if campos_aprovados is not None and campo_regra not in campos_aprovados:
+                continue
             atual = getattr(item, atributo_item, "")
             esperado = regra.get(campo_regra)
             if self._divergente(atual, esperado, tipo):
@@ -1312,7 +1327,11 @@ class AuditorTributarioSPED:
                     "Confira a operação e a base legal. Depois corrija o SPED ou ajuste a regra, conforme o caso.",
                 )
         cest_esperado = regra.get("cest")
-        if cest_esperado and self._divergente(cadastro.cest, cest_esperado, "texto"):
+        if (
+            cest_esperado
+            and (campos_aprovados is None or "cest" in campos_aprovados)
+            and self._divergente(cadastro.cest, cest_esperado, "texto")
+        ):
             self._adicionar(
                 resultado, "ERRO" if confiavel else "AVISO", "FICHA TRIBUTÁRIA", linha, nota, item, "CEST",
                 cadastro.cest, _digitos(cest_esperado), regra_id, aderencia,
@@ -1321,7 +1340,7 @@ class AuditorTributarioSPED:
             )
 
         st_esperado = _texto(regra.get("icms_st")).upper()
-        if st_esperado in {"SIM", "S", "1", "ST", "NÃO", "NAO", "N", "0"}:
+        if (campos_aprovados is None or "icms_st" in campos_aprovados) and st_esperado in {"SIM", "S", "1", "ST", "NÃO", "NAO", "N", "0"}:
             tem_st = item.valor_st > 0 or item.base_st > 0
             esperado_sim = st_esperado in {"SIM", "S", "1", "ST"}
             if tem_st != esperado_sim:
