@@ -21,6 +21,7 @@ from src.modelos.registro_0200 import Registro0200
 from src.modelos.registro_c170 import RegistroC170
 from src.parecer.motor_parecer import MotorParecer
 from src.repositorios.ficha_tributaria_repository import FichaTributariaRepository
+from src.services.finalidade_cfop_service import classificar_finalidade_entrada
 
 ProgressoCallback = Callable[[int, str], None]
 
@@ -702,6 +703,25 @@ class AuditorTributarioSPED:
             for numero_linha, linha_c170 in nota["itens"]:
                 processados += 1
                 item = RegistroC170(linha_c170)
+                # A finalidade padrao do formulario nao deve ser reutilizada
+                # sem exame em todas as entradas da EFD.
+                contexto_item = dict(contexto_nota)
+                classificacao_cfop = (
+                    classificar_finalidade_entrada(item.cfop)
+                    if entrada else None
+                )
+                if classificacao_cfop is not None:
+                    contexto_item["finalidade"] = classificacao_cfop.finalidade
+                    if classificacao_cfop.inconclusiva:
+                        self._adicionar(
+                            resultado, "AVISO", "FINALIDADE", numero_linha,
+                            nota, item, "Finalidade da operação",
+                            _texto(contexto_nota.get("finalidade")) or "Não informada",
+                            "REVISAR", "", 0,
+                            classificacao_cfop.motivo,
+                            "Classifique a natureza da entrada antes de concluir "
+                            "PIS/COFINS, ICMS-ST, crédito ou regra da Ficha.",
+                        )
                 resultado.total_itens += 1
                 cadastro = cadastros.get(item.codigo)
                 if cadastro is None:
@@ -768,7 +788,7 @@ class AuditorTributarioSPED:
                     )
                     referencia = consulta_referencial.consultar_item(
                         ncm=ncm, descricao=descricao_consulta,
-                        contexto=contexto_nota,
+                        contexto=contexto_item,
                         ex_tipi=cadastro.ex_ipi if cadastro else "",
                     )
                     referencia.update({
@@ -779,9 +799,17 @@ class AuditorTributarioSPED:
                         "codigo_produto": str(item.codigo or ""),
                         "cfop_sped": str(item.cfop or ""),
                         "descricao_sped": str(descricao_consulta or ""),
-                        "empresa": contexto_nota.get("empresa", ""),
-                        "contribuinte": contexto_nota.get("contribuinte", ""),
-                        "finalidade": contexto_nota.get("finalidade", ""),
+                        "empresa": contexto_item.get("empresa", ""),
+                        "contribuinte": contexto_item.get("contribuinte", ""),
+                        "finalidade": contexto_item.get("finalidade", ""),
+                        "finalidade_informada": contexto_nota.get("finalidade", ""),
+                        "finalidade_status": (
+                            classificacao_cfop.status if classificacao_cfop
+                            else "CONTEXTO PADRAO"
+                        ),
+                        "finalidade_motivo": (
+                            classificacao_cfop.motivo if classificacao_cfop else ""
+                        ),
                     })
                     resultado.referencias_fiscais.append(referencia)
                     if referencia.get("ncm_status") == "NAO LOCALIZADO NA BASE INSTALADA":
@@ -792,7 +820,7 @@ class AuditorTributarioSPED:
                         resultado.itens_ncm_oficial_localizados += 1
                     if referencia.get("falha_tecnica"):
                         resultado.consultas_fiscais_com_falha += 1
-                    contexto_motor = MotorParecer._contexto_normalizado(contexto_nota)
+                    contexto_motor = MotorParecer._contexto_normalizado(contexto_item)
                     chave_selecao = (
                         ncm,
                         _texto(item.codigo).upper(),
@@ -806,9 +834,13 @@ class AuditorTributarioSPED:
                         contexto_motor.get("data_operacao", ""),
                     )
                     if chave_selecao not in cache_selecao:
-                        candidatas = list(regras_contexto.get(ncm, []))
-                        candidatas.extend(regras_produto.get((ncm, _texto(item.codigo).upper()), []))
-                        candidatas.extend(regras_produto.get((ncm, ""), []))
+                        candidatas = (
+                            [] if classificacao_cfop and classificacao_cfop.inconclusiva
+                            else list(regras_contexto.get(ncm, []))
+                        )
+                        if not (classificacao_cfop and classificacao_cfop.inconclusiva):
+                            candidatas.extend(regras_produto.get((ncm, _texto(item.codigo).upper()), []))
+                            candidatas.extend(regras_produto.get((ncm, ""), []))
                         cache_selecao[chave_selecao] = MotorParecer._selecionar_regra(
                             candidatas, contexto_motor
                         )
@@ -859,6 +891,7 @@ class AuditorTributarioSPED:
                             contexto_motor.get("uf_origem", ""),
                             contexto_motor.get("uf_destino", ""),
                             contexto_motor.get("regime", ""),
+                            contexto_motor.get("finalidade", ""),
                         )
                         if chave_sem_regra not in sem_regra_emitidos:
                             self._adicionar(
