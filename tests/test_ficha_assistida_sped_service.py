@@ -125,6 +125,76 @@ def test_exportar_planilha_nao_sugere_tributacao_e_escapa_formulas(tmp_path):
     assert "CST" not in " ".join(str(c.value) for c in ws[1])
 
 
+def test_cfop_uso_consumo_bloqueia_finalidade_padrao(monkeypatch):
+    p = modulo.FichaAssistidaSPEDService.preparar(
+        SimpleNamespace(referencias_fiscais=[
+            _ref(cfop_sped="1556", codigo_produto="HIGIENE", descricao_sped="PAPEL HIGIENICO"),
+        ])
+    )[0]
+    assert p.requer_revisao_finalidade
+    assert "USO E CONSUMO" in p.aviso_finalidade
+    monkeypatch.setattr(
+        modulo.FichaTributariaRepository,
+        "salvar_tributacao_atual",
+        lambda *_a, **_k: pytest.fail("Aprovacao incorreta"),
+    )
+    with pytest.raises(ValueError, match="finalidade"):
+        modulo.FichaAssistidaSPEDService.aprovar(
+            p, _campos(), confirmar_revisao=True, confirmar_abrangencia_ncm=True,
+        )
+    with pytest.raises(ValueError, match="indica USO E CONSUMO"):
+        modulo.FichaAssistidaSPEDService.aprovar(
+            p, _campos(finalidade_revisada="REVENDA"),
+            confirmar_revisao=True, confirmar_abrangencia_ncm=True,
+        )
+
+
+def test_uso_consumo_revisado_salva_finalidade_explicita(monkeypatch):
+    p = modulo.FichaAssistidaSPEDService.preparar(
+        SimpleNamespace(referencias_fiscais=[
+            _ref(cfop_sped="1407", codigo_produto="LAVAGEM"),
+        ])
+    )[0]
+    aprovados = []
+    monkeypatch.setattr(
+        modulo.FichaTributariaRepository,
+        "salvar_tributacao_atual",
+        lambda dados, **_k: aprovados.append(dados) or 19,
+    )
+    modulo.FichaAssistidaSPEDService.aprovar(
+        p, _campos(finalidade_revisada="USO E CONSUMO"),
+        confirmar_revisao=True, confirmar_abrangencia_ncm=True,
+    )
+    assert aprovados[0]["finalidade"] == "USO E CONSUMO"
+    assert "CFOP observado: 1407" in aprovados[0]["observacoes"]
+
+
+def test_outras_entradas_exige_justificativa():
+    p = modulo.FichaAssistidaSPEDService.preparar(
+        SimpleNamespace(referencias_fiscais=[
+            _ref(cfop_sped="1949"),
+        ])
+    )[0]
+    assert p.requer_revisao_finalidade
+    with pytest.raises(ValueError, match="justificativa"):
+        modulo.FichaAssistidaSPEDService.aprovar(
+            p, _campos(finalidade_revisada="OUTRA"),
+            confirmar_revisao=True, confirmar_abrangencia_ncm=True,
+        )
+
+
+def test_cfops_distintos_mesmo_produto_geram_propostas_separadas():
+    refs = [
+        _ref(cfop_sped="1403", data_operacao="2026-10-01"),
+        _ref(cfop_sped="1949", data_operacao="2026-10-03"),
+    ]
+    propostas = modulo.FichaAssistidaSPEDService.preparar(
+        SimpleNamespace(referencias_fiscais=refs)
+    )
+    assert len(propostas) == 2
+    assert {tuple(p.cfops_sped) for p in propostas} == {("1403",), ("1949",)}
+
+
 def test_contexto_sem_data_nao_permite_aprovacao():
     p = _proposta()
     p.primeira_data = ""
