@@ -182,7 +182,7 @@ def test_divergencia_sintetica_so_gera_proposta_desmarcada(ambiente):
     FichaTributariaRepository.salvar_tributacao_atual(
         regra_ficticia(), encerrar_anterior=False,
     )
-    linhas = sped_ficticio(cfop="2101")
+    linhas = sped_ficticio(cfop="2403")  # Outro CFOP de revenda, preservando o contexto.
     copia = list(linhas)
     auditoria = executar(linhas)
     assert auditoria.itens_com_regra == 1
