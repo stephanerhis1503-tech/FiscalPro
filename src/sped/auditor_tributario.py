@@ -22,6 +22,7 @@ from src.modelos.registro_c170 import RegistroC170
 from src.parecer.motor_parecer import MotorParecer
 from src.repositorios.ficha_tributaria_repository import FichaTributariaRepository
 from src.services.finalidade_cfop_service import classificar_finalidade_entrada
+from src.services.conferencia_st_xml_service import CAMPOS_ST_XML, conferir_item_st_xml
 
 ProgressoCallback = Callable[[int, str], None]
 
@@ -133,6 +134,8 @@ class ItemXMLNFe:
     valor_fcp_destino: float = 0.0
     valor_icms_destino: float = 0.0
     valor_icms_remetente: float = 0.0
+    # Valores exatamente observados no item: vazio/ausente nao equivale a zero.
+    valores_st_xml: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -459,6 +462,11 @@ class ImportadorXMLNFe:
                     valor_fcp_destino=_numero(_valor_filho(icms_uf_dest, "vFCPUFDest")),
                     valor_icms_destino=_numero(_valor_filho(icms_uf_dest, "vICMSUFDest")),
                     valor_icms_remetente=_numero(_valor_filho(icms_uf_dest, "vICMSUFRemet")),
+                    valores_st_xml={
+                        campo: _valor_descendente(self._grupo_imposto(imposto, "ICMS"), campo)
+                        for campo in CAMPOS_ST_XML
+                        if _descendente(self._grupo_imposto(imposto, "ICMS"), campo) is not None
+                    },
                 )
             )
         return documento
@@ -811,6 +819,15 @@ class AuditorTributarioSPED:
                             classificacao_cfop.motivo if classificacao_cfop else ""
                         ),
                     })
+                    referencia.update(conferir_item_st_xml(
+                        referencia, documento_xml=documento_xml,
+                        item_xml=item_xml, vinculo_duvidoso=(
+                            bool(item_xml) and _texto(item.codigo).upper() != _texto(item_xml.codigo).upper()
+                            and bool(item.ncm and item_xml.ncm)
+                            and _digitos(item.ncm) != _digitos(item_xml.ncm)
+                        ),
+                        xml_importado=importacao_xml is not None,
+                    ))
                     resultado.referencias_fiscais.append(referencia)
                     if referencia.get("ncm_status") == "NAO LOCALIZADO NA BASE INSTALADA":
                         resultado.itens_ncm_nao_localizados += 1
