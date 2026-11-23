@@ -157,7 +157,7 @@ def test_c170_regra_ficticia_aparece_so_apos_cadastro(ambiente):
         {"uf_origem": "RJ"},
         {"uf_destino": "SP"},
         {"empresa": "OUTRA EMPRESA LABORATORIO LTDA"},
-        {"vigencia_inicio": "01/11/2026"},
+        {"vigencia_inicio": "01/11/2026", "vigencia_fim": "30/11/2026"},
         {"vigencia_fim": "30/09/2026", "vigencia_inicio": "01/09/2026"},
         {"status": "RASCUNHO"},
     ],
