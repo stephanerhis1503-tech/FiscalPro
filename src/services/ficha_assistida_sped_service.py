@@ -18,6 +18,7 @@ from openpyxl.utils import get_column_letter
 
 from src.repositorios.ficha_tributaria_repository import FichaTributariaRepository
 
+CAMPOS_XML_ST_PLANILHA = ("vBCST", "vICMSST", "vBCSTRet", "vICMSSTRet", "vFCPST", "vFCPSTRet")
 MARCADOR_CAMPOS = "FISCALPRO_ASSISTIDA_CAMPOS:"
 CAMPOS_MANUAIS = (
     "cfop", "cest", "cst_icms", "icms", "icms_st", "fcp",
@@ -87,6 +88,9 @@ class PropostaFichaAssistida:
     st_recolhimentos: set[str] = field(default_factory=set)
     st_difal: set[str] = field(default_factory=set)
     icms_creditos: set[str] = field(default_factory=set)
+    st_xml_status: set[str] = field(default_factory=set)
+    st_xml_acoes: set[str] = field(default_factory=set)
+    evidencias_xml_st: list[dict[str, str]] = field(default_factory=list)
     falha_tecnica: bool = False
     produtos_no_ncm: int = 0
     regra_id: int | None = None
@@ -199,6 +203,19 @@ class FichaAssistidaSPEDService:
             ):
                 if _texto(ref.get(nome)):
                     destino.add(_texto(ref[nome]))
+            if _texto(ref.get("st_xml_status")):
+                proposta.st_xml_status.add(_texto(ref["st_xml_status"]))
+                proposta.st_xml_acoes.add(_texto(ref.get("st_xml_acao")))
+                from src.services.conferencia_st_xml_service import CHAVES_EVIDENCIA
+                proposta.evidencias_xml_st.append({
+                    **{k: _texto(ref.get(k)) for k in CHAVES_EVIDENCIA},
+                    "chave": _texto(ref.get("chave")),
+                    "nota": _texto(ref.get("nota")),
+                    "item": _texto(ref.get("item")),
+                    "codigo_sped": _texto(ref.get("codigo_produto")),
+                    "ncm_sped": ncm,
+                    "cfop_sped": _texto(ref.get("cfop_sped")),
+                })
             proposta.falha_tecnica |= bool(ref.get("falha_tecnica"))
             if _texto(ref.get("finalidade_motivo")):
                 proposta.finalidade_motivos.add(_texto(ref["finalidade_motivo"]))
@@ -369,6 +386,8 @@ class FichaAssistidaSPEDService:
             "ST - responsabilidade/recolhimento",
             "ST-DIFAL na entrada",
             "Crédito ICMS - orientação",
+            "Conferencia documental ST no XML",
+            "Providencia da conferencia ST",
         ]
         ws.append(colunas)
         for p in propostas:
@@ -389,6 +408,8 @@ class FichaAssistidaSPEDService:
                 "; ".join(sorted(p.st_recolhimentos)),
                 "; ".join(sorted(p.st_difal)),
                 "; ".join(sorted(p.icms_creditos)),
+                "; ".join(sorted(p.st_xml_status)),
+                "; ".join(sorted(p.st_xml_acoes)),
             ])
         for cell in ws[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -404,15 +425,63 @@ class FichaAssistidaSPEDService:
                 if cell.row % 2 == 0:
                     cell.fill = PatternFill("solid", fgColor="F2F6FA")
         for col in range(1, len(colunas) + 1):
-            largura = 48 if col in (4, 19, 23, 25, 28, 29, 30, 31, 32) else 26 if col in (5, 16, 17, 18, 24, 26) else 18
+            largura = 48 if col in (4, 19, 23, 25, 28, 29, 30, 31, 32, 33, 34) else 26 if col in (5, 16, 17, 18, 24, 26) else 18
             ws.column_dimensions[get_column_letter(col)].width = largura
         ws.freeze_panes = "E2"
-        ws.auto_filter.ref = f"A1:AF{max(ws.max_row, 2)}"
+        ws.auto_filter.ref = f"A1:AH{max(ws.max_row, 2)}"
         for linha in ws.iter_rows(min_row=2):
             if linha[24].value and str(linha[24].value).startswith("REVISAR"):
                 for col in (7, 8, 15, 24, 25):
                     linha[col - 1].fill = PatternFill("solid", fgColor="FFF0D5")
         ws.sheet_view.showGridLines = False
+        # Cada item/documento permanece separado: sem conclusao por NCM.
+        from src.services.conferencia_st_xml_service import CHAVES_EVIDENCIA
+        evidencias = wb.create_sheet("Conferencia ST XML")
+        colunas_xml = [
+            "Empresa", "Regime", "NCM SPED", "Produto SPED", "Descricao",
+            "Finalidade", "UF origem", "UF destino", "Chave NF-e",
+            "Numero NF-e", "nItem C170", "CFOP C170",
+            "Status da conferencia", "Providencia", "Responsabilidade",
+            "Arquivo XML", "NCM XML", "CEST XML", "CFOP XML",
+            "CST/CSOSN XML", "Codigo XML", "nItem XML",
+            *CAMPOS_XML_ST_PLANILHA,
+        ]
+        evidencias.append(colunas_xml)
+        for p in propostas:
+            for ev in p.evidencias_xml_st:
+                evidencias.append([
+                    p.empresa, p.regime, p.ncm, p.codigo_produto,
+                    p.descricao, p.finalidade, p.uf_origem, p.uf_destino,
+                    ev["chave"], ev["nota"], ev["item"], ev["cfop_sped"],
+                    ev["st_xml_status"], ev["st_xml_acao"],
+                    ev["st_xml_responsabilidade"], ev["st_xml_arquivo"],
+                    ev["st_xml_ncm"], ev["st_xml_cest"], ev["st_xml_cfop"],
+                    ev["st_xml_cst"], ev["st_xml_codigo"], ev["st_xml_item"],
+                    *(ev["st_xml_" + campo] for campo in CAMPOS_XML_ST_PLANILHA),
+                ])
+        for cell in evidencias[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="214C74")
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+        evidencias.row_dimensions[1].height = 36
+        for row in evidencias.iter_rows(min_row=2):
+            for cell in row:
+                if isinstance(cell.value, str):
+                    cell.value = _seguro_excel(cell.value)
+                    cell.number_format = "@"
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+                if cell.row % 2 == 0:
+                    cell.fill = PatternFill("solid", fgColor="F2F6FA")
+        for col in range(1, len(colunas_xml) + 1):
+            evidencias.column_dimensions[get_column_letter(col)].width = (
+                64 if col in (13, 14, 15, 16)
+                else 48 if col == 5
+                else 46 if col == 9
+                else 22
+            )
+        evidencias.auto_filter.ref = f"A1:AB{max(evidencias.max_row, 2)}"
+        evidencias.freeze_panes = "M2"
+        evidencias.sheet_view.showGridLines = False
         destino.parent.mkdir(parents=True, exist_ok=True)
         wb.save(destino)
         return destino
