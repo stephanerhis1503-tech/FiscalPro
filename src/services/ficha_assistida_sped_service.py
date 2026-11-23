@@ -83,6 +83,10 @@ class PropostaFichaAssistida:
     fontes_referenciais: set[str] = field(default_factory=set)
     st_status: set[str] = field(default_factory=set)
     pis_status: set[str] = field(default_factory=set)
+    st_enquadramentos: set[str] = field(default_factory=set)
+    st_recolhimentos: set[str] = field(default_factory=set)
+    st_difal: set[str] = field(default_factory=set)
+    icms_creditos: set[str] = field(default_factory=set)
     falha_tecnica: bool = False
     produtos_no_ncm: int = 0
     regra_id: int | None = None
@@ -187,6 +191,14 @@ class FichaAssistidaSPEDService:
             ):
                 if _texto(ref.get(campo)):
                     destino.add(_texto(ref[campo]))
+            for nome, destino in (
+                ("st_enquadramento_mercadoria_status", proposta.st_enquadramentos),
+                ("st_recolhimento_status", proposta.st_recolhimentos),
+                ("st_difal_status", proposta.st_difal),
+                ("icms_credito_status", proposta.icms_creditos),
+            ):
+                if _texto(ref.get(nome)):
+                    destino.add(_texto(ref[nome]))
             proposta.falha_tecnica |= bool(ref.get("falha_tecnica"))
             if _texto(ref.get("finalidade_motivo")):
                 proposta.finalidade_motivos.add(_texto(ref["finalidade_motivo"]))
@@ -353,6 +365,10 @@ class FichaAssistidaSPEDService:
             "Conferencia da finalidade",
             "Finalidade padrão da tela", "Status da classificação",
             "Explicação da classificação",
+            "ST - enquadramento original da mercadoria",
+            "ST - responsabilidade/recolhimento",
+            "ST-DIFAL na entrada",
+            "Crédito ICMS - orientação",
         ]
         ws.append(colunas)
         for p in propostas:
@@ -369,6 +385,10 @@ class FichaAssistidaSPEDService:
                 "; ".join(sorted(p.indicios_cfop)), p.aviso_finalidade,
                 p.finalidade_informada, p.finalidade_status,
                 "; ".join(sorted(p.finalidade_motivos)),
+                "; ".join(sorted(p.st_enquadramentos)),
+                "; ".join(sorted(p.st_recolhimentos)),
+                "; ".join(sorted(p.st_difal)),
+                "; ".join(sorted(p.icms_creditos)),
             ])
         for cell in ws[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -384,10 +404,10 @@ class FichaAssistidaSPEDService:
                 if cell.row % 2 == 0:
                     cell.fill = PatternFill("solid", fgColor="F2F6FA")
         for col in range(1, len(colunas) + 1):
-            largura = 42 if col in (4, 19, 23, 25, 28) else 26 if col in (5, 16, 17, 18, 24, 26) else 18
+            largura = 48 if col in (4, 19, 23, 25, 28, 29, 30, 31, 32) else 26 if col in (5, 16, 17, 18, 24, 26) else 18
             ws.column_dimensions[get_column_letter(col)].width = largura
         ws.freeze_panes = "E2"
-        ws.auto_filter.ref = f"A1:AB{max(ws.max_row, 2)}"
+        ws.auto_filter.ref = f"A1:AF{max(ws.max_row, 2)}"
         for linha in ws.iter_rows(min_row=2):
             if linha[24].value and str(linha[24].value).startswith("REVISAR"):
                 for col in (7, 8, 15, 24, 25):
