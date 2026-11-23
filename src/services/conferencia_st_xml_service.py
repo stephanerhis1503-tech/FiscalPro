@@ -113,6 +113,13 @@ def conferir_item_st_xml(
 
     campos_presentes = {k: _texto(valores[k]) for k in CAMPOS_ST_XML if k in valores}
     if not campos_presentes:
+        if resultado["st_xml_cfop"] == "5929":
+            return situacao(
+                "INFORMATIVO - CFOP 5929: NF-E VINCULADA A CUPOM, SEM TAG ST",
+                "NF-e referente a operacao ja acobertada por documento fiscal do varejo. "
+                "A ausencia de tag ST nesta NF-e nao gera alerta tributario autonomo; "
+                "conferir o cupom de origem e evitar duplicidade na escrituracao.",
+            )
         return situacao(
             "REVISAR - ITEM XML SEM TAG ST",
             "Ausencia de destaque/retencao no XML nao prova inexistencia de obrigacao.",
@@ -126,6 +133,28 @@ def conferir_item_st_xml(
 
     destacado = numeros.get("vICMSST", Decimal("0")) > 0
     retido = numeros.get("vICMSSTRet", Decimal("0")) > 0
+    if resultado["st_xml_cfop"] == "5929":
+        # CFOP 5929 NAO representa uma nova venda: a NF-e documenta
+        # operacao ja acobertada por documento fiscal do varejo.
+        # A falta de tag ST e informativa, mas valor ST destacado
+        # merece revisao para prevenir duplicidade de incidencia.
+        if destacado:
+            return situacao(
+                "REVISAR - ST DESTACADA EM NF-E VINCULADA A CUPOM (CFOP 5929)",
+                "Conferir cupom vinculado, operacao e imposto destacado: "
+                "nao duplicar apuracao nem gerar guia com base nesta NF-e.",
+            )
+        if retido:
+            return situacao(
+                "INFORMATIVO - CFOP 5929: NF-E VINCULADA A CUPOM COM ST RETIDA",
+                "Valor vICMSSTRet consta do XML para rastreabilidade. "
+                "Nao presumir novo recolhimento; conferir documento varejista vinculado.",
+            )
+        return situacao(
+            "INFORMATIVO - CFOP 5929: NF-E VINCULADA A CUPOM, SEM ST POSITIVA",
+            "Tags ST presentes sem valor positivo. A NF-e nao constitui "
+            "nova operacao autonomamente; conferir cupom vinculado.",
+        )
     if destacado and retido:
         return situacao(
             "REVISAR - ST DESTACADA E RETIDA NO MESMO ITEM",
