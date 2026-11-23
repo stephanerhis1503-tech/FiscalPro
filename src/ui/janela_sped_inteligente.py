@@ -576,6 +576,10 @@ class JanelaSPEDInteligente(Toplevel):
             text="🧾 Abrir ficha do NCM",
             command=self.abrir_ficha_ncm_auditoria,
         ).pack(side=LEFT, padx=(7, 0))
+        ttk.Button(
+            filtros, text="📋 Ficha Assistida — revisar propostas",
+            command=self.abrir_propostas_ficha_assistida,
+        ).pack(side=LEFT, padx=(7, 0))
 
         frame_tabela = ttk.LabelFrame(self.aba_tributaria, text="Divergências e pendências por item")
         frame_tabela.pack(fill=BOTH, expand=True, padx=6, pady=(3, 6))
@@ -1944,6 +1948,235 @@ class JanelaSPEDInteligente(Toplevel):
             self.lbl_status.config(text="Falha na auditoria tributária integrada.")
         finally:
             self.btn_auditar_tributacao.configure(state="normal")
+
+    def abrir_propostas_ficha_assistida(self):
+        """Pre-visualizacao sem salvamento; aprovacao so na ficha individual."""
+        if self.resultado is None or self.auditoria_tributaria is None:
+            messagebox.showwarning(
+                "FiscalPro", "Cruze primeiro a Ficha Tributaria no SPED.", parent=self
+            )
+            return
+        try:
+            propostas = self.motor.preparar_fichas_assistidas()
+        except Exception as erro:
+            messagebox.showerror("FiscalPro", str(erro), parent=self)
+            return
+        if not propostas:
+            messagebox.showinfo(
+                "FiscalPro", "Nenhum NCM com contexto foi encontrado para preparar fichas.",
+                parent=self,
+            )
+            return
+        janela = Toplevel(self)
+        janela.title("FiscalPro — Ficha Tributaria Assistida — revisao individual")
+        dimensionar_janela(janela, 1230, 700, 880, 520)
+        janela.transient(self)
+        janela.configure(bg=COR_FUNDO)
+        topo = ttk.Frame(janela)
+        topo.pack(fill=X, padx=12, pady=(10, 5))
+        ttk.Label(
+            topo,
+            text=(
+                f"{len(propostas):,} proposta(s) de referencia. NAO sao regras "
+                "fiscais aprovadas. CFOP observado e motor oficial nao autorizam "
+                "ST, CST ou credito."
+            ).replace(",", "."),
+            wraplength=1100,
+        ).pack(anchor="w")
+
+        area = ttk.Frame(janela)
+        area.pack(fill=BOTH, expand=True, padx=12, pady=5)
+        cols = ("status", "ncm", "produto", "empresa", "operacao", "uf", "itens", "vigencia")
+        tabela = ttk.Treeview(area, columns=cols, show="headings", selectmode="browse")
+        titles = {
+            "status": "Status", "ncm": "NCM", "produto": "Produto SPED",
+            "empresa": "Empresa", "operacao": "Operacao", "uf": "UF origem/destino",
+            "itens": "Itens", "vigencia": "Datas de operacao",
+        }
+        widths = (190, 90, 160, 220, 110, 120, 70, 210)
+        for key, width in zip(cols, widths):
+            tabela.heading(key, text=titles[key])
+            tabela.column(key, width=width, stretch=key in {"empresa", "vigencia"})
+        tabela.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar = ttk.Scrollbar(area, orient="vertical", command=tabela.yview)
+        scrollbar.pack(side=RIGHT, fill=Y)
+        tabela.configure(yscrollcommand=scrollbar.set)
+
+        def atualizar():
+            selecionado = tabela.selection()
+            chave_atual = selecionado[0] if selecionado else None
+            for item_id in tabela.get_children():
+                tabela.delete(item_id)
+            for i, p in enumerate(propostas):
+                tabela.insert(
+                    "", "end", iid=str(i), values=(
+                        p.situacao, p.ncm, p.codigo_produto, p.empresa,
+                        p.operacao, f"{p.uf_origem} / {p.uf_destino}",
+                        p.itens, f"{p.primeira_data} a {p.ultima_data}",
+                    )
+                )
+            if chave_atual and tabela.exists(chave_atual):
+                tabela.selection_set(chave_atual)
+
+        def selecionar():
+            selecao = tabela.selection()
+            if not selecao:
+                messagebox.showwarning(
+                    "FiscalPro", "Selecione uma proposta.", parent=janela
+                )
+                return None
+            return propostas[int(selecao[0])]
+
+        def exportar():
+            caminho = filedialog.asksaveasfilename(
+                title="Exportar propostas da Ficha Assistida",
+                defaultextension=".xlsx",
+                filetypes=[("Planilha Excel", "*.xlsx")],
+                initialfile="FiscalPro_Fichas_Assistidas_REVISAR.xlsx",
+                parent=janela,
+            )
+            if not caminho:
+                return
+            try:
+                destino = self.motor.exportar_fichas_assistidas(caminho)
+                messagebox.showinfo(
+                    "FiscalPro", f"Propostas exportadas sem gravar regras:\n{destino}",
+                    parent=janela,
+                )
+            except Exception as erro:
+                messagebox.showerror("FiscalPro", str(erro), parent=janela)
+
+        def revisar():
+            proposta = selecionar()
+            if proposta is None:
+                return
+            self._revisar_proposta_ficha_assistida(janela, proposta, atualizar)
+
+        botoes = ttk.Frame(janela)
+        botoes.pack(fill=X, padx=12, pady=(5, 12))
+        ttk.Button(
+            botoes, text="Exportar Excel para revisao", command=exportar
+        ).pack(side=LEFT, padx=(0, 8))
+        ttk.Button(
+            botoes, text="Revisar e aprovar uma proposta", command=revisar
+        ).pack(side=LEFT, padx=(0, 8))
+        ttk.Button(botoes, text="Fechar", command=janela.destroy).pack(side=RIGHT)
+        tabela.bind("<Double-1>", lambda _evento: revisar())
+        atualizar()
+
+    def _revisar_proposta_ficha_assistida(self, master, proposta, atualizar):
+        """Modal: nenhum valor fiscal e preenchido a partir do XML/SPED."""
+        from tkinter import BooleanVar
+        from src.services.ficha_assistida_sped_service import (
+            CAMPOS_MANUAIS, FichaAssistidaSPEDService,
+        )
+        if proposta.regra_id:
+            messagebox.showinfo(
+                "FiscalPro", "Regra ja aprovada. Edite pelo cadastro da Ficha.",
+                parent=master,
+            )
+            return
+        janela = Toplevel(master)
+        janela.title(f"Revisao fiscal obrigatoria — NCM {proposta.ncm}")
+        dimensionar_janela(janela, 1020, 775, 760, 570)
+        janela.transient(master)
+        janela.grab_set()
+        base = ttk.Frame(janela, padding=12)
+        base.pack(fill=BOTH, expand=True)
+        ttk.Label(
+            base, text=(
+                f"PROPOSTA SEM TRIBUTACAO PRESUMIDA: {proposta.ncm} — "
+                f"{proposta.descricao}\n"
+                f"Empresa: {proposta.empresa} | Regime: {proposta.regime} | "
+                f"Operacao: {proposta.operacao} | Finalidade: {proposta.finalidade} | "
+                f"UF: {proposta.uf_origem} -> {proposta.uf_destino}\n"
+                f"{proposta.itens} item(ns); {len(proposta.documentos)} documento(s). "
+                f"CFOP(s) observados: {', '.join(sorted(proposta.cfops_sped)) or '-'} "
+                "(NAO preenche automaticamente a regra)."
+            ), wraplength=900, justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+        ttk.Label(
+            base, text=(
+                "ATENCAO: a regra da Ficha e por NCM, nao por codigo do produto. "
+                "Aprovacao pode afetar outros produtos com o mesmo NCM. "
+                f"Codigos SPED identificados para esse NCM: {proposta.produtos_no_ncm}."
+            ), wraplength=900,
+        ).pack(anchor="w", pady=(0, 8))
+        area = ttk.Frame(base)
+        area.pack(fill=BOTH, expand=True)
+        canvas = __import__("tkinter").Canvas(area, highlightthickness=0)
+        barra = ttk.Scrollbar(area, orient="vertical", command=canvas.yview)
+        conteudo = ttk.Frame(canvas)
+        janela_canvas = canvas.create_window((0, 0), window=conteudo, anchor="nw")
+        canvas.configure(yscrollcommand=barra.set)
+        canvas.pack(side=LEFT, fill=BOTH, expand=True)
+        barra.pack(side=RIGHT, fill=Y)
+        conteudo.bind(
+            "<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(janela_canvas, width=e.width),
+        )
+        variaveis = {}
+        campos = [
+            ("vigencia_inicio", "Vigencia inicial (AAAA-MM-DD)", proposta.primeira_data),
+            ("vigencia_fim", "Vigencia final (AAAA-MM-DD)", proposta.ultima_data),
+            ("fonte", "Fundamento legal vigente conferido (obrigatorio)", ""),
+        ] + [
+            (campo, campo.replace("_", " ").upper() + " (conferido manualmente)", "")
+            for campo in CAMPOS_MANUAIS
+        ] + [("observacoes", "Observacoes da revisao", "")]
+        for indice, (campo, titulo, valor) in enumerate(campos):
+            ttk.Label(conteudo, text=titulo).grid(
+                row=indice, column=0, sticky="w", padx=(4, 8), pady=4
+            )
+            var = StringVar(master=janela, value=valor)
+            variaveis[campo] = var
+            ttk.Entry(conteudo, textvariable=var, width=54).grid(
+                row=indice, column=1, sticky="ew", pady=4
+            )
+        conteudo.grid_columnconfigure(1, weight=1)
+        confirmacao_revisao = BooleanVar(master=janela, value=False)
+        confirmacao_abrangencia = BooleanVar(master=janela, value=False)
+        ttk.Checkbutton(
+            base,
+            text="Revisei individualmente os campos fiscais e confirmei o fundamento legal.",
+            variable=confirmacao_revisao,
+        ).pack(anchor="w", pady=(7, 2))
+        ttk.Checkbutton(
+            base,
+            text="Confirmo que a regra aprovada vale para TODOS os produtos deste NCM nesse contexto.",
+            variable=confirmacao_abrangencia,
+        ).pack(anchor="w", pady=(0, 8))
+
+        def salvar():
+            try:
+                regra_id = FichaAssistidaSPEDService.aprovar(
+                    proposta,
+                    {campo: var.get() for campo, var in variaveis.items()},
+                    confirmar_revisao=confirmacao_revisao.get(),
+                    confirmar_abrangencia_ncm=confirmacao_abrangencia.get(),
+                )
+            except Exception as erro:
+                messagebox.showerror("FiscalPro — Revisao obrigatoria", str(erro), parent=janela)
+                return
+            atualizar()
+            messagebox.showinfo(
+                "FiscalPro",
+                f"Regra {regra_id} aprovada manualmente e registrada na Ficha.\n"
+                "Execute novamente Cruzar Ficha Tributaria para verificar a aplicacao.\n"
+                "A regra nao altera automaticamente SPED ou XML.",
+                parent=janela,
+            )
+            janela.destroy()
+
+        botoes = ttk.Frame(base)
+        botoes.pack(fill=X, pady=(4, 0))
+        ttk.Button(
+            botoes, text="Aprovar e salvar esta regra", command=salvar
+        ).pack(side=LEFT)
+        ttk.Button(botoes, text="Cancelar, sem salvar", command=janela.destroy).pack(side=RIGHT)
 
     def salvar_relatorio_tributario(self):
         if self.resultado is None or self.auditoria_tributaria is None:
