@@ -564,6 +564,82 @@ class FichaAssistidaSPEDService:
         evidencias.auto_filter.ref = f"A1:AD{max(evidencias.max_row, 2)}"
         evidencias.freeze_panes = "M2"
         evidencias.sheet_view.showGridLines = False
+        # Planejamento de lacunas de cobertura: leitura de propostas e agregacao
+        # de contextos, SEM consultar/alterar fiscalpro.db ou atribuir impostos.
+        from src.services.mapa_lacunas_ficha_service import consolidar_lacunas
+
+        mapa_ncm, mapa_contextos = consolidar_lacunas(propostas)
+
+        def criar_aba_lacunas(titulo: str, colunas: list[tuple[str, str]], dados: list[dict[str, Any]]) -> None:
+            aba = wb.create_sheet(titulo)
+            aba.append([cabecalho for _, cabecalho in colunas])
+            for info in dados:
+                aba.append([
+                    _seguro_excel(info.get(chave, ""))
+                    if not isinstance(info.get(chave, ""), int) else info[chave]
+                    for chave, _ in colunas
+                ])
+            for celula in aba[1]:
+                celula.font = Font(bold=True, color="FFFFFF")
+                celula.fill = PatternFill("solid", fgColor="214C74")
+                celula.alignment = Alignment(wrap_text=True, vertical="center")
+            aba.row_dimensions[1].height = 40
+            for linha in aba.iter_rows(min_row=2):
+                for celula in linha:
+                    celula.alignment = Alignment(wrap_text=True, vertical="top")
+                    if linha[0].row % 2 == 0:
+                        celula.fill = PatternFill("solid", fgColor="F2F6FA")
+                if str(linha[0].value).startswith(("1 -", "2 -", "3 -")):
+                    linha[0].fill = PatternFill("solid", fgColor="FFF0D5")
+            for coluna in range(1, len(colunas) + 1):
+                largura = 65 if coluna == len(colunas) else 42 if coluna == 1 else 28
+                aba.column_dimensions[get_column_letter(coluna)].width = largura
+            aba.freeze_panes = "C2"
+            aba.auto_filter.ref = f"A1:{get_column_letter(len(colunas))}{max(aba.max_row, 2)}"
+            aba.sheet_view.showGridLines = False
+
+        criar_aba_lacunas(
+            "Lacunas por NCM",
+            [
+                ("prioridade", "Prioridade para revisao"),
+                ("ncm", "NCM informado no SPED"),
+                ("propostas", "Propostas"),
+                ("itens", "Itens C170"),
+                ("produtos", "Codigos de produto"),
+                ("finalidades", "Finalidades observadas"),
+                ("cfops", "CFOPs de entrada"),
+                ("ufs", "UFs de origem"),
+                ("st_condicional", "Alertas ST condicionais"),
+                ("ids_aprovados", "IDs aprovados NESTA exportacao"),
+                ("situacao", "Situacao de cobertura documental"),
+                ("orientacao", "Acao para revisao; SEM APROVACAO"),
+                ("amostras", "Exemplos de produtos"),
+            ],
+            mapa_ncm,
+        )
+        criar_aba_lacunas(
+            "Lacunas por contexto",
+            [
+                ("prioridade", "Prioridade para revisao"),
+                ("ncm", "NCM informado no SPED"),
+                ("empresa", "Empresa"),
+                ("regime", "Regime"),
+                ("operacao", "Operacao"),
+                ("finalidade", "Finalidade informada"),
+                ("origem", "UF origem"),
+                ("destino", "UF destino"),
+                ("contribuinte", "Contribuinte"),
+                ("cfop", "CFOP de entrada"),
+                ("propostas", "Propostas"),
+                ("itens", "Itens C170"),
+                ("st_condicional", "Alertas ST condicionais"),
+                ("ids_aprovados", "IDs aprovados NESTA exportacao"),
+                ("orientacao", "Acao para revisao; SEM APROVACAO"),
+                ("validacao", "Validacao fiscal"),
+            ],
+            mapa_contextos,
+        )
+
         destino.parent.mkdir(parents=True, exist_ok=True)
         wb.save(destino)
         return destino
