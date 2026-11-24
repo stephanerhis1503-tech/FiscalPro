@@ -6,6 +6,8 @@ on:
       - fix/auditoria-tributaria-sped-seguranca-20261119
     paths:
       - src/services/ficha_assistida_sped_service.py
+      - src/services/mapa_lacunas_ficha_service.py
+      - tests/test_mapa_lacunas_ficha_pr27.py
       - src/services/conferencia_st_xml_service.py
       - src/services/triagem_st_condicional_service.py
       - src/services/diagnostico_cobertura_banco_pr27_service.py
@@ -45,9 +47,9 @@ jobs:
       - name: Validar Ficha Assistida e auditoria
         shell: pwsh
         run: |
-          python -m compileall -q src/services/ficha_assistida_sped_service.py src/services/conferencia_st_xml_service.py src/services/triagem_st_condicional_service.py src/services/diagnostico_cobertura_banco_pr27_service.py src/services/diagnostico_regras_operacionais_service.py src/ui/janela_principal.py src/sped/motor_sped.py src/sped/auditor_tributario.py src/ui/janela_sped_inteligente.py
+          python -m compileall -q src/services/ficha_assistida_sped_service.py src/services/mapa_lacunas_ficha_service.py src/services/conferencia_st_xml_service.py src/services/triagem_st_condicional_service.py src/services/diagnostico_cobertura_banco_pr27_service.py src/services/diagnostico_regras_operacionais_service.py src/ui/janela_principal.py src/sped/motor_sped.py src/sped/auditor_tributario.py src/ui/janela_sped_inteligente.py
           if ($LASTEXITCODE -ne 0) { throw "Falha de sintaxe" }
-          python -m pytest -q tests/test_ficha_assistida_sped_service.py tests/test_auditoria_regra_banco_isolado.py tests/test_auditoria_sped_segura_18_3_5.py tests/test_conferencia_st_xml_pr27.py tests/test_triagem_st_condicional_pr27.py tests/test_diagnostico_cobertura_banco_pr27.py tests/test_diagnostico_regras_operacionais_pr27.py
+          python -m pytest -q tests/test_ficha_assistida_sped_service.py tests/test_auditoria_regra_banco_isolado.py tests/test_auditoria_sped_segura_18_3_5.py tests/test_conferencia_st_xml_pr27.py tests/test_triagem_st_condicional_pr27.py tests/test_mapa_lacunas_ficha_pr27.py tests/test_diagnostico_cobertura_banco_pr27.py tests/test_diagnostico_regras_operacionais_pr27.py
           if ($LASTEXITCODE -ne 0) { throw "Testes falharam" }
       - name: Empacotar aplicativo de teste
         shell: pwsh
