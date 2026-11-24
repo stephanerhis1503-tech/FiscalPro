@@ -21,8 +21,16 @@ def triagem_st_condicional(proposta: Any) -> tuple[str, str, str]:
     consideradas apos leitura do proprio documento e vinculacao ao nItem.
     A triagem NUNCA marca a Ficha como aprovada.
     """
-    status = " ".join(str(v) for v in getattr(proposta, "st_status", ()) or ())
-    if "CONDICIONAL" not in status.upper():
+    # "CONDICIONAL" deve ser a classificacao PRINCIPAL do alerta.
+    # Mensagens como "MVA AJUSTADA ... ALIQUOTA INTERNA CONDICIONAL"
+    # nao sao propostas ST condicionais e nao devem entrar nesta aba.
+    status_originais = getattr(proposta, "st_status", ()) or ()
+    if isinstance(status_originais, str):
+        status_originais = (status_originais,)
+    if not any(
+        str(status).strip().upper().startswith("CONDICIONAL")
+        for status in status_originais
+    ):
         return "", "", ""
 
     ncm = "".join(ch for ch in str(getattr(proposta, "ncm", "")) if ch.isdigit())
