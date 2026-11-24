@@ -72,6 +72,74 @@ def diagnosticar_regras_operacionais(caminho: str | Path) -> dict[str, Any]:
     return resultado
 
 
+def listar_regras_operacionais(
+    caminho: str | Path, limite: int = 50,
+) -> list[dict[str, str]]:
+    """Lista somente contexto das regras por SQL read-only, inclusive versoes antigas."""
+    banco = Path(caminho).expanduser().resolve()
+    if not banco.is_file():
+        return []
+    limite = max(1, min(int(limite), 200))
+    with sqlite3.connect(banco.as_uri() + "?mode=ro", uri=True, timeout=10) as conn:
+        existe = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tributacao_atual'"
+        ).fetchone()
+        if not existe:
+            return []
+        disponiveis = {
+            str(row[1]) for row in conn.execute(
+                'PRAGMA table_info("tributacao_atual")'
+            )
+        }
+        campos = (
+            "id", "ncm", "empresa", "uf_origem", "uf_destino", "regime",
+            "operacao", "finalidade", "cfop", "status",
+            "vigencia_inicio", "vigencia_fim",
+        )
+        presentes = [campo for campo in campos if campo in disponiveis]
+        if not presentes:
+            return []
+        sql_colunas = ", ".join('"' + campo + '"' for campo in presentes)
+        ordenacao = '"id"' if "id" in presentes else "rowid"
+        linhas = conn.execute(
+            f"SELECT {sql_colunas} FROM tributacao_atual "
+            f"ORDER BY {ordenacao} LIMIT ?", (limite,)
+        ).fetchall()
+        return [
+            {
+                campo: str(valor if valor is not None else "").strip()
+                for campo, valor in zip(presentes, linha)
+            }
+            for linha in linhas
+        ]
+
+
+def texto_lista_regras(regras: list[dict[str, str]]) -> str:
+    """Descricao compacta de contexto, sem homologar regras cadastradas."""
+    if not regras:
+        return "Nenhuma regra por operacao listada neste banco."
+    blocos = [f"REGRAS CADASTRADAS ({len(regras)} exibidas; somente leitura)"]
+    for indice, r in enumerate(regras, 1):
+        rotulo = f"{indice}. ID {r.get('id', '-')} | NCM {r.get('ncm', '-')}"
+        rotulo += f" | {r.get('status', '-')}"
+        contexto = (
+            f"Empresa: {r.get('empresa', '-')} | Regime: {r.get('regime', '-')}"
+            f" | Operacao: {r.get('operacao', '-')}"
+            f" | Finalidade: {r.get('finalidade', '-')}"
+        )
+        origem = (
+            f"UF: {r.get('uf_origem', '-')} -> {r.get('uf_destino', '-')}"
+            f" | CFOP: {r.get('cfop', '-')}"
+            f" | Vigencia: {r.get('vigencia_inicio', '-')} a {r.get('vigencia_fim', '-')}"
+        )
+        blocos.extend(["", rotulo, contexto, origem])
+    blocos.append(
+        "\nCadastro vigente nao significa aderencia ao SPED. "
+        "Nenhuma regra foi criada, alterada ou aplicada."
+    )
+    return "\n".join(blocos)
+
+
 def texto_diagnostico_regras(
     dados: dict[str, Any], *, isolado: bool = False, ambiente: str = ""
 ) -> str:
