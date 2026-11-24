@@ -444,6 +444,36 @@ class JanelaPrincipal:
                 parent=self.janela,
             )
 
+    def listar_regras_de_outro_banco(self):
+        """Mostra NCM e contexto de regras sem abrir ou alterar o banco selecionado."""
+        from tkinter import filedialog
+        from src.services.diagnostico_regras_operacionais_service import (
+            listar_regras_operacionais, texto_lista_regras,
+        )
+        caminho = filedialog.askopenfilename(
+            parent=self.janela,
+            title="Selecione banco fiscalpro.db - listar regras (somente leitura)",
+            filetypes=[("Banco SQLite", "*.db"), ("Todos os arquivos", "*.*")],
+        )
+        if not caminho:
+            return
+        try:
+            regras = listar_regras_operacionais(caminho)
+            mensagem = texto_lista_regras(regras)
+            from tkinter import Toplevel, Text
+            janela = Toplevel(self.janela)
+            janela.title("FiscalPro - Lista de regras (somente leitura)")
+            dimensionar_janela(janela, 950, 620, 700, 430)
+            texto = Text(janela, wrap="word", font=("Consolas", 10))
+            texto.pack(fill=BOTH, expand=True, padx=12, pady=12)
+            texto.insert("1.0", mensagem)
+            texto.configure(state="disabled")
+        except Exception as erro:
+            messagebox.showerror(
+                "FiscalPro - Lista de regras",
+                f"Não foi possível listar as regras: {erro}", parent=self.janela,
+            )
+
     def _obter_saude_base_tributaria(self):
         itens = []
         try:
@@ -736,6 +766,13 @@ class JanelaPrincipal:
         titulo_saude.pack(fill=X, padx=14, pady=(5, 0))
         Label(titulo_saude, text="Saúde das bases", bg=COR_FUNDO, fg=COR_TEXTO, font=("Segoe UI", 10, "bold")).pack(side=LEFT)
         Label(titulo_saude, text="  Bases usadas na análise automática", bg=COR_FUNDO, fg=COR_TEXTO_SUAVE, font=("Segoe UI", 8)).pack(side=LEFT)
+
+        ttk.Button(
+            titulo_saude,
+            text="Listar regras de outro banco",
+            command=self.listar_regras_de_outro_banco,
+            style="Secondary.TButton",
+        ).pack(side=RIGHT, padx=(0, 8))
 
         ttk.Button(
             titulo_saude,
