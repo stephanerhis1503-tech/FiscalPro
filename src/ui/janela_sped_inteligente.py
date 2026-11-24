@@ -175,15 +175,15 @@ class JanelaSPEDInteligente(Toplevel):
         vincular_wraplength(self.lbl_cte, margem=30, minimo=420)
 
         # Auditoria tributária.
-        ttk.Button(aba_comandos_aud, text="📁 Pasta NF-e", command=self.selecionar_pasta_xml_nfe).grid(row=0, column=0, sticky="ew")
-        ttk.Button(aba_comandos_aud, text="📦 XMLs NF-e ou ZIP", command=self.selecionar_xml_zip_nfe).grid(row=0, column=1, sticky="ew", padx=(7, 0))
+        ttk.Button(aba_comandos_aud, text="📁 Adicionar pasta NF-e/NFC-e", command=self.selecionar_pasta_xml_nfe).grid(row=0, column=0, sticky="ew")
+        ttk.Button(aba_comandos_aud, text="📦 Adicionar XMLs ou ZIP", command=self.selecionar_xml_zip_nfe).grid(row=0, column=1, sticky="ew", padx=(7, 0))
         self.btn_auditar_tributacao = ttk.Button(
             aba_comandos_aud, text="🧠 Cruzar Ficha Tributária",
             command=self.executar_auditoria_tributaria, state="disabled",
         )
         self.btn_auditar_tributacao.grid(row=0, column=2, sticky="ew", padx=(7, 0))
         self.btn_relatorio_tributario = ttk.Button(
-            aba_comandos_aud, text="💾 Salvar relatório",
+            aba_comandos_aud, text="📄 Relatório PDF / Excel",
             command=self.salvar_relatorio_tributario, state="disabled",
         )
         self.btn_relatorio_tributario.grid(row=0, column=3, sticky="ew", padx=(7, 0))
@@ -197,7 +197,12 @@ class JanelaSPEDInteligente(Toplevel):
             text="XML de NF-e opcional — a Ficha também pode ser cruzada somente com o SPED.",
             bg=COR_FUNDO, fg=COR_TEXTO, font=FONTE_NORMAL, anchor="w", justify="left",
         )
-        self.lbl_auditoria_xml.grid(row=1, column=0, columnspan=5, sticky="ew", pady=(6, 0))
+        self.lbl_auditoria_xml.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(6, 0))
+        self.btn_limpar_xmls_auditoria = ttk.Button(
+            aba_comandos_aud, text="🧹 Limpar XMLs",
+            command=self.limpar_xmls_auditoria,
+        )
+        self.btn_limpar_xmls_auditoria.grid(row=1, column=4, sticky="ew", padx=(7, 0), pady=(6, 0))
         ttk.Label(aba_comandos_aud, text="DIFAL", font=("Segoe UI", 8, "bold")).grid(
             row=2, column=0, sticky="w", pady=(6, 0)
         )
@@ -570,6 +575,10 @@ class JanelaSPEDInteligente(Toplevel):
             filtros,
             text="🧾 Abrir ficha do NCM",
             command=self.abrir_ficha_ncm_auditoria,
+        ).pack(side=LEFT, padx=(7, 0))
+        ttk.Button(
+            filtros, text="📋 Ficha Assistida — revisar propostas",
+            command=self.abrir_propostas_ficha_assistida,
         ).pack(side=LEFT, padx=(7, 0))
 
         frame_tabela = ttk.LabelFrame(self.aba_tributaria, text="Divergências e pendências por item")
@@ -1282,6 +1291,7 @@ class JanelaSPEDInteligente(Toplevel):
             self.preparacao_assistida = None
             self.analise_chaves_cte = None
             self.auditoria_tributaria = None
+            self.importacao_nfe_xml = None
             self.preparacao_correcao_tributaria = None
             self.analise_estorno_icms = None
             self.analise_danfe_icms = None
@@ -1291,6 +1301,7 @@ class JanelaSPEDInteligente(Toplevel):
             self._limpar_chaves_cte()
             self._limpar_correcoes()
             self._limpar_auditoria_tributaria()
+            self.lbl_auditoria_xml.config(text="Nenhum XML de NF-e importado para este SPED.")
             self._limpar_difal()
             self._limpar_correcao_tributaria()
             self._limpar_estorno_icms()
@@ -1366,6 +1377,16 @@ class JanelaSPEDInteligente(Toplevel):
             self.lbl_pva.config(text="SPED carregado. Clique em Validar antes do PVA.")
             self.lbl_assistida.config(text="SPED carregado. Prepare as correções após a pré-validação.")
             self.aud_empresa_var.set(self.resultado.estatisticas.empresa if self.resultado else "")
+            from src.services.empresas_regimes_service import EmpresasRegimesService
+            regime_sped = EmpresasRegimesService.resolver_regime_sped(
+                self.resultado.estatisticas.empresa,
+                self.resultado.estatisticas.cnpj,
+            )
+            self.aud_regime_var.set(regime_sped)
+            if regime_sped:
+                self.lbl_status.config(
+                    text=f"Regime da Auditoria Tributaria identificado no cadastro: {regime_sped}."
+                )
         except Exception as erro:
             messagebox.showerror("FiscalPro", str(erro), parent=self)
             self.lbl_status.config(text="Falha ao carregar o arquivo.")
@@ -1729,16 +1750,16 @@ class JanelaSPEDInteligente(Toplevel):
 
     def selecionar_pasta_xml_nfe(self):
         pasta = filedialog.askdirectory(
-            title="Selecione a pasta com XMLs de NF-e", parent=self
+            title="Adicionar pasta com XMLs de NF-e ou NFC-e", parent=self
         )
         if pasta:
             self._importar_fontes_nfe([pasta])
 
     def selecionar_xml_zip_nfe(self):
         arquivos = filedialog.askopenfilenames(
-            title="Selecione XMLs de NF-e ou arquivos ZIP",
+            title="Adicionar XMLs de NF-e/NFC-e ou arquivos ZIP",
             filetypes=[
-                ("XML ou ZIP de NF-e", "*.xml *.zip"),
+                ("XML ou ZIP de NF-e/NFC-e", "*.xml *.zip"),
                 ("Arquivos XML", "*.xml"),
                 ("Arquivos ZIP", "*.zip"),
                 ("Todos os arquivos", "*.*"),
@@ -1765,13 +1786,17 @@ class JanelaSPEDInteligente(Toplevel):
             self.btn_preparar_tributaria.configure(state="disabled")
             self.btn_aplicar_tributaria.configure(state="disabled")
             total = self.importacao_nfe_xml.total_nfe_validas
+            nfce = self.importacao_nfe_xml.total_nfce_validas
+            fontes = self.importacao_nfe_xml.total_fontes
             erros = self.importacao_nfe_xml.total_erros
             ignoradas = self.importacao_nfe_xml.total_ignoradas
             self.lbl_auditoria_xml.config(
                 text=(
-                    f"{total:,} NF-e(s) carregada(s) • "
+                    f"{fontes:,} fonte(s) acumulada(s) • "
+                    f"{total:,} NF-e (55) • {nfce:,} NFC-e (65) • "
                     f"{self.importacao_nfe_xml.total_duplicadas:,} duplicada(s) • "
-                    f"{erros:,} erro(s) • {ignoradas:,} ignorada(s)"
+                    f"{erros:,} erro(s) • {ignoradas:,} ignorada(s). "
+                    "NFC-e 65 separada; o C100/C170 cruza apenas NF-e 55."
                 ).replace(",", ".")
             )
             if self.resultado is not None:
@@ -1781,13 +1806,16 @@ class JanelaSPEDInteligente(Toplevel):
             messagebox.showinfo(
                 "FiscalPro",
                 (
-                    "XMLs de NF-e importados com sucesso!\n\n"
-                    f"Arquivos XML encontrados: {self.importacao_nfe_xml.total_arquivos_xml:,}\n"
-                    f"NF-e válidas: {total:,}\n"
-                    f"Duplicadas ignoradas: {self.importacao_nfe_xml.total_duplicadas:,}\n"
+                    "XMLs adicionados à auditoria!\n\n"
+                    f"Pastas/arquivos selecionados: {fontes:,}\n"
+                    f"Arquivos XML lidos: {self.importacao_nfe_xml.total_arquivos_xml:,}\n"
+                    f"NF-e modelo 55: {total:,}\n"
+                    f"NFC-e modelo 65: {nfce:,} (separadas)\n"
+                    f"Chaves duplicadas ignoradas: {self.importacao_nfe_xml.total_duplicadas:,}\n"
                     f"Arquivos ignorados: {ignoradas:,}\n"
                     f"Erros de leitura: {erros:,}\n\n"
-                    "Agora clique em Cruzar Ficha Tributária."
+                    "Você pode adicionar outras pastas antes de cruzar. "
+                    "O C100/C170 será cruzado apenas com NF-e modelo 55."
                 ).replace(",", "."),
                 parent=self,
             )
@@ -1797,6 +1825,35 @@ class JanelaSPEDInteligente(Toplevel):
         finally:
             if self.resultado is not None:
                 self.btn_auditar_tributacao.configure(state="normal")
+
+    def limpar_xmls_auditoria(self):
+        """Zera os XMLs importados nesta sessao sem excluir os arquivos."""
+        if self.importacao_nfe_xml is None:
+            return
+        if not messagebox.askyesno(
+            "FiscalPro — Limpar XMLs",
+            "Remover da auditoria todas as pastas, NF-e e NFC-e carregadas?\n"
+            "Os arquivos originais no computador não serão excluídos.",
+            parent=self,
+        ):
+            return
+        self.motor.limpar_xmls_nfe_auditoria()
+        self.importacao_nfe_xml = None
+        self.auditoria_tributaria = None
+        self.auditoria_difal = None
+        self.preparacao_correcao_tributaria = None
+        self._limpar_auditoria_tributaria()
+        self._limpar_difal()
+        self._limpar_correcao_tributaria()
+        self.lbl_auditoria_xml.config(text="Nenhum XML de NF-e/NFC-e importado para este SPED.")
+        for botao in (
+            self.btn_relatorio_tributario,
+            self.btn_preparar_tributaria,
+            self.btn_aplicar_tributaria,
+            self.btn_relatorio_difal,
+            self.btn_excel_difal,
+        ):
+            botao.configure(state="disabled")
 
     def executar_auditoria_tributaria(self):
         if self.resultado is None:
@@ -1810,6 +1867,15 @@ class JanelaSPEDInteligente(Toplevel):
             "finalidade": self.aud_finalidade_var.get().strip(),
             "contribuinte": self.aud_contribuinte_var.get().strip(),
         }
+        if not contexto["regime"]:
+            from src.services.empresas_regimes_service import EmpresasRegimesService
+            regime_sped = EmpresasRegimesService.resolver_regime_sped(
+                contexto["empresa"] or self.resultado.estatisticas.empresa,
+                self.resultado.estatisticas.cnpj,
+            )
+            if regime_sped:
+                contexto["regime"] = regime_sped
+                self.aud_regime_var.set(regime_sped)
         if not contexto["regime"]:
             continuar = messagebox.askyesno(
                 "FiscalPro",
@@ -1835,8 +1901,15 @@ class JanelaSPEDInteligente(Toplevel):
             self._exibir_auditoria_tributaria()
             self.abas.select(self.aba_tributaria)
             self.btn_relatorio_tributario.configure(state="normal")
+            ha_correcoes_seguras = any(
+                a.nivel == "ERRO"
+                and a.origem in {"FICHA TRIBUTÁRIA", "XML NF-e"}
+                and a.campo in self.motor.corretor_tributario.CAMPOS
+                and (a.origem != "FICHA TRIBUTÁRIA" or a.aderencia >= 60)
+                for a in self.auditoria_tributaria.apontamentos
+            )
             self.btn_preparar_tributaria.configure(
-                state="normal" if self.auditoria_tributaria.apontamentos else "disabled"
+                state="normal" if ha_correcoes_seguras else "disabled"
             )
             resumo = self.auditoria_tributaria
             mensagem = (
@@ -1845,9 +1918,28 @@ class JanelaSPEDInteligente(Toplevel):
                 f"Itens sem regra: {resumo.itens_sem_regra:,}\n"
                 f"Erros: {resumo.erros:,}\n"
                 f"Avisos: {resumo.avisos:,}\n"
-                f"Conformidade por item: {resumo.conformidade:.2f}%"
+                f"Cobertura de regras: {resumo.cobertura_regras:.2f}%\n"
+                f"Conformidade: {resumo.conformidade_exibicao}"
             ).replace(",", ".")
-            if resumo.erros:
+            if resumo.diagnostico_regras:
+                mensagem += "\n\n" + resumo.diagnostico_regras
+            if resumo.diagnostico_xml:
+                mensagem += "\n\nXML: " + resumo.diagnostico_xml
+            if resumo.auditoria_tributaria_inconclusiva:
+                from src.services.diagnostico_cobertura_banco_pr27_service import (
+                    aviso_banco_isolado_pr27,
+                )
+                texto_teste = aviso_banco_isolado_pr27(
+                    resumo, os.environ.get("FISCALPRO_DATA_DIR", ""),
+                )
+                if texto_teste:
+                    mensagem += "\n\n" + texto_teste
+                messagebox.showwarning(
+                    "FiscalPro — Auditoria inconclusiva",
+                    mensagem + "\n\nNao prepare correcoes enquanto a cobertura de regras estiver zerada.",
+                    parent=self,
+                )
+            elif resumo.erros:
                 messagebox.showwarning(
                     "FiscalPro — Auditoria Tributária",
                     mensagem + "\n\nRevise os apontamentos antes de corrigir o SPED.",
@@ -1865,6 +1957,269 @@ class JanelaSPEDInteligente(Toplevel):
         finally:
             self.btn_auditar_tributacao.configure(state="normal")
 
+    def abrir_propostas_ficha_assistida(self):
+        """Pre-visualizacao sem salvamento; aprovacao so na ficha individual."""
+        if self.resultado is None or self.auditoria_tributaria is None:
+            messagebox.showwarning(
+                "FiscalPro", "Cruze primeiro a Ficha Tributaria no SPED.", parent=self
+            )
+            return
+        try:
+            propostas = self.motor.preparar_fichas_assistidas()
+        except Exception as erro:
+            messagebox.showerror("FiscalPro", str(erro), parent=self)
+            return
+        if not propostas:
+            messagebox.showinfo(
+                "FiscalPro", "Nenhum NCM com contexto foi encontrado para preparar fichas.",
+                parent=self,
+            )
+            return
+        janela = Toplevel(self)
+        janela.title("FiscalPro — Ficha Tributaria Assistida — revisao individual")
+        dimensionar_janela(janela, 1230, 700, 880, 520)
+        janela.transient(self)
+        janela.configure(bg=COR_FUNDO)
+        topo = ttk.Frame(janela)
+        topo.pack(fill=X, padx=12, pady=(10, 5))
+        ttk.Label(
+            topo,
+            text=(
+                f"{len(propostas):,} proposta(s) de referencia. NAO sao regras "
+                "fiscais aprovadas. CFOP observado e motor oficial nao autorizam "
+                "ST, CST ou credito."
+            ).replace(",", "."),
+            wraplength=1100,
+        ).pack(anchor="w")
+
+        area = ttk.Frame(janela)
+        area.pack(fill=BOTH, expand=True, padx=12, pady=5)
+        cols = ("status", "ncm", "produto", "empresa", "operacao", "uf", "itens", "vigencia", "finalidade")
+        tabela = ttk.Treeview(area, columns=cols, show="headings", selectmode="browse")
+        titles = {
+            "status": "Status", "ncm": "NCM", "produto": "Produto SPED",
+            "empresa": "Empresa", "operacao": "Operacao", "uf": "UF origem/destino",
+            "itens": "Itens", "vigencia": "Datas de operacao",
+            "finalidade": "Revisao finalidade",
+        }
+        widths = (190, 90, 160, 220, 110, 120, 70, 210, 270)
+        for key, width in zip(cols, widths):
+            tabela.heading(key, text=titles[key])
+            tabela.column(key, width=width, stretch=key in {"empresa", "vigencia"})
+        tabela.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar = ttk.Scrollbar(area, orient="vertical", command=tabela.yview)
+        scrollbar.pack(side=RIGHT, fill=Y)
+        tabela.configure(yscrollcommand=scrollbar.set)
+
+        def atualizar():
+            selecionado = tabela.selection()
+            chave_atual = selecionado[0] if selecionado else None
+            for item_id in tabela.get_children():
+                tabela.delete(item_id)
+            for i, p in enumerate(propostas):
+                tabela.insert(
+                    "", "end", iid=str(i), values=(
+                        p.situacao, p.ncm, p.codigo_produto, p.empresa,
+                        p.operacao, f"{p.uf_origem} / {p.uf_destino}",
+                        p.itens, f"{p.primeira_data} a {p.ultima_data}",
+                        p.aviso_finalidade,
+                    )
+                )
+            if chave_atual and tabela.exists(chave_atual):
+                tabela.selection_set(chave_atual)
+
+        def selecionar():
+            selecao = tabela.selection()
+            if not selecao:
+                messagebox.showwarning(
+                    "FiscalPro", "Selecione uma proposta.", parent=janela
+                )
+                return None
+            return propostas[int(selecao[0])]
+
+        def exportar():
+            caminho = filedialog.asksaveasfilename(
+                title="Exportar propostas da Ficha Assistida",
+                defaultextension=".xlsx",
+                filetypes=[("Planilha Excel", "*.xlsx")],
+                initialfile="FiscalPro_Fichas_Assistidas_REVISAR.xlsx",
+                parent=janela,
+            )
+            if not caminho:
+                return
+            try:
+                destino = self.motor.exportar_fichas_assistidas(caminho)
+                messagebox.showinfo(
+                    "FiscalPro", f"Propostas exportadas sem gravar regras:\n{destino}",
+                    parent=janela,
+                )
+            except Exception as erro:
+                messagebox.showerror("FiscalPro", str(erro), parent=janela)
+
+        def revisar():
+            proposta = selecionar()
+            if proposta is None:
+                return
+            self._revisar_proposta_ficha_assistida(janela, proposta, atualizar)
+
+        botoes = ttk.Frame(janela)
+        botoes.pack(fill=X, padx=12, pady=(5, 12))
+        ttk.Button(
+            botoes, text="Exportar Excel para revisao", command=exportar
+        ).pack(side=LEFT, padx=(0, 8))
+        ttk.Button(
+            botoes, text="Revisar e aprovar uma proposta", command=revisar
+        ).pack(side=LEFT, padx=(0, 8))
+        ttk.Button(botoes, text="Fechar", command=janela.destroy).pack(side=RIGHT)
+        tabela.bind("<Double-1>", lambda _evento: revisar())
+        atualizar()
+
+    def _revisar_proposta_ficha_assistida(self, master, proposta, atualizar):
+        """Modal: nenhum valor fiscal e preenchido a partir do XML/SPED."""
+        from tkinter import BooleanVar
+        from src.services.ficha_assistida_sped_service import (
+            CAMPOS_MANUAIS, FichaAssistidaSPEDService,
+        )
+        if proposta.regra_id:
+            messagebox.showinfo(
+                "FiscalPro", "Regra ja aprovada. Edite pelo cadastro da Ficha.",
+                parent=master,
+            )
+            return
+        janela = Toplevel(master)
+        janela.title(f"Revisao fiscal obrigatoria — NCM {proposta.ncm}")
+        dimensionar_janela(janela, 1020, 775, 760, 570)
+        janela.transient(master)
+        janela.grab_set()
+        base = ttk.Frame(janela, padding=12)
+        base.pack(fill=BOTH, expand=True)
+        ttk.Label(
+            base, text=(
+                f"PROPOSTA SEM TRIBUTACAO PRESUMIDA: {proposta.ncm} — "
+                f"{proposta.descricao}\n"
+                f"Empresa: {proposta.empresa} | Regime: {proposta.regime} | "
+                f"Operacao: {proposta.operacao} | Finalidade: {proposta.finalidade} | "
+                f"UF: {proposta.uf_origem} -> {proposta.uf_destino}\n"
+                f"{proposta.itens} item(ns); {len(proposta.documentos)} documento(s). "
+                f"CFOP(s) observados: {', '.join(sorted(proposta.cfops_sped)) or '-'} "
+                "(NAO preenche automaticamente a regra)."
+            ), wraplength=900, justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+        ttk.Label(
+            base, text=(
+                "ATENCAO: a regra da Ficha e por NCM, nao por codigo do produto. "
+                "Aprovacao pode afetar outros produtos com o mesmo NCM. "
+                f"Codigos SPED identificados para esse NCM: {proposta.produtos_no_ncm}."
+            ), wraplength=900,
+        ).pack(anchor="w", pady=(0, 8))
+        ttk.Label(
+            base,
+            text=f"FINALIDADE: {proposta.aviso_finalidade}. Indicios: "
+                 f"{'; '.join(sorted(proposta.indicios_cfop))}. "
+                 "CFOP observado nao e prova de direito a credito ou ST.",
+            wraplength=900, justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+        area = ttk.Frame(base)
+        area.pack(fill=BOTH, expand=True)
+        canvas = __import__("tkinter").Canvas(area, highlightthickness=0)
+        barra = ttk.Scrollbar(area, orient="vertical", command=canvas.yview)
+        conteudo = ttk.Frame(canvas)
+        janela_canvas = canvas.create_window((0, 0), window=conteudo, anchor="nw")
+        canvas.configure(yscrollcommand=barra.set)
+        canvas.pack(side=LEFT, fill=BOTH, expand=True)
+        barra.pack(side=RIGHT, fill=Y)
+        conteudo.bind(
+            "<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(janela_canvas, width=e.width),
+        )
+        variaveis = {}
+        campos = [
+            ("vigencia_inicio", "Vigencia inicial (AAAA-MM-DD)", proposta.primeira_data),
+            ("vigencia_fim", "Vigencia final (AAAA-MM-DD)", proposta.ultima_data),
+            ("fonte", "Fundamento legal vigente conferido (obrigatorio)", ""),
+        ] + [
+            (campo, campo.replace("_", " ").upper() + " (conferido manualmente)", "")
+            for campo in CAMPOS_MANUAIS
+        ] + [("observacoes", "Observacoes da revisao", "")]
+        for indice, (campo, titulo, valor) in enumerate(campos):
+            ttk.Label(conteudo, text=titulo).grid(
+                row=indice, column=0, sticky="w", padx=(4, 8), pady=4
+            )
+            var = StringVar(master=janela, value=valor)
+            variaveis[campo] = var
+            ttk.Entry(conteudo, textvariable=var, width=54).grid(
+                row=indice, column=1, sticky="ew", pady=4
+            )
+        linha_finalidade = len(campos)
+        ttk.Label(conteudo, text="Finalidade REVISADA (obrigatoria se houver divergencia)").grid(
+            row=linha_finalidade, column=0, sticky="w", padx=(4, 8), pady=4
+        )
+        finalidade_var = StringVar(
+            master=janela,
+            value="" if proposta.requer_revisao_finalidade else proposta.finalidade,
+        )
+        ttk.Combobox(
+            conteudo, state="readonly", textvariable=finalidade_var,
+            values=("", "REVENDA", "USO E CONSUMO", "INSUMO",
+                    "INDUSTRIALIZAÇÃO", "ATIVO IMOBILIZADO", "SERVIÇO", "OUTRA"),
+            width=52,
+        ).grid(row=linha_finalidade, column=1, sticky="ew", pady=4)
+        ttk.Label(
+            conteudo, text="Justificativa da finalidade (obrigatoria em outras entradas)"
+        ).grid(row=linha_finalidade+1, column=0, sticky="w", padx=(4, 8), pady=4)
+        justificativa_var = StringVar(master=janela, value="")
+        ttk.Entry(
+            conteudo, textvariable=justificativa_var, width=54
+        ).grid(row=linha_finalidade+1, column=1, sticky="ew", pady=4)
+        conteudo.grid_columnconfigure(1, weight=1)
+        confirmacao_revisao = BooleanVar(master=janela, value=False)
+        confirmacao_abrangencia = BooleanVar(master=janela, value=False)
+        ttk.Checkbutton(
+            base,
+            text="Revisei individualmente os campos fiscais e confirmei o fundamento legal.",
+            variable=confirmacao_revisao,
+        ).pack(anchor="w", pady=(7, 2))
+        ttk.Checkbutton(
+            base,
+            text="Confirmo que a regra aprovada vale para TODOS os produtos deste NCM nesse contexto.",
+            variable=confirmacao_abrangencia,
+        ).pack(anchor="w", pady=(0, 8))
+
+        def salvar():
+            try:
+                regra_id = FichaAssistidaSPEDService.aprovar(
+                    proposta,
+                    {
+                        **{campo: var.get() for campo, var in variaveis.items()},
+                        "finalidade_revisada": finalidade_var.get(),
+                        "justificativa_finalidade": justificativa_var.get(),
+                    },
+                    confirmar_revisao=confirmacao_revisao.get(),
+                    confirmar_abrangencia_ncm=confirmacao_abrangencia.get(),
+                )
+            except Exception as erro:
+                messagebox.showerror("FiscalPro — Revisao obrigatoria", str(erro), parent=janela)
+                return
+            atualizar()
+            messagebox.showinfo(
+                "FiscalPro",
+                f"Regra {regra_id} aprovada manualmente e registrada na Ficha.\n"
+                "Execute novamente Cruzar Ficha Tributaria para verificar a aplicacao.\n"
+                "A regra nao altera automaticamente SPED ou XML.",
+                parent=janela,
+            )
+            janela.destroy()
+
+        botoes = ttk.Frame(base)
+        botoes.pack(fill=X, pady=(4, 0))
+        ttk.Button(
+            botoes, text="Aprovar e salvar esta regra", command=salvar
+        ).pack(side=LEFT)
+        ttk.Button(botoes, text="Cancelar, sem salvar", command=janela.destroy).pack(side=RIGHT)
+
     def salvar_relatorio_tributario(self):
         if self.resultado is None or self.auditoria_tributaria is None:
             messagebox.showwarning(
@@ -1872,17 +2227,25 @@ class JanelaSPEDInteligente(Toplevel):
             )
             return
         caminho = filedialog.asksaveasfilename(
-            title="Salvar relatório da auditoria tributária",
-            defaultextension=".txt",
+            title="Exportar auditoria tributaria FiscalPro",
+            defaultextension=".pdf",
             initialdir=str(self.resultado.caminho.parent),
-            initialfile=f"{self.resultado.caminho.stem}_AUDITORIA_TRIBUTARIA.txt",
-            filetypes=[("Relatório de texto", "*.txt")],
+            initialfile=f"{self.resultado.caminho.stem}_AUDITORIA_TRIBUTARIA.pdf",
+            filetypes=[
+                ("Relatório PDF", "*.pdf"),
+                ("Planilha Excel", "*.xlsx"),
+                ("Relatorio TXT (legado)", "*.txt"),
+            ],
             parent=self,
         )
         if not caminho:
             return
         try:
-            destino = self.motor.salvar_relatorio_auditoria_tributaria(caminho)
+            from pathlib import Path
+            if Path(caminho).suffix.lower() == ".txt":
+                destino = self.motor.salvar_relatorio_auditoria_tributaria(caminho)
+            else:
+                destino = self.motor.exportar_relatorio_auditoria_tributaria(caminho)
             messagebox.showinfo(
                 "FiscalPro", f"Relatório salvo com sucesso!\n\n{destino}", parent=self
             )
@@ -3819,6 +4182,8 @@ class JanelaSPEDInteligente(Toplevel):
             apontamentos = [item for item in apontamentos if item.campo == "Regra tributária"]
         elif filtro in {"Ficha Tributária", "XML NF-e", "Cadastro 0200", "Base Legal"}:
             origem = filtro.upper() if filtro != "Ficha Tributária" else "FICHA TRIBUTÁRIA"
+            if filtro == "XML NF-e":
+                origem = "XML NF-e"
             if filtro == "Cadastro 0200":
                 origem = "CADASTRO 0200"
             elif filtro == "Base Legal":
@@ -3863,7 +4228,9 @@ class JanelaSPEDInteligente(Toplevel):
             text=(
                 f"{a.total_itens:,} item(ns) auditado(s) • {a.itens_com_regra:,} com regra • "
                 f"{a.itens_sem_regra:,} sem regra • {a.erros:,} erro(s) • {a.avisos:,} aviso(s) • "
-                f"conformidade {a.conformidade:.2f}%. {xml_texto} "
+                f"cobertura de regras {a.cobertura_regras:.2f}% • "
+                f"conformidade {a.conformidade_exibicao}. {xml_texto} "
+                f"{a.diagnostico_regras} {a.diagnostico_xml} "
                 f"Filtro atual: {filtro} ({len(apontamentos):,} linha(s))."
             ).replace(",", ".")
         )

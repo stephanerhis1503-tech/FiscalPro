@@ -1,0 +1,115 @@
+name: Windows - FiscalPro PR27 Ficha Assistida teste portatil
+
+on:
+  push:
+    branches:
+      - fix/auditoria-tributaria-sped-seguranca-20261119
+    paths:
+      - src/services/ficha_assistida_sped_service.py
+      - src/services/mapa_lacunas_ficha_service.py
+      - tests/test_mapa_lacunas_ficha_pr27.py
+      - src/services/conferencia_st_xml_service.py
+      - src/services/triagem_st_condicional_service.py
+      - src/services/diagnostico_cobertura_banco_pr27_service.py
+      - src/services/diagnostico_regras_operacionais_service.py
+      - src/ui/janela_principal.py
+      - tests/test_diagnostico_regras_operacionais_pr27.py
+      - tests/test_diagnostico_cobertura_banco_pr27.py
+      - tests/test_triagem_st_condicional_pr27.py
+      - tests/test_conferencia_st_xml_pr27.py
+      - src/ui/janela_sped_inteligente.py
+      - src/sped/motor_sped.py
+      - src/sped/auditor_tributario.py
+      - TESTAR_FICHA_PR27.bat
+      - .github/workflows/windows-ficha-pr27-portatil.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gerar-portatil:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar dependencias
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pyinstaller pillow
+          python -m pip install "cryptography==46.0.3"
+      - name: Validar Ficha Assistida e auditoria
+        shell: pwsh
+        run: |
+          python -m compileall -q src/services/ficha_assistida_sped_service.py src/services/mapa_lacunas_ficha_service.py src/services/conferencia_st_xml_service.py src/services/triagem_st_condicional_service.py src/services/diagnostico_cobertura_banco_pr27_service.py src/services/diagnostico_regras_operacionais_service.py src/ui/janela_principal.py src/sped/motor_sped.py src/sped/auditor_tributario.py src/ui/janela_sped_inteligente.py
+          if ($LASTEXITCODE -ne 0) { throw "Falha de sintaxe" }
+          python -m pytest -q tests/test_ficha_assistida_sped_service.py tests/test_auditoria_regra_banco_isolado.py tests/test_auditoria_sped_segura_18_3_5.py tests/test_conferencia_st_xml_pr27.py tests/test_triagem_st_condicional_pr27.py tests/test_mapa_lacunas_ficha_pr27.py tests/test_diagnostico_cobertura_banco_pr27.py tests/test_diagnostico_regras_operacionais_pr27.py
+          if ($LASTEXITCODE -ne 0) { throw "Testes falharam" }
+      - name: Empacotar aplicativo de teste
+        shell: pwsh
+        run: |
+          $parametros = @(
+            "--noconfirm", "--clean", "--windowed", "--onedir",
+            "--name", "FiscalPro_Ficha_PR27",
+            "--icon", "assets/fiscalpro.ico",
+            "--paths", ".",
+            "--add-data", "assets;assets",
+            "--add-data", "templates;templates",
+            "--add-data", "dados/bases_oficiais;dados/bases_oficiais",
+            "--collect-all", "reportlab",
+            "--collect-all", "cryptography",
+            "--hidden-import", "cryptography.hazmat.bindings._rust",
+            "--hidden-import", "googleapiclient.discovery",
+            "--hidden-import", "googleapiclient.errors",
+            "--hidden-import", "google.auth.transport.requests",
+            "--hidden-import", "google.oauth2.credentials",
+            "--hidden-import", "google_auth_oauthlib.flow",
+            "main.py"
+          )
+          python -m PyInstaller @parametros
+          if ($LASTEXITCODE -ne 0) { throw "Empacotamento falhou" }
+          if (-not (Test-Path "dist/FiscalPro_Ficha_PR27/FiscalPro_Ficha_PR27.exe")) {
+            throw "Executavel de teste nao encontrado"
+          }
+      - name: Criar pacote ZIP de homologacao
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "teste_ficha_pr27" | Out-Null
+          Copy-Item "dist/FiscalPro_Ficha_PR27" "teste_ficha_pr27/FiscalPro_Ficha_PR27" -Recurse
+          Copy-Item "TESTAR_FICHA_PR27.bat" "teste_ficha_pr27/"
+          @'
+          FISCALPRO - FICHA ASSISTIDA PR27 - TESTE SEM INSTALAR
+
+          1. Feche o FiscalPro oficial.
+          2. Extraia TODO o ZIP em uma pasta do computador.
+          3. Execute TESTAR_FICHA_PR27.bat (nao execute o EXE diretamente).
+          4. O BAT cria copia isolada dos dados da primeira execucao em:
+             %LOCALAPPDATA%\FiscalPro_TESTE_FICHA_PR27
+             Nao usa o banco oficial %LOCALAPPDATA%\FiscalPro.
+          5. Abra SPED Inteligente, importe o SPED TXT de outubro/2026 e
+             adicione as pastas de NF-e e NFC-e (se necessario).
+          6. Execute Cruzar Ficha Tributaria.
+          7. Clique em Ficha Assistida - revisar propostas.
+          8. Exporte o Excel para conferencia e envie um print.
+          9. NAO aprove nem salve regras reais neste primeiro teste.
+          10. Feche a versao PR27 e use seu FiscalPro instalado normalmente.
+
+          IMPORTANTE: O EXE isolado ainda nao substitui a versao oficial.
+          'Server-side API' e transmissao fiscal nao fazem parte deste teste.
+          Se o banco original nao existir no caminho esperado, o BAT
+          para automaticamente, sem alterar o original.
+          '@ | Set-Content "teste_ficha_pr27/LEIA_ME_TESTE.txt" -Encoding UTF8
+          Compress-Archive -Path "teste_ficha_pr27/*" -DestinationPath "FiscalPro_Ficha_PR27_Teste_Portatil.zip" -Force
+      - name: Disponibilizar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: FiscalPro_Ficha_PR27_Teste_Portatil
+          path: FiscalPro_Ficha_PR27_Teste_Portatil.zip
+          retention-days: 7
+          if-no-files-found: error
