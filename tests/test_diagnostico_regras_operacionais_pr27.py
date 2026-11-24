@@ -64,3 +64,38 @@ def test_nova_ui_disponibiliza_conferencia_opcional_por_arquivo():
     assert "Conferir outro banco (leitura)" in fonte
     assert "diagnosticar_regras_operacionais(banco)" in fonte
     assert "PROJETO LOCAL (CÓDIGO-FONTE)" in fonte
+
+
+def test_lista_sete_regras_apenas_leitura(tmp_path):
+    from src.services.diagnostico_regras_operacionais_service import (
+        listar_regras_operacionais, texto_lista_regras,
+    )
+    banco = tmp_path / "regras.db"
+    with sqlite3.connect(banco) as conn:
+        conn.execute(
+            "CREATE TABLE tributacao_atual ("
+            "id INTEGER, ncm TEXT, empresa TEXT, status TEXT,"
+            "operacao TEXT, finalidade TEXT, vigencia_inicio TEXT, vigencia_fim TEXT)"
+        )
+        for i in range(7):
+            conn.execute(
+                "INSERT INTO tributacao_atual VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (i + 1, "87141000", "EMPRESA TESTE", "VIGENTE", "ENTRADA", "REVENDA", "01/10/2026", ""),
+            )
+    anterior = banco.read_bytes()
+    regras = listar_regras_operacionais(banco)
+    texto = texto_lista_regras(regras)
+    assert len(regras) == 7
+    assert "NCM 87141000" in texto
+    assert "Empresa: EMPRESA TESTE" in texto
+    assert banco.read_bytes() == anterior
+
+
+def test_lista_compatibilidade_sem_tabela(tmp_path):
+    from src.services.diagnostico_regras_operacionais_service import (
+        listar_regras_operacionais,
+    )
+    banco = tmp_path / "sem_regras.db"
+    with sqlite3.connect(banco) as conn:
+        conn.execute("CREATE TABLE outra (id INTEGER)")
+    assert listar_regras_operacionais(banco) == []
