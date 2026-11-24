@@ -5,7 +5,6 @@ ja calculados pelo auditor no banco que esta em uso.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 
@@ -15,7 +14,8 @@ PASTA_PR27 = "fiscalpro_teste_ficha_pr27"
 def aviso_banco_isolado_pr27(resultado: Any, diretorio_dados: str | None) -> str:
     """Explica 0% no clone, sem inferir ausencia de regras na instalacao oficial."""
     pasta = str(diretorio_dados or "").strip().strip('"').rstrip("/\\")
-    if not pasta or Path(pasta).name.casefold() != PASTA_PR27:
+    pasta_final = pasta.replace("\\", "/").split("/")[-1].casefold()
+    if not pasta or pasta_final != PASTA_PR27:
         return ""
     if not bool(getattr(resultado, "auditoria_tributaria_inconclusiva", False)):
         return ""
