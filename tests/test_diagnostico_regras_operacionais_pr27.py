@@ -40,3 +40,27 @@ def test_sem_tabelas_eh_indisponivel_nao_zero(tmp_path):
     assert resultado["regras_por_operacao"] is None
     assert resultado["cadastros_produto_ativos"] is None
     assert "indisponível" in texto_diagnostico_regras(resultado, isolado=True)
+
+
+def test_texto_discrimina_projeto_local_sem_inferir_banco_oficial(tmp_path):
+    banco = tmp_path / "dev.db"
+    with sqlite3.connect(banco) as conn:
+        conn.execute("CREATE TABLE tributacao_atual (id INTEGER, status TEXT)")
+        conn.execute("CREATE TABLE tributacao_base (id INTEGER, ativo INTEGER)")
+    dados = diagnosticar_regras_operacionais(banco)
+    texto = texto_diagnostico_regras(dados, ambiente="PROJETO LOCAL (CÓDIGO-FONTE)")
+    assert "PROJETO LOCAL" in texto
+    assert "Não conclua que o FiscalPro instalado" in texto
+    assert "0" in texto
+
+
+def test_nova_ui_disponibiliza_conferencia_opcional_por_arquivo():
+    from pathlib import Path
+
+    fonte = (
+        Path(__file__).resolve().parents[1] / "src" / "ui" / "janela_principal.py"
+    ).read_text(encoding="utf-8")
+    assert "def conferir_outro_banco_tributario" in fonte
+    assert "Conferir outro banco (leitura)" in fonte
+    assert "diagnosticar_regras_operacionais(banco)" in fonte
+    assert "PROJETO LOCAL (CÓDIGO-FONTE)" in fonte
