@@ -109,7 +109,9 @@ def test_excel_mantem_item_por_nota_com_status(tmp_path):
     assert len(propostas[0].evidencias_xml_st) == 2
     arquivo = FichaAssistidaSPEDService.exportar(propostas, tmp_path / "triagem.xlsx")
     wb = load_workbook(arquivo, read_only=True)
-    assert wb.sheetnames == ["Propostas para revisao", "Conferencia ST XML"]
+    assert wb.sheetnames == [
+        "Propostas para revisao", "Triagem ST condicional", "Conferencia ST XML"
+    ]
     resumo = wb.worksheets[0]
     assert resumo["AG1"].value == "Conferencia documental ST no XML"
     detalhes = wb["Conferencia ST XML"]
