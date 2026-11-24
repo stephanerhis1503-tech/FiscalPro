@@ -74,6 +74,10 @@ def test_exportar_triagem_preserva_planilha_original_e_nao_grava_banco(tmp_path,
     assert "Propostas para revisao" in wb.sheetnames
     assert "Triagem ST condicional" in wb.sheetnames
     assert "Conferencia ST XML" in wb.sheetnames
+    assert "Lacunas por NCM" in wb.sheetnames
+    assert "Lacunas por contexto" in wb.sheetnames
+    assert wb["Lacunas por NCM"].max_row >= 2
+    assert wb["Lacunas por contexto"].max_row >= 2
 
     antiga = wb["Propostas para revisao"]
     assert antiga["A2"].value == "PENDENTE DE REVISAO"
