@@ -430,6 +430,62 @@ class FichaAssistidaSPEDService:
                 "; ".join(sorted(p.st_xml_status)),
                 "; ".join(sorted(p.st_xml_acoes)),
             ])
+        # A triagem separa o indício documental da aprovação tributária.
+        from src.services.triagem_st_condicional_service import triagem_st_condicional
+        colunas_triagem = (
+            "Grupo de revisao ST - nao homologado",
+            "Motivo da triagem ST - nao homologado",
+            "Acao necessaria ST - nao homologada",
+        )
+        for coluna in colunas_triagem:
+            ws.cell(1, ws.max_column + 1, coluna)
+        for indice, proposta in enumerate(propostas, start=2):
+            for coluna, valor in enumerate(triagem_st_condicional(proposta), start=len(colunas) + 1):
+                ws.cell(indice, coluna, _seguro_excel(valor))
+
+        # Aba especifica para os condicionais, mantendo a referencia a cada
+        # codigo do SPED. Nenhum CEST ou credito e aprovado neste relatorio.
+        triagem = wb.create_sheet("Triagem ST condicional")
+        colunas_resumo_st = [
+            "Status", "Empresa", "NCM SPED", "Codigo no SPED", "Descricao",
+            "UF origem", "CFOP de entrada", "Itens C170",
+            *colunas_triagem, "Validacao fiscal",
+        ]
+        triagem.append(colunas_resumo_st)
+        for proposta in propostas:
+            grupo, motivo, acao = triagem_st_condicional(proposta)
+            if not grupo:
+                continue
+            triagem.append([
+                proposta.situacao, proposta.empresa, proposta.ncm,
+                proposta.codigo_produto, proposta.descricao, proposta.uf_origem,
+                ", ".join(sorted(proposta.cfops_sped)), proposta.itens,
+                _seguro_excel(grupo), _seguro_excel(motivo), _seguro_excel(acao),
+                "PENDENTE - SEM APROVACAO AUTOMATICA",
+            ])
+        for cell in triagem[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="214C74")
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+        triagem.row_dimensions[1].height = 40
+        for linha in triagem.iter_rows(min_row=2):
+            for celula in linha:
+                if isinstance(celula.value, str):
+                    celula.value = _seguro_excel(celula.value)
+                    celula.number_format = "@"
+                celula.alignment = Alignment(vertical="top", wrap_text=True)
+                if celula.row % 2 == 0:
+                    celula.fill = PatternFill("solid", fgColor="F2F6FA")
+        for coluna in range(1, len(colunas_resumo_st) + 1):
+            triagem.column_dimensions[get_column_letter(coluna)].width = (
+                75 if coluna in (10, 11) else 50 if coluna == 5 else 38 if coluna == 9 else 24
+            )
+        triagem.freeze_panes = "E2"
+        triagem.auto_filter.ref = (
+            f"A1:{get_column_letter(len(colunas_resumo_st))}{max(triagem.max_row, 2)}"
+        )
+        triagem.sheet_view.showGridLines = False
+
         for cell in ws[1]:
             cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = PatternFill("solid", fgColor="214C74")
@@ -443,11 +499,11 @@ class FichaAssistidaSPEDService:
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
                 if cell.row % 2 == 0:
                     cell.fill = PatternFill("solid", fgColor="F2F6FA")
-        for col in range(1, len(colunas) + 1):
+        for col in range(1, len(colunas) + len(colunas_triagem) + 1):
             largura = 48 if col in (4, 19, 23, 25, 28, 29, 30, 31, 32, 33, 34) else 26 if col in (5, 16, 17, 18, 24, 26) else 18
             ws.column_dimensions[get_column_letter(col)].width = largura
         ws.freeze_panes = "E2"
-        ws.auto_filter.ref = f"A1:AH{max(ws.max_row, 2)}"
+        ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{max(ws.max_row, 2)}"
         for linha in ws.iter_rows(min_row=2):
             if linha[24].value and str(linha[24].value).startswith("REVISAR"):
                 for col in (7, 8, 15, 24, 25):
