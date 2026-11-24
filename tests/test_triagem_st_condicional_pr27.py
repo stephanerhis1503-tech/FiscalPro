@@ -1,27 +1,20 @@
 """Triagem ST de contexto, sem escrita fiscal, com regressao na exportacao PR27."""
-from types import SimpleNamespace
-
 from openpyxl import load_workbook
 
-from src.services.ficha_assistida_sped_service import FichaAssistidaSPEDService
+from src.services.ficha_assistida_sped_service import FichaAssistidaSPEDService, PropostaFichaAssistida
 from src.services.triagem_st_condicional_service import (
     REFERENCIA, DIVERGENCIA, DOCUMENTAL, triagem_st_condicional,
 )
 
 
 def _p(ncm, desc, codigo="A", cfop="2403", status="CONDICIONAL"):
-    return SimpleNamespace(
-        ncm=ncm, descricao=desc, codigo_produto=codigo, st_status={status},
-        cfops_sped={cfop}, empresa="TRILHA", regime="LUCRO REAL",
-        operacao="ENTRADA", finalidade="REVENDA", uf_origem="MG",
-        uf_destino="MG", contribuinte="SIM", primeira_data="2026-10-01",
-        ultima_data="2026-10-01", itens=1, documentos={"1"}, falha_tecnica=False,
-        regra_id=None, produtos_no_ncm=1, fontes_referenciais=set(),
-        pis_status=set(), st_enquadramentos=set(), st_recolhimentos=set(),
-        st_difal=set(), icms_creditos=set(), st_xml_status=set(),
-        st_xml_acoes=set(), evidencias_xml_st=[],
-        finalidade_informada="REVENDA", finalidade_status="",
-        finalidade_motivos=set(),
+    return PropostaFichaAssistida(
+        identificador=1, ncm=ncm, descricao=desc, codigo_produto=codigo,
+        empresa="TRILHA", regime="LUCRO REAL", operacao="ENTRADA",
+        finalidade="REVENDA", uf_origem="MG", uf_destino="MG",
+        contribuinte="SIM", primeira_data="2026-10-01",
+        ultima_data="2026-10-01", itens=1, documentos={"1"},
+        st_status={status}, cfops_sped={cfop},
     )
 
 
