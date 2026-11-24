@@ -1926,6 +1926,14 @@ class JanelaSPEDInteligente(Toplevel):
             if resumo.diagnostico_xml:
                 mensagem += "\n\nXML: " + resumo.diagnostico_xml
             if resumo.auditoria_tributaria_inconclusiva:
+                from src.services.diagnostico_cobertura_banco_pr27_service import (
+                    aviso_banco_isolado_pr27,
+                )
+                texto_teste = aviso_banco_isolado_pr27(
+                    resumo, os.environ.get("FISCALPRO_DATA_DIR", ""),
+                )
+                if texto_teste:
+                    mensagem += "\n\n" + texto_teste
                 messagebox.showwarning(
                     "FiscalPro — Auditoria inconclusiva",
                     mensagem + "\n\nNao prepare correcoes enquanto a cobertura de regras estiver zerada.",
