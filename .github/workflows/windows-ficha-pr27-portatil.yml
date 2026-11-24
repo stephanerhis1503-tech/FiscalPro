@@ -9,6 +9,7 @@ on:
       - src/services/conferencia_st_xml_service.py
       - src/services/triagem_st_condicional_service.py
       - tests/test_triagem_st_condicional_pr27.py
+      - tests/test_conferencia_st_xml_pr27.py
       - src/ui/janela_sped_inteligente.py
       - src/sped/motor_sped.py
       - src/sped/auditor_tributario.py
