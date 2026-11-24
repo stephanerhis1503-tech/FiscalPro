@@ -22,6 +22,16 @@ def test_sem_condicional_nao_recebe_alerta():
     assert triagem_st_condicional(_p("65061090", "CAPACETE", status="CONFIRMADO")) == ("", "", "")
 
 
+def test_condicional_em_texto_de_mva_nao_e_alerta_de_triagem():
+    assert triagem_st_condicional(_p(
+        "87141000", "PECA NORMAL",
+        status="ICMS-ST/MG CONFIRMADO — MVA AJUSTADA CALCULADA COM ALÍQUOTA INTERNA CONDICIONAL"
+    )) == ("", "", "")
+    assert triagem_st_condicional(_p(
+        "65061090", "CAPACETE", status="CONDICIONAL — CONFIRMAR FINALIDADE AUTOMOTIVA"
+    ))[0] == REFERENCIA
+
+
 def test_grupos_de_revisao_nao_atribuem_tributacao():
     amostras = [
         (_p("65061090", "CAPACETE JOY"), REFERENCIA),
