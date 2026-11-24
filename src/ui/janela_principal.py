@@ -389,12 +389,58 @@ class JanelaPrincipal:
         try:
             dados = diagnosticar_regras_operacionais(conexao.DB)
             teste = RAIZ_DADOS.name.casefold() == "fiscalpro_teste_ficha_pr27"
-            texto = texto_diagnostico_regras(dados, isolado=teste)
+            from src.core.caminhos import esta_empacotado
+            ambiente = (
+                "TESTE ISOLADO PR27" if teste else
+                "PROJETO LOCAL (CÓDIGO-FONTE)" if not esta_empacotado()
+                else "FISCALPRO INSTALADO"
+            )
+            texto = texto_diagnostico_regras(dados, isolado=teste, ambiente=ambiente)
             messagebox.showinfo("FiscalPro - Diagnostico de regras", texto, parent=self.janela)
         except Exception as erro:
             messagebox.showerror(
                 "FiscalPro - Diagnostico de regras",
                 f"Nao foi possivel contar as regras: {erro}",
+                parent=self.janela,
+            )
+
+    def conferir_outro_banco_tributario(self):
+        """Permite comparar somente contagens, por selecao explicita do usuario."""
+        from pathlib import Path
+        from tkinter import filedialog
+        from src.banco import conexao
+        from src.services.diagnostico_regras_operacionais_service import (
+            diagnosticar_regras_operacionais, texto_diagnostico_regras,
+        )
+
+        escolhido = filedialog.askopenfilename(
+            parent=self.janela,
+            title="Selecione o fiscalpro.db a consultar - somente leitura",
+            filetypes=[("Banco SQLite", "*.db"), ("Todos os arquivos", "*.*")],
+        )
+        if not escolhido:
+            return
+        try:
+            banco = Path(escolhido).resolve()
+            origem = Path(conexao.DB).resolve()
+            if banco == origem:
+                messagebox.showinfo(
+                    "FiscalPro - Comparar bancos",
+                    "Você selecionou o próprio banco em uso. Use o botão de diagnóstico normal.",
+                    parent=self.janela,
+                )
+                return
+            dados = diagnosticar_regras_operacionais(banco)
+            texto = texto_diagnostico_regras(
+                dados, ambiente="OUTRO BANCO SELECIONADO - SOMENTE LEITURA"
+            )
+            messagebox.showinfo(
+                "FiscalPro - Conferencia de outro banco", texto, parent=self.janela,
+            )
+        except Exception as erro:
+            messagebox.showerror(
+                "FiscalPro - Conferencia de outro banco",
+                f"Não foi possível ler as contagens: {erro}",
                 parent=self.janela,
             )
 
@@ -690,6 +736,13 @@ class JanelaPrincipal:
         titulo_saude.pack(fill=X, padx=14, pady=(5, 0))
         Label(titulo_saude, text="Saúde das bases", bg=COR_FUNDO, fg=COR_TEXTO, font=("Segoe UI", 10, "bold")).pack(side=LEFT)
         Label(titulo_saude, text="  Bases usadas na análise automática", bg=COR_FUNDO, fg=COR_TEXTO_SUAVE, font=("Segoe UI", 8)).pack(side=LEFT)
+
+        ttk.Button(
+            titulo_saude,
+            text="Conferir outro banco (leitura)",
+            command=self.conferir_outro_banco_tributario,
+            style="Secondary.TButton",
+        ).pack(side=RIGHT, padx=(0, 8))
 
         ttk.Button(
             titulo_saude,
