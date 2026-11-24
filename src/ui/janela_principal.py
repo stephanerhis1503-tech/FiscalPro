@@ -378,6 +378,26 @@ class JanelaPrincipal:
                 fill=X, pady=(0 if indice == 0 else 4, 0)
             )
 
+    def abrir_diagnostico_regras_operacionais(self):
+        """Exibe somente contagens no banco ativo, sem aplicar regras fiscais."""
+        from src.banco import conexao
+        from src.services.diagnostico_regras_operacionais_service import (
+            diagnosticar_regras_operacionais, texto_diagnostico_regras,
+        )
+        from src.core.caminhos import RAIZ_DADOS
+
+        try:
+            dados = diagnosticar_regras_operacionais(conexao.DB)
+            teste = RAIZ_DADOS.name.casefold() == "fiscalpro_teste_ficha_pr27"
+            texto = texto_diagnostico_regras(dados, isolado=teste)
+            messagebox.showinfo("FiscalPro - Diagnostico de regras", texto, parent=self.janela)
+        except Exception as erro:
+            messagebox.showerror(
+                "FiscalPro - Diagnostico de regras",
+                f"Nao foi possivel contar as regras: {erro}",
+                parent=self.janela,
+            )
+
     def _obter_saude_base_tributaria(self):
         itens = []
         try:
@@ -670,6 +690,13 @@ class JanelaPrincipal:
         titulo_saude.pack(fill=X, padx=14, pady=(5, 0))
         Label(titulo_saude, text="Saúde das bases", bg=COR_FUNDO, fg=COR_TEXTO, font=("Segoe UI", 10, "bold")).pack(side=LEFT)
         Label(titulo_saude, text="  Bases usadas na análise automática", bg=COR_FUNDO, fg=COR_TEXTO_SUAVE, font=("Segoe UI", 8)).pack(side=LEFT)
+
+        ttk.Button(
+            titulo_saude,
+            text="Diagnostico das regras cadastradas",
+            command=self.abrir_diagnostico_regras_operacionais,
+            style="Secondary.TButton",
+        ).pack(side=RIGHT, padx=(0, 8))
 
         ttk.Button(
             titulo_saude,
