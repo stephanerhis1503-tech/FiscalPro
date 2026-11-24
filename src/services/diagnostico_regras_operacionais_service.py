@@ -72,17 +72,29 @@ def diagnosticar_regras_operacionais(caminho: str | Path) -> dict[str, Any]:
     return resultado
 
 
-def texto_diagnostico_regras(dados: dict[str, Any], *, isolado: bool = False) -> str:
+def texto_diagnostico_regras(
+    dados: dict[str, Any], *, isolado: bool = False, ambiente: str = ""
+) -> str:
     """Não tira conclusões de conformidade fiscal de contagens cadastrais."""
     def numero(valor: Any) -> str:
         return f"{valor:,}".replace(",", ".") if isinstance(valor, int) else "indisponível"
 
     linhas = ["DIAGNÓSTICO DE REGRAS — SOMENTE LEITURA", ""]
-    linhas.append("Ambiente: " + ("TESTE ISOLADO PR27" if isolado else "BANCO DESTA INSTALAÇÃO"))
+    rotulo = ambiente.strip() or (
+        "TESTE ISOLADO PR27" if isolado else "BANCO DESTA EXECUÇÃO"
+    )
+    linhas.append("Ambiente: " + rotulo)
     linhas.append("Banco: " + str(dados.get("caminho") or "(não informado)"))
     if not dados.get("existe"):
         linhas += ["", "Banco não encontrado nesse caminho. Nenhum arquivo foi criado."]
         return "\n".join(linhas)
+    if ambiente.strip().upper().startswith("PROJETO"):
+        linhas += [
+            "",
+            "ATENÇÃO: este é o banco na pasta do projeto/código-fonte.",
+            "Não conclua que o FiscalPro instalado possui os mesmos registros.",
+            "Para comparar, use o botão 'Conferir outro banco' (somente leitura).",
+        ]
     linhas += [
         "",
         "Regras por operação (tributacao_atual): "
