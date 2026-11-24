@@ -501,6 +501,10 @@ class FichaAssistidaSPEDService:
                     cell.fill = PatternFill("solid", fgColor="F2F6FA")
         for col in range(1, len(colunas) + len(colunas_triagem) + 1):
             largura = 48 if col in (4, 19, 23, 25, 28, 29, 30, 31, 32, 33, 34) else 26 if col in (5, 16, 17, 18, 24, 26) else 18
+            if col == len(colunas) + 1:
+                largura = 39
+            elif col in (len(colunas) + 2, len(colunas) + 3):
+                largura = 75
             ws.column_dimensions[get_column_letter(col)].width = largura
         ws.freeze_panes = "E2"
         ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{max(ws.max_row, 2)}"
