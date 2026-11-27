@@ -211,8 +211,9 @@ class ICMSSTMGService:
         if re.search(r"\b(SUP|SUPORTE|CAPA|CARCACA|MIOLO|CILINDRO|AVULSA|AVULSO)\b", texto):
             return False
         return bool(re.match(
-            r"^(?:CHAVE\s+(?:DE\s+)?IGN(?:ICAO)?\b|"
+            r"^(?:CHAVE\s+(?:DE\s+)?(?:IGN(?:ICAO)?|LUZ)\b|"
             r"INT(?:ER)?\s+(?:FR|FREIO|PART|PARTIDA|TRAS|TRASEIRO)\b|"
+            r"INTERRU\s+(?:EMBR|EMERG|FREIO|NEUTRO|PUNHO|PART(?:IDA)?|AUX)\b|"
             r"INTERRUPTOR\b)", texto
         ))
 
@@ -411,7 +412,7 @@ class ICMSSTMGService:
         interruptor = cls._descricao_indica_interruptor(descricao)
         componente = any(pista in f"{texto} " for pista in componentes) or interruptor
         modelo = any(pista in f"{texto} " for pista in modelos_moto)
-        if interruptor and re.search(r"\bXLR(?:\d+)?\b", texto):
+        if interruptor and re.search(r"\b(?:XLR\d*|FZ25A?|TORNADO\d*|C[BG]\d+)\b", texto):
             modelo = True
         if componente and (modelo or cest_digitos == "0199900"):
             return FINALIDADE_AUTO_CONFIRMADA
