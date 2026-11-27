@@ -56,6 +56,8 @@ def calcular(item, **kwargs):
 
 @pytest.mark.parametrize("descricao", [
     "CHAVE.IGN. BROS TESTE", "INT.FR.TRAS. FAZER TESTE", "INT.PARTIDA XLR TESTE",
+    "INTERRU EMBR BROS160", "INTERRU EMERG BROS125",
+    "INTERRU FREIO D FAN125", "INTERRU NEUTRO CHAPA CG/ML/TUR/TITAN",
     "INTER.TRAS. FACTOR TESTE", "CHAVE DE IGNICAO MOTO TESTE",
 ])
 def test_interruptor_abreviado_nao_vira_starter(descricao, base_controlada):
@@ -124,6 +126,7 @@ def test_finalidade_negada_nao_desempata_em_favor_de_autopecas():
 
 
 @pytest.mark.parametrize("descricao,finalidade", [
+    ("INTERRU AUX TICTAC MINI 12V UNIVERS", ""),
     ("CHAVE IGN TESTE", ""), ("INT.PARTIDA TESTE", ""),
     ("INT.PARTIDA XLR TESTE", "NAO_AUTOMOTIVA"),
     ("CHAVE.IGN. BROS TESTE", "NAO_AUTOMOTIVA"),

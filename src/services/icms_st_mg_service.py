@@ -213,6 +213,7 @@ class ICMSSTMGService:
         return bool(re.match(
             r"^(?:CHAVE\s+(?:DE\s+)?IGN(?:ICAO)?\b|"
             r"INT(?:ER)?\s+(?:FR|FREIO|PART|PARTIDA|TRAS|TRASEIRO)\b|"
+            r"INTERRU\s+(?:EMBR|EMERG|FREIO|NEUTRO|PUNHO|AUX)\b|"
             r"INTERRUPTOR\b)", texto
         ))
 
